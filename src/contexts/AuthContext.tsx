@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { User, normalizeUser } from "@/lib/api"; // Import the shared User type
 
 // Alias kept for components that import `AuthUser` from this module (e.g.
@@ -186,6 +186,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const canManageUsers = !!user && (user.is_superuser || user.can_manage_users);
   // "isAdmin" here means "sees the Admin panel" — same condition.
   const isAdmin = canManageUsers;
+
+  // ✅ FIXED — `user` state above is seeded once from localStorage and was
+  // never refreshed after that: `fetchMe()` existed but nothing ever called
+  // it, so the browser kept using whatever user object was cached at the
+  // last login/refresh forever. That's why a permission fix on the backend
+  // (e.g. UserSerializer starting to return can_manage_users) had no visible
+  // effect for an already-logged-in Admin — their cached user object
+  // predates the field, so `canManageUsers` stayed false and /admin kept
+  // bouncing to "/" until they logged out and back in. Refreshing once on
+  // mount (whenever an access token is already present) means a stale
+  // cached user — missing fields, a changed role, a revoked permission,
+  // a deactivated account — gets corrected automatically on next load,
+  // without requiring a manual logout.
+  useEffect(() => {
+    if (getAccessToken()) {
+      fetchMe();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AuthContext.Provider

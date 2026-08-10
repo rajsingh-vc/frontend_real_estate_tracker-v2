@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +42,15 @@ function displayHurdleType(type: string): string {
   return type.replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function HurdleDetailDialog({ hurdle }: { hurdle: ApiHurdle }) {
+function HurdleDetailDialog({
+  hurdle,
+  onStatusChange,
+  isUpdatingStatus,
+}: {
+  hurdle: ApiHurdle;
+  onStatusChange: (status: string) => void;
+  isUpdatingStatus?: boolean;
+}) {
   const { data: tasks } = useQuery({ queryKey: ["tasks"], queryFn: tasksApi.list });
   const affectedTask = tasks?.find(t => t.id === hurdle.affectedTaskId);
 
@@ -50,7 +59,29 @@ function HurdleDetailDialog({ hurdle }: { hurdle: ApiHurdle }) {
       <DialogHeader>
         <div className="flex items-center gap-2">
           <Badge className={hurdleSeverityColors[hurdle.severity as HurdleSeverity]}>{hurdle.severity}</Badge>
-          <Badge variant="outline" className="capitalize">{hurdle.status.replace('_', ' ')}</Badge>
+
+          {/* Was a static <Badge variant="outline">{hurdle.status}</Badge> — now clickable,
+              same Select-wrapped-Badge pattern used on the card row, so status (Open /
+              In Progress / Escalated / Resolved) can be changed from inside the detail
+              dialog too, via the same statusMutation passed down from the parent. */}
+          <Select
+            value={hurdle.status}
+            onValueChange={onStatusChange}
+            disabled={isUpdatingStatus}
+          >
+            <SelectTrigger className="w-auto h-6 text-xs border-0 bg-transparent p-0">
+              <Badge variant="outline" className="capitalize cursor-pointer">
+                {hurdle.status.replace('_', ' ')}
+              </Badge>
+            </SelectTrigger>
+            <SelectContent>
+              {hurdleStatusOrder.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {hurdleStatusLabels[s]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <DialogTitle className="font-display text-xl mt-2">{hurdle.title}</DialogTitle>
       </DialogHeader>
@@ -83,6 +114,10 @@ function HurdleDetailDialog({ hurdle }: { hurdle: ApiHurdle }) {
 const HurdleTracker = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const location = useLocation();
+  // Set when arriving here from the top search bar (search result → this
+  // page), so the matching hurdle's detail dialog opens automatically.
+  const openHurdleId = (location.state as { openHurdleId?: number } | null)?.openHurdleId;
   const [severityFilter, setSeverityFilter] = useState("all");
   // ✅ UPDATED: Status filter is now free text instead of a fixed dropdown.
   const [statusFilter, setStatusFilter] = useState("");
@@ -118,6 +153,9 @@ const HurdleTracker = () => {
   // icon/color and the auto-resolvedDate logic above, so it stays a
   // closed set. Only the *filter* dropdown below was switched to free
   // text per your request; let me know if you want this one changed too.
+  //
+  // This same mutation is now also wired into HurdleDetailDialog's status
+  // badge (see render below), so status can be changed from either place.
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) => {
       const patch: Partial<ApiHurdle> = { status };
@@ -278,11 +316,15 @@ const HurdleTracker = () => {
                             ))}
                           </SelectContent>
                         </Select>
-                        <Dialog>
+                        <Dialog defaultOpen={hurdle.id === openHurdleId}>
                           <DialogTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-7 w-7"><Eye className="h-3.5 w-3.5" /></Button>
                           </DialogTrigger>
-                          <HurdleDetailDialog hurdle={hurdle} />
+                          <HurdleDetailDialog
+                            hurdle={hurdle}
+                            onStatusChange={(status) => statusMutation.mutate({ id: hurdle.id, status })}
+                            isUpdatingStatus={statusMutation.isPending}
+                          />
                         </Dialog>
                         <Button
                           variant="ghost"

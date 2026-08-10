@@ -229,6 +229,13 @@ function ActivityTable({ taskList, title, onDrillTask }: { taskList: ApiTask[]; 
 function TaskDrillDown({ task, project, tower, onBack }: {
   task: ApiTask; project: ApiProject | undefined; tower: ApiTower | undefined; onBack: () => void;
 }) {
+  // FIX: some tasks come back from the API without a checklist/comments array
+  // (e.g. no checklist template applied, or no comments yet). Defaulting to
+  // [] here prevents "Cannot read properties of undefined (reading 'length')"
+  // from unmounting the whole dashboard when drilling into such a task.
+  const checklist = task.checklist ?? [];
+  const comments = task.comments ?? [];
+
   const handleExport = () => {
     exportToCSV(
       `Task_${task.title.replace(/\s+/g, '_')}`,
@@ -241,8 +248,8 @@ function TaskDrillDown({ task, project, tower, onBack }: {
         ['Actual Start', task.actualStartDate || ''], ['Actual End', task.actualEndDate || ''],
         ['Delay Days', String(task.delayDays)], ['Delay Reason', task.delayReason || ''],
         ['Critical Path', task.criticalPath ? 'Yes' : 'No'],
-        ...task.checklist.map((c, i) => [`Checklist ${i + 1}`, `${c.completed ? '✓' : '○'} ${c.title}`]),
-        ...task.comments.map((c, i) => [`Comment ${i + 1}`, `${c.user} (${c.date}): ${c.text}`]),
+        ...checklist.map((c, i) => [`Checklist ${i + 1}`, `${c.completed ? '✓' : '○'} ${c.title}`]),
+        ...comments.map((c, i) => [`Comment ${i + 1}`, `${c.user} (${c.date}): ${c.text}`]),
       ]
     );
   };
@@ -304,11 +311,11 @@ function TaskDrillDown({ task, project, tower, onBack }: {
                 <span className="text-sm font-medium text-success">No delays recorded</span>
               </div>
             )}
-            {task.checklist.length > 0 && (
+            {checklist.length > 0 && (
               <div>
-                <h4 className="font-medium text-sm mb-2">Checklist ({task.checklist.filter(c => c.completed).length}/{task.checklist.length})</h4>
+                <h4 className="font-medium text-sm mb-2">Checklist ({checklist.filter(c => c.completed).length}/{checklist.length})</h4>
                 <div className="space-y-1.5">
-                  {task.checklist.map(c => (
+                  {checklist.map(c => (
                     <div key={c.id} className="flex items-center gap-2 text-sm">
                       <div className={`h-4 w-4 rounded border flex items-center justify-center ${c.completed ? 'bg-success border-success text-success-foreground' : 'border-border'}`}>
                         {c.completed && <CheckCircle2 className="h-3 w-3" />}
@@ -319,10 +326,10 @@ function TaskDrillDown({ task, project, tower, onBack }: {
                 </div>
               </div>
             )}
-            {task.comments.length > 0 && (
+            {comments.length > 0 && (
               <div>
                 <h4 className="font-medium text-sm mb-2">Activity Log</h4>
-                {task.comments.map((c, i) => (
+                {comments.map((c, i) => (
                   <div key={i} className="p-2 rounded bg-muted/50 text-xs mb-1.5">
                     <span className="font-medium">{c.user}</span> <span className="text-muted-foreground">· {c.date}</span>
                     <p className="text-muted-foreground mt-0.5">{c.text}</p>
@@ -532,9 +539,9 @@ function FloorDrillDown({ tower, project, allFloors, allTasks, onBack, onDrillTa
 }
 
 // ===== PROJECT DRILL-DOWN (Project -> Towers -> Tasks) =====
-function ProjectDrillDown({ project, allTowers, allTasks, allHurdles, onBack, onDrillTower }: {
+function ProjectDrillDown({ project, allTowers, allTasks, allHurdles, onBack, onDrillTower, onDrillTask }: {
   project: ApiProject; allTowers: ApiTower[]; allTasks: ApiTask[]; allHurdles: ApiHurdle[];
-  onBack: () => void; onDrillTower: (tower: ApiTower) => void;
+  onBack: () => void; onDrillTower: (tower: ApiTower) => void; onDrillTask?: (task: ApiTask) => void;
 }) {
   const projectTasks = useMemo(() => allTasks.filter(t => t.projectId === project.id), [allTasks, project.id]);
   const projectTowers = useMemo(() => allTowers.filter(t => t.projectId === project.id), [allTowers, project.id]);
@@ -663,7 +670,9 @@ function ProjectDrillDown({ project, allTowers, allTasks, allHurdles, onBack, on
           <CardContent>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
               {projectTasks.filter(t => t.delayDays > 0).map(task => (
-                <div key={task.id} className="flex items-center gap-3 p-3 rounded-lg border">
+                <div key={task.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border ${onDrillTask ? "cursor-pointer hover:bg-muted/30 transition-colors" : ""}`}
+                  onClick={() => onDrillTask?.(task)}>
                   <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
                     <Clock className="h-5 w-5 text-destructive" />
                   </div>
@@ -672,6 +681,7 @@ function ProjectDrillDown({ project, allTowers, allTasks, allHurdles, onBack, on
                     <p className="text-xs text-muted-foreground">{task.delayReason}</p>
                   </div>
                   <Badge variant="destructive" className="text-xs shrink-0">+{task.delayDays}d</Badge>
+                  {onDrillTask && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                 </div>
               ))}
             </div>
@@ -909,7 +919,7 @@ const Dashboard = () => {
         task={selectedTask}
         project={getProjectById(selectedTask.projectId)}
         tower={getTowerById(selectedTask.towerId)}
-        onBack={() => { setDrillLevel(selectedTower ? 'tower' : 'portfolio'); setSelectedTask(null); }}
+        onBack={() => { setDrillLevel(selectedTower ? 'tower' : (selectedProject ? 'project' : 'portfolio')); setSelectedTask(null); }}
       />
     );
   }
@@ -936,6 +946,11 @@ const Dashboard = () => {
         allHurdles={hurdles}
         onBack={() => { setDrillLevel('portfolio'); setSelectedProject(null); }}
         onDrillTower={(tower) => { setSelectedTower(tower); setDrillLevel('tower'); }}
+        onDrillTask={(task) => {
+          setSelectedTower(getTowerById(task.towerId) || null);
+          setSelectedTask(task);
+          setDrillLevel('task');
+        }}
       />
     );
   }
@@ -1010,7 +1025,7 @@ const Dashboard = () => {
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-display">Project Progress <span className="text-xs text-muted-foreground font-normal ml-2">Click to drill down →</span></CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
             {projects.length === 0 && <p className="text-sm text-muted-foreground py-4">No projects yet. Create one from the Projects page.</p>}
             {projects.map((project) => (
               <div key={project.id}

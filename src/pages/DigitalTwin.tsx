@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -182,6 +183,7 @@ function ComputedProgress({ value, barClassName = "h-2" }: { value: number; barC
 const DigitalTwin = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [view, setView] = useState<View>("projects");
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -273,6 +275,22 @@ const DigitalTwin = () => {
     [floors, selectedFloorId]
   );
 
+  // Global task counts by status, shown as clickable summary blocks above
+  // the twin — clicking one jumps to the Tasks page pre-filtered to that
+  // status.
+  const taskCounts = useMemo(() => {
+    return {
+      not_started: tasks.filter((t: ApiTask) => t.status === "not_started").length,
+      in_progress: tasks.filter((t: ApiTask) => t.status === "in_progress").length,
+      completed: tasks.filter((t: ApiTask) => t.status === "completed").length,
+      delayed: tasks.filter((t: ApiTask) => t.status === "delayed").length,
+    };
+  }, [tasks]);
+
+  const goToTasksFilteredBy = (status: string) => {
+    navigate("/tasks", { state: { statusFilter: status } });
+  };
+
   const goBack = () => {
     if (view === "units") {
       setView("floors");
@@ -329,6 +347,42 @@ const DigitalTwin = () => {
           </div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Execution Map</h1>
         </div>
+      </div>
+
+      {/* Task status summary — clickable, jumps to Tasks page filtered by status */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <button
+          type="button"
+          onClick={() => goToTasksFilteredBy("not_started")}
+          className="text-left p-4 rounded-lg border bg-muted border-border hover:shadow-md transition-shadow"
+        >
+          <p className="text-2xl font-display font-bold text-muted-foreground">{taskCounts.not_started}</p>
+          <p className="text-xs text-muted-foreground mt-1">Not Started</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => goToTasksFilteredBy("in_progress")}
+          className="text-left p-4 rounded-lg border bg-warning/10 border-warning/30 hover:shadow-md transition-shadow"
+        >
+          <p className="text-2xl font-display font-bold text-warning">{taskCounts.in_progress}</p>
+          <p className="text-xs text-muted-foreground mt-1">In Progress</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => goToTasksFilteredBy("completed")}
+          className="text-left p-4 rounded-lg border bg-success/10 border-success/30 hover:shadow-md transition-shadow"
+        >
+          <p className="text-2xl font-display font-bold text-success">{taskCounts.completed}</p>
+          <p className="text-xs text-muted-foreground mt-1">Completed</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => goToTasksFilteredBy("delayed")}
+          className="text-left p-4 rounded-lg border bg-destructive/10 border-destructive/30 hover:shadow-md transition-shadow"
+        >
+          <p className="text-2xl font-display font-bold text-destructive">{taskCounts.delayed}</p>
+          <p className="text-xs text-muted-foreground mt-1">Delayed</p>
+        </button>
       </div>
 
       {/* Legend */}

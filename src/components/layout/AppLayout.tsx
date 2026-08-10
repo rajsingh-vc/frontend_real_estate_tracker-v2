@@ -1,9 +1,13 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { MobileNav } from "./MobileNav";
-import { Bell, Search, Camera, Clock, CheckCircle, LogOut } from "lucide-react";
+import {
+  Bell, Search, Camera, Clock, CheckCircle, LogOut, X,
+  Building2, Layers, ListChecks, AlertTriangle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -25,6 +29,10 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useAuth, AuthUser } from "@/contexts/AuthContext";
+import {
+  projectsApi, towersApi, floorsApi, tasksApi, hurdlesApi,
+  type ApiProject, type ApiTower, type ApiFloor, type ApiTask, type ApiHurdle,
+} from "@/lib/api";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -33,10 +41,24 @@ interface AppLayoutProps {
 // ---------- Helper: get user initials ----------
 function getUserInitials(user: AuthUser | null): string {
   if (!user) return "?";
-  if (user.username === "Vibe@Admin") {
-    return "VB";
+
+  // Prefer the display name, fall back to username if name is blank.
+  const source = (user.name && user.name.trim()) || (user.username && user.username.trim()) || "";
+  if (!source) return "?";
+
+  // ✅ NEW — usernames like "Vibe@Admin" aren't emails, they're
+  // "Company@Role"-style handles. Take the first letter of each segment
+  // around the "@" instead of treating the whole thing as one word.
+  // "Vibe@Admin" -> "VA"
+  if (source.includes("@")) {
+    const parts = source.split("@").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+    }
+    return parts[0]?.charAt(0).toUpperCase() ?? "?";
   }
-  const nameParts = user.name?.trim().split(/\s+/) || [];
+
+  const nameParts = source.split(/\s+/).filter(Boolean);
   if (nameParts.length === 0) return "?";
   if (nameParts.length === 1) {
     return nameParts[0].charAt(0).toUpperCase();
@@ -44,6 +66,286 @@ function getUserInitials(user: AuthUser | null): string {
   const first = nameParts[0].charAt(0).toUpperCase();
   const last = nameParts[nameParts.length - 1].charAt(0).toUpperCase();
   return first + last;
+}
+
+// ---------- Top Search (NEW) ----------
+// A single flat search result, normalized across the 5 entity types so the
+// dropdown can render/group them uniformly.
+type SearchResultType = "project" | "tower" | "floor" | "task" | "hurdle";
+interface SearchResult {
+  type: SearchResultType;
+  id: number;
+  title: string;
+  subtitle?: string;
+  // Parent ids needed to build the correct drill-down path for towers/floors
+  // (e.g. /projects/:projectId/towers/:towerId), so selecting a result can
+  // route straight to that exact item instead of just the dashboard.
+  projectId?: number;
+  towerId?: number;
+}
+
+const RESULT_ICON: Record<SearchResultType, React.ComponentType<{ className?: string }>> = {
+  project: Building2,
+  tower: Building2,
+  floor: Layers,
+  task: ListChecks,
+  hurdle: AlertTriangle,
+};
+
+const RESULT_LABEL: Record<SearchResultType, string> = {
+  project: "Project",
+  tower: "Tower",
+  floor: "Floor",
+  task: "Task",
+  hurdle: "Hurdle",
+};
+
+const MAX_PER_GROUP = 4;
+
+function TopSearch() {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Same query keys used on the Dashboard, so this shares React Query's
+  // cache — if the Dashboard has already loaded this data, search opens
+  // instantly with no extra network call. `enabled: isOpen` means a page
+  // that never touches search never fetches this data at all.
+  const { data: projects = [], isLoading: projectsLoading } = useQuery({
+    queryKey: ["projects"],
+    queryFn: projectsApi.list,
+    enabled: isOpen,
+  });
+  const { data: towers = [], isLoading: towersLoading } = useQuery({
+    queryKey: ["towers"],
+    queryFn: towersApi.list,
+    enabled: isOpen,
+  });
+  const { data: floors = [], isLoading: floorsLoading } = useQuery({
+    queryKey: ["floors"],
+    queryFn: floorsApi.list,
+    enabled: isOpen,
+  });
+  const { data: tasks = [], isLoading: tasksLoading } = useQuery({
+    queryKey: ["tasks"],
+    queryFn: tasksApi.list,
+    enabled: isOpen,
+  });
+  const { data: hurdles = [], isLoading: hurdlesLoading } = useQuery({
+    queryKey: ["hurdles"],
+    queryFn: hurdlesApi.list,
+    enabled: isOpen,
+  });
+
+  const isLoading = projectsLoading || towersLoading || floorsLoading || tasksLoading || hurdlesLoading;
+
+  const towerById = useMemo(() => new Map(towers.map((t: ApiTower) => [t.id, t])), [towers]);
+  const projectById = useMemo(() => new Map(projects.map((p: ApiProject) => [p.id, p])), [projects]);
+
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [] as SearchResult[];
+
+    const matches = (...fields: (string | null | undefined)[]) =>
+      fields.some(f => f && f.toLowerCase().includes(q));
+
+    const projectResults: SearchResult[] = projects
+      .filter((p: ApiProject) => matches(p.name, p.location, p.reraNumber))
+      .slice(0, MAX_PER_GROUP)
+      .map((p: ApiProject) => ({ type: "project" as const, id: p.id, title: p.name, subtitle: p.location }));
+
+    const towerResults: SearchResult[] = towers
+      .filter((t: ApiTower) => matches(t.name))
+      .slice(0, MAX_PER_GROUP)
+      .map((t: ApiTower) => ({
+        type: "tower" as const,
+        id: t.id,
+        title: t.name,
+        subtitle: projectById.get(t.projectId)?.name,
+        projectId: t.projectId,
+      }));
+
+    const floorResults: SearchResult[] = floors
+      .filter((f: ApiFloor) => matches(f.name))
+      .slice(0, MAX_PER_GROUP)
+      .map((f: ApiFloor) => ({
+        type: "floor" as const,
+        id: f.id,
+        title: f.name,
+        subtitle: towerById.get(f.towerId)?.name,
+        projectId: f.projectId,
+        towerId: f.towerId,
+      }));
+
+    const taskResults: SearchResult[] = tasks
+      .filter((t: ApiTask) => matches(t.title, t.department, t.phase))
+      .slice(0, MAX_PER_GROUP)
+      .map((t: ApiTask) => ({
+        type: "task" as const,
+        id: t.id,
+        title: t.title,
+        subtitle: [t.department, t.phase].filter(Boolean).join(" · "),
+      }));
+
+    const hurdleResults: SearchResult[] = hurdles
+      .filter((h: ApiHurdle) => matches(h.title, h.affectedTower, h.type, h.responsibleDepartment))
+      .slice(0, MAX_PER_GROUP)
+      .map((h: ApiHurdle) => ({
+        type: "hurdle" as const,
+        id: h.id,
+        title: h.title,
+        subtitle: h.affectedTower,
+      }));
+
+    return [...projectResults, ...towerResults, ...floorResults, ...taskResults, ...hurdleResults];
+  }, [query, projects, towers, floors, tasks, hurdles, projectById, towerById]);
+
+  const grouped = useMemo(() => {
+    const groups: Partial<Record<SearchResultType, SearchResult[]>> = {};
+    results.forEach(r => {
+      if (!groups[r.type]) groups[r.type] = [];
+      groups[r.type]!.push(r);
+    });
+    return groups;
+  }, [results]);
+
+  // Close on outside click / Escape
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setIsOpen(false);
+        inputRef.current?.blur();
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
+  const handleClear = () => {
+    setQuery("");
+    inputRef.current?.focus();
+  };
+
+  const handleSelectResult = (result: SearchResult) => {
+    setIsOpen(false);
+    setQuery("");
+
+    // Route each result type to its actual detail view instead of just the
+    // dashboard, so picking a result shows that specific project/tower/
+    // floor/task/hurdle rather than a generic landing page.
+    switch (result.type) {
+      case "project":
+        navigate(`/projects/${result.id}`);
+        break;
+      case "tower":
+        // Tower routes are nested under their project.
+        navigate(`/projects/${result.projectId}/towers/${result.id}`);
+        break;
+      case "floor":
+        // Floor routes are nested under project + tower.
+        navigate(`/projects/${result.projectId}/towers/${result.towerId}/floors/${result.id}`);
+        break;
+      case "task":
+        // Tasks page reads openTaskId from navigation state and
+        // auto-opens that task's detail dialog.
+        navigate("/tasks", { state: { openTaskId: result.id } });
+        break;
+      case "hurdle":
+        // Hurdle Tracker reads openHurdleId from navigation state and
+        // auto-opens that hurdle's detail dialog.
+        navigate("/hurdles", { state: { openHurdleId: result.id } });
+        break;
+      default:
+        navigate("/", { state: { searchResult: result } });
+    }
+  };
+
+  const showDropdown = isOpen && query.trim().length > 0;
+  const hasResults = results.length > 0;
+
+  return (
+    <div ref={containerRef} className="relative hidden md:flex max-w-md flex-1">
+      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground z-10" />
+      <Input
+        ref={inputRef}
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        placeholder="Search projects, tasks, hurdles..."
+        className="pl-9 pr-8 bg-muted/50 border-0 h-9"
+      />
+      {query.length > 0 && (
+        <button
+          type="button"
+          onClick={handleClear}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          aria-label="Clear search"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
+
+      {showDropdown && (
+        <div className="absolute top-full mt-2 w-full max-h-[420px] overflow-y-auto rounded-lg border bg-popover shadow-lg z-50">
+          {isLoading && (
+            <p className="text-sm text-muted-foreground text-center py-6">Searching…</p>
+          )}
+          {!isLoading && !hasResults && (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No results for "{query}"
+            </p>
+          )}
+          {!isLoading && hasResults && (
+            <div className="py-1">
+              {(Object.keys(grouped) as SearchResultType[]).map(type => {
+                const items = grouped[type]!;
+                const Icon = RESULT_ICON[type];
+                return (
+                  <div key={type} className="py-1">
+                    <p className="px-3 pt-1.5 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {RESULT_LABEL[type]}s
+                    </p>
+                    {items.map(item => (
+                      <button
+                        key={`${item.type}-${item.id}`}
+                        type="button"
+                        onClick={() => handleSelectResult(item)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="h-7 w-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                          <Icon className="h-3.5 w-3.5 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{item.title}</p>
+                          {item.subtitle && (
+                            <p className="text-xs text-muted-foreground truncate">{item.subtitle}</p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------- Profile Menu Component (UPDATED) ----------
@@ -79,6 +381,11 @@ function ProfileMenu({ user, onLogout }: ProfileMenuProps) {
 
   const initials = getUserInitials(user);
   const displayName = user?.name || user?.username || "User";
+  // ✅ NEW — superusers have no Role record assigned on the backend (role
+  // is null for SuperAdmin by design), so user.role comes back blank for
+  // them. Show "Super Admin" explicitly in that case instead of falling
+  // through to a blank/"User" label.
+  const displayRole = user?.is_superuser ? "Super Admin" : user?.role || "";
 
   // ---------- Improved camera start with fallback & retry ----------
   // Camera and geolocation are browser APIs that ONLY work in a "secure
@@ -313,20 +620,34 @@ function ProfileMenu({ user, onLogout }: ProfileMenuProps) {
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="relative h-9 w-9 rounded-full p-0 hover:bg-muted/50"
+            className="relative flex items-center gap-2 h-9 rounded-full px-2 hover:bg-muted/50"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
-              {initials}
+            <div className="relative shrink-0">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
+                {initials}
+              </div>
+              {isCheckedIn && (
+                <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-success border-2 border-background" />
+              )}
             </div>
-            {isCheckedIn && (
-              <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-success border-2 border-background" />
-            )}
+            {/* ✅ NEW — visible username (+ role) in the top-right corner */}
+            <span className="hidden sm:flex flex-col items-start leading-tight max-w-[140px]">
+              <span className="text-sm font-medium truncate w-full text-left">{displayName}</span>
+              {displayRole && (
+                <span className="text-[10px] text-muted-foreground truncate w-full text-left">
+                  {displayRole}
+                </span>
+              )}
+            </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel className="font-normal">
             <div className="flex flex-col space-y-1">
               <p className="text-sm font-medium leading-none">{displayName}</p>
+              {displayRole && (
+                <p className="text-xs leading-none text-muted-foreground">{displayRole}</p>
+              )}
               <p className="text-xs leading-none text-muted-foreground">
                 {isCheckedIn ? "✅ Checked In" : "⏳ Checked Out"}
               </p>
@@ -522,10 +843,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b bg-card/80 backdrop-blur-sm px-4 md:px-6">
             <SidebarTrigger className="hidden md:flex" />
             <div className="flex-1 flex items-center gap-4">
-              <div className="relative hidden md:flex max-w-md flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input placeholder="Search projects, tasks, hurdles..." className="pl-9 bg-muted/50 border-0 h-9" />
-              </div>
+              <TopSearch />
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />

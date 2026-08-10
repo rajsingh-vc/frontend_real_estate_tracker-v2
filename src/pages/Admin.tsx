@@ -155,7 +155,7 @@ function UsersTab({ currentUser }: { currentUser: User }) {
             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             <Plus size={16} />
-            Invite User
+            {/* Invite User */}
           </button>
         )}
       </div>
@@ -1416,7 +1416,8 @@ function InvitationDetailDialog({
         {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
         {resent && !error && <p className="text-sm text-green-600 mt-3">Invitation email resent.</p>}
 
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-4 mt-2 border-t border-gray-100">
+        <div className="flex flex-col gap-3 pt-4 mt-2 border-t border-gray-100">
+          {/* Top row: invitation-level actions (unchanged) */}
           <div className="flex flex-wrap items-center gap-3">
             {invitation.status === "pending" && (
               <button
@@ -1449,43 +1450,49 @@ function InvitationDetailDialog({
                 Edit user
               </button>
             )}
-            {!isEditing ? (
-              <button
-                type="button"
-                onClick={handleEdit}
-                disabled={submitting}
-                className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
-              >
-                Edit
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  disabled={submitting}
-                  className="text-sm font-medium text-gray-600 hover:text-gray-700 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={submitting}
-                  className="text-sm font-medium text-green-600 hover:text-green-700 disabled:opacity-50"
-                >
-                  {submitting ? "Saving…" : "Save changes"}
-                </button>
-              </>
-            )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100"
-          >
-            Close
-          </button>
+
+          {/* Bottom row: edit-mode controls (Edit, or Cancel / Save changes) + Close */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              {!isEditing ? (
+                <button
+                  type="button"
+                  onClick={handleEdit}
+                  disabled={submitting}
+                  className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                >
+                  Edit
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    disabled={submitting}
+                    className="text-sm font-medium text-gray-600 hover:text-gray-700 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={submitting}
+                    className="text-sm font-medium text-green-600 hover:text-green-700 disabled:opacity-50"
+                  >
+                    {submitting ? "Saving…" : "Save changes"}
+                  </button>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

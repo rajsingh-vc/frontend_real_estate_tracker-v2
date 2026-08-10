@@ -10,23 +10,19 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Search, CheckSquare, Plus, Trash2, Edit2, X, Upload, Loader2, ClipboardList } from "lucide-react";
+import { Search, CheckSquare, Plus, Trash2, Edit2, X, Upload, Loader2, ClipboardList, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   checklistTemplatesApi, checklistsApi, tasksApi, projectsApi, statusesApi,
-  towersApi, floorsApi, // ✅ NEW: needed for Category (Tower) / Sub Category (Floor) linking
+  towersApi, floorsApi,
   type ApiChecklistTemplate, type ChecklistTemplatePayload, type ApiChecklist, ApiError,
 } from "@/lib/api";
 import { extractTableStructure, autoMatchColumn, type TableStructure } from "@/lib/pdfTableExtractor";
 
 // ----------------------------------------------------------------------------
-// PDF import config — same "map a field to a PDF column, pin a fixed value,
-// or type your own" pattern used for Task import in Documents.tsx, adapted
-// to checklist templates. Rows that resolve to the same Template Name +
-// Category are grouped into one template, so a single PDF containing
-// several checklists (e.g. one per phase) creates several templates at once.
+// PDF import config
 // ----------------------------------------------------------------------------
 
 const CHECKLIST_IMPORT_FIELDS: { key: string; label: string; required: boolean }[] = [
@@ -47,15 +43,20 @@ const CHECKLIST_FIELD_SYNONYMS: Record<string, string[]> = {
   category: ["category", "phase", "stage", "section", "group", "discipline"],
 };
 
+// ✅ NEW: path to a sample import file. Drop `sample-checklist-import.pdf`
+// (provided alongside this component) into your app's `public/` folder so
+// this link resolves to it, e.g. `public/sample-checklist-import.pdf`.
+const SAMPLE_IMPORT_PDF_PATH = "/sample-checklist-import.pdf";
+
 type ImportGroup = { name: string; category: string; items: string[] };
 
-// ============================================================================
-// ✅ Same treatment as Tasks.tsx: checklist statuses are no longer a
-// hardcoded pending/completed toggle — they're pulled live from
-// GET /statuses/?entity=checklist (distinct status values actually in use
-// on Checklists), so the filter always matches whatever status text your
-// checklists really carry instead of a fixed two-value guess.
-// ============================================================================
+// ✅ NEW: case/whitespace-insensitive compare helper. Statuses coming back
+// from the API aren't guaranteed to match the exact casing used in the
+// filter UI (e.g. "pending" vs "Pending"), which was silently breaking the
+// status filter below — everything matched or nothing did, depending on
+// casing, even though the badges looked "selected".
+const normalize = (s?: string | null) => (s ?? "").trim().toLowerCase();
+
 const FALLBACK_CHECKLIST_STATUSES = [
   { value: "Pending", label: "Pending" },
   { value: "Completed", label: "Completed" },
@@ -79,8 +80,6 @@ function ProjectChecklistsTab() {
     queryFn: checklistsApi.list,
   });
   const statusOptions = useChecklistStatuses();
-  // Needed to resolve taskId -> title and projectId -> name, since ApiChecklist
-  // only carries the raw FK ids, not display names.
   const { data: tasks = [] } = useQuery({ queryKey: ["tasks"], queryFn: tasksApi.list });
   const { data: projects = [] } = useQuery({ queryKey: ["projects"], queryFn: projectsApi.list });
 
@@ -98,9 +97,12 @@ function ProjectChecklistsTab() {
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
 
+  // ✅ FIXED: was `c.status !== statusFilter` (exact, case-sensitive match).
+  // Now compares normalized (trimmed + lowercased) values, same as the
+  // "Completed" pill styling logic below already does.
   const filtered = checklists.filter((c) => {
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
-    if (statusFilter && c.status !== statusFilter) return false;
+    if (statusFilter && normalize(c.status) !== normalize(statusFilter)) return false;
     return true;
   });
 
@@ -129,7 +131,7 @@ function ProjectChecklistsTab() {
         {statusOptions.map(s => (
           <Badge
             key={s.value}
-            variant={statusFilter === s.value ? "default" : "secondary"}
+            variant={statusFilter && normalize(statusFilter) === normalize(s.value) ? "default" : "secondary"}
             className="cursor-pointer"
             onClick={() => setStatusFilter(s.value)}
           >
@@ -157,7 +159,7 @@ function ProjectChecklistsTab() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge
-                    variant={checklist.status?.toLowerCase() === "completed" ? "default" : "secondary"}
+                    variant={normalize(checklist.status) === "completed" ? "default" : "secondary"}
                     className="text-xs w-fit capitalize"
                   >
                     {checklist.status}
@@ -198,6 +200,236 @@ function ProjectChecklistsTab() {
   );
 }
 
+// ==================== Template Form (extracted and memoized) ====================
+// ✅ CHANGED: checklist items are now `{ id, value }` drafts instead of plain
+// strings, keyed by a stable id (generated once per item, never reused).
+// Before, the item rows were keyed by array index — every insert/remove
+// shifted every index below it, so React reused the wrong DOM <input>
+// elements for the wrong rows and typing into an item (especially right
+// after adding/removing one) could land on the wrong field or appear to do
+// nothing. Keying by a stable id fixes that class of bug outright.
+export interface ChecklistItemDraft {
+  id: string;
+  value: string;
+}
+
+let itemIdCounter = 0;
+const makeItemId = () =>
+  (typeof crypto !== "undefined" && "randomUUID" in crypto)
+    ? crypto.randomUUID()
+    : `item-${Date.now()}-${itemIdCounter++}`;
+
+const makeItem = (value = ""): ChecklistItemDraft => ({ id: makeItemId(), value });
+const makeItems = (values: string[]): ChecklistItemDraft[] => values.map((v) => makeItem(v));
+
+interface TemplateFormProps {
+  formName: string;
+  setFormName: (val: string) => void;
+  formCategory: string;
+  setFormCategory: (val: string) => void;
+  formItems: ChecklistItemDraft[];
+  setFormItems: (val: ChecklistItemDraft[]) => void;
+  formProjectId: string;
+  setFormProjectId: (val: string) => void;
+  formCategoryId: string;
+  setFormCategoryId: (val: string) => void;
+  formSubCategoryId: string;
+  setFormSubCategoryId: (val: string) => void;
+  allProjects: any[];
+  formProjectTowers: any[];
+  formCategoryFloors: any[];
+  onSubmit: () => void;
+  submitLabel: string;
+  submitting: boolean;
+  onCancel: () => void;
+}
+
+const TemplateForm = ({
+  formName, setFormName,
+  formCategory, setFormCategory,
+  formItems, setFormItems,
+  formProjectId, setFormProjectId,
+  formCategoryId, setFormCategoryId,
+  formSubCategoryId, setFormSubCategoryId,
+  allProjects,
+  formProjectTowers,
+  formCategoryFloors,
+  onSubmit,
+  submitLabel,
+  submitting,
+  onCancel,
+}: TemplateFormProps) => {
+  // Handlers for items — operate by id now, not by index, so a stale index
+  // captured in a closure can never point at the wrong row.
+  const updateItem = (id: string, value: string) => {
+    setFormItems(formItems.map((it) => (it.id === id ? { ...it, value } : it)));
+  };
+
+  const addItem = (afterId: string) => {
+    const index = formItems.findIndex((it) => it.id === afterId);
+    const newItems = [...formItems];
+    newItems.splice(index + 1, 0, makeItem());
+    setFormItems(newItems);
+  };
+
+  const removeItem = (id: string) => {
+    if (formItems.length <= 1) return;
+    setFormItems(formItems.filter((it) => it.id !== id));
+  };
+
+  const addItemAtEnd = () => {
+    setFormItems([...formItems, makeItem()]);
+  };
+
+  const formProjectHasCategories = formProjectId !== "" && formProjectTowers.length > 0;
+  const filledCount = formItems.filter((it) => it.value.trim()).length;
+
+  return (
+    <div className="grid gap-4 mt-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Template Name *</Label>
+          <Input
+            value={formName}
+            onChange={(e) => setFormName(e.target.value)}
+            placeholder="e.g., Slab Casting"
+            autoComplete="off"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Project</Label>
+          <Select
+            value={formProjectId}
+            onValueChange={(v) => {
+              setFormProjectId(v);
+              setFormCategoryId("");
+              setFormSubCategoryId("");
+              setFormCategory("");
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select project (optional)" />
+            </SelectTrigger>
+            <SelectContent>
+              {allProjects.map((p) => (
+                <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>{formProjectHasCategories ? "Category" : "Category (Type/Tag)"}</Label>
+          {formProjectHasCategories ? (
+            <Select
+              value={formCategoryId}
+              onValueChange={(v) => {
+                setFormCategoryId(v);
+                setFormSubCategoryId("");
+                const tower = formProjectTowers.find((t) => String(t.id) === v);
+                setFormCategory(tower?.name ?? "");
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                {formProjectTowers.map((t) => (
+                  <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={formCategory}
+              onChange={(e) => setFormCategory(e.target.value)}
+              placeholder={
+                formProjectId ? "No categories set up for this project yet — type a tag" : "e.g., Foundation"
+              }
+              autoComplete="off"
+            />
+          )}
+        </div>
+
+        {formProjectHasCategories && (
+          <div className="space-y-2">
+            <Label>Sub Category</Label>
+            <Select
+              value={formSubCategoryId}
+              onValueChange={setFormSubCategoryId}
+              disabled={!formCategoryId}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={!formCategoryId ? "Select category first" : "Select sub category (optional)"} />
+              </SelectTrigger>
+              <SelectContent>
+                {formCategoryFloors.map((f) => (
+                  <SelectItem key={f.id} value={String(f.id)}>
+                    {f.name || `Floor ${f.number}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label>Checklist Items</Label>
+          <span className="text-xs text-muted-foreground">
+            {filledCount} item{filledCount === 1 ? "" : "s"}
+          </span>
+        </div>
+        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+          {formItems.map((item, i) => (
+            <div key={item.id} className="flex gap-2 items-center">
+              <span className="text-xs text-muted-foreground w-5 shrink-0 text-right">{i + 1}.</span>
+              <Input
+                value={item.value}
+                onChange={(e) => updateItem(item.id, e.target.value)}
+                placeholder={`Item ${i + 1}`}
+                autoComplete="off"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                onClick={() => addItem(item.id)}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              {formItems.length > 1 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  onClick={() => removeItem(item.id)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={addItemAtEnd}>
+          <Plus className="h-3 w-3 mr-1" />Add Item
+        </Button>
+      </div>
+      <div className="flex justify-end gap-3">
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button type="button" onClick={onSubmit} disabled={!formName.trim() || submitting}>
+          {submitting ? "Saving…" : submitLabel}
+        </Button>
+      </div>
+    </div>
+  );
+};
+
 // ==================== Main Checklists Component ====================
 const Checklists = () => {
   const { toast } = useToast();
@@ -209,15 +441,11 @@ const Checklists = () => {
 
   const [formName, setFormName] = useState("");
   const [formCategory, setFormCategory] = useState("");
-  const [formItems, setFormItems] = useState<string[]>([""]);
-
-  // ✅ NEW: which Project / Category (Tower) / Sub Category (Floor) this
-  // template applies to. All optional — a template can stay unlinked.
+  const [formItems, setFormItems] = useState<ChecklistItemDraft[]>(() => [makeItem()]);
   const [formProjectId, setFormProjectId] = useState("");
-  const [formCategoryId, setFormCategoryId] = useState(""); // Tower id
-  const [formSubCategoryId, setFormSubCategoryId] = useState(""); // Floor id
+  const [formCategoryId, setFormCategoryId] = useState("");
+  const [formSubCategoryId, setFormSubCategoryId] = useState("");
 
-  // ✅ NEW: filters for the template list, mirroring the form's cascade.
   const [filterProjectId, setFilterProjectId] = useState("");
   const [filterCategoryId, setFilterCategoryId] = useState("");
   const [filterSubCategoryId, setFilterSubCategoryId] = useState("");
@@ -238,30 +466,56 @@ const Checklists = () => {
     queryFn: checklistTemplatesApi.list,
   });
 
-  // ✅ NEW: data for the Project -> Category (Tower) -> Sub Category (Floor)
-  // cascade, reused for both the create/edit form and the list filters.
   const { data: allProjects = [] } = useQuery({ queryKey: ["projects"], queryFn: projectsApi.list });
   const { data: allTowers = [] } = useQuery({ queryKey: ["towers"], queryFn: towersApi.list });
   const { data: allFloors = [] } = useQuery({ queryKey: ["floors"], queryFn: floorsApi.list });
 
-  const formProjectTowers = allTowers.filter((t) => t.projectId === Number(formProjectId));
-  const formCategoryFloors = allFloors.filter((f) => f.towerId === Number(formCategoryId));
+  const formProjectTowers = useMemo(
+    () => allTowers.filter((t) => t.projectId === Number(formProjectId)),
+    [allTowers, formProjectId]
+  );
+  const formCategoryFloors = useMemo(
+    () => allFloors.filter((f) => f.towerId === Number(formCategoryId)),
+    [allFloors, formCategoryId]
+  );
 
-  const filterProjectTowers = allTowers.filter((t) => t.projectId === Number(filterProjectId));
-  const filterCategoryFloors = allFloors.filter((f) => f.towerId === Number(filterCategoryId));
+  const filterProjectTowers = useMemo(
+    () => allTowers.filter((t) => t.projectId === Number(filterProjectId)),
+    [allTowers, filterProjectId]
+  );
+  const filterCategoryFloors = useMemo(
+    () => allFloors.filter((f) => f.towerId === Number(filterCategoryId)),
+    [allFloors, filterCategoryId]
+  );
 
-  const projectById = new Map(allProjects.map((p) => [p.id, p]));
-  const towerById = new Map(allTowers.map((t) => [t.id, t]));
-  const floorById = new Map(allFloors.map((f) => [f.id, f]));
+  const projectById = useMemo(() => new Map(allProjects.map((p) => [p.id, p])), [allProjects]);
+  const towerById = useMemo(() => new Map(allTowers.map((t) => [t.id, t])), [allTowers]);
+  const floorById = useMemo(() => new Map(allFloors.map((f) => [f.id, f])), [allFloors]);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["checklist-templates"] });
-  const onMutationError = (fallback: string) => (err: unknown) => {
-    toast({
-      title: fallback,
-      description: err instanceof ApiError ? err.message : "Please try again.",
-      variant: "destructive",
-    });
-  };
+  const invalidate = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ["checklist-templates"] }),
+    [queryClient]
+  );
+
+  const onMutationError = useCallback(
+    (fallback: string) => (err: unknown) => {
+      toast({
+        title: fallback,
+        description: err instanceof ApiError ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    },
+    [toast]
+  );
+
+  const resetForm = useCallback(() => {
+    setFormName("");
+    setFormCategory("");
+    setFormItems([makeItem()]);
+    setFormProjectId("");
+    setFormCategoryId("");
+    setFormSubCategoryId("");
+  }, []);
 
   const createMutation = useMutation({
     mutationFn: (payload: ChecklistTemplatePayload) => checklistTemplatesApi.create(payload),
@@ -295,11 +549,6 @@ const Checklists = () => {
     onError: onMutationError("Couldn't delete template"),
   });
 
-  // Bulk-creates one template per group produced by generateImportPreview.
-  // Uses the existing single-record create() endpoint per group (rather than
-  // assuming a bulk endpoint exists on the backend, the way tasksApi.bulkCreate
-  // does for Tasks) — see the note at the bottom of the accompanying message
-  // if you'd rather add a real bulk endpoint for atomicity/perf later.
   const bulkImportMutation = useMutation({
     mutationFn: async () => {
       const results = await Promise.allSettled(
@@ -340,62 +589,48 @@ const Checklists = () => {
     onError: onMutationError("Couldn't import checklist templates"),
   });
 
-  const resetForm = () => {
-    setFormName("");
-    setFormCategory("");
-    setFormItems([""]);
-    // ✅ NEW
-    setFormProjectId("");
-    setFormCategoryId("");
-    setFormSubCategoryId("");
-  };
-
-  const handleCreate = () => {
+  const handleCreate = useCallback(() => {
     if (!formName.trim()) return;
-    const items = formItems.filter(i => i.trim());
+    const items = formItems.map((it) => it.value).filter((v) => v.trim());
     if (items.length === 0) return;
     createMutation.mutate({
       name: formName,
       category: formCategory || 'General',
       items,
-      // ✅ NEW
       projectId: formProjectId ? Number(formProjectId) : null,
       categoryId: formCategoryId ? Number(formCategoryId) : null,
       subCategoryId: formSubCategoryId ? Number(formSubCategoryId) : null,
     });
-  };
+  }, [formName, formItems, formCategory, formProjectId, formCategoryId, formSubCategoryId, createMutation]);
 
-  const handleEdit = () => {
+  const handleEdit = useCallback(() => {
     if (!editingTemplate || !formName.trim()) return;
-    const items = formItems.filter(i => i.trim());
+    const items = formItems.map((it) => it.value).filter((v) => v.trim());
     updateMutation.mutate({
       id: editingTemplate.id,
       data: {
         name: formName,
         category: formCategory || editingTemplate.category,
         items,
-        // ✅ NEW
         projectId: formProjectId ? Number(formProjectId) : null,
         categoryId: formCategoryId ? Number(formCategoryId) : null,
         subCategoryId: formSubCategoryId ? Number(formSubCategoryId) : null,
       },
     });
-  };
+  }, [editingTemplate, formName, formItems, formCategory, formProjectId, formCategoryId, formSubCategoryId, updateMutation]);
 
-  const openEdit = (template: ApiChecklistTemplate) => {
+  const openEdit = useCallback((template: ApiChecklistTemplate) => {
     setFormName(template.name);
     setFormCategory(template.category);
-    setFormItems([...template.items, ""]);
-    // ✅ NEW: prefill the cascade from the template's linked ids, if any.
+    setFormItems(makeItems([...template.items, ""]));
     setFormProjectId(template.projectId ? String(template.projectId) : "");
     setFormCategoryId(template.categoryId ? String(template.categoryId) : "");
     setFormSubCategoryId(template.subCategoryId ? String(template.subCategoryId) : "");
     setEditingTemplate(template);
-  };
+  }, []);
 
   // ----- PDF import helpers -----
-
-  const resolveImportField = (fieldKey: string, row: string[]): string | undefined => {
+  const resolveImportField = useCallback((fieldKey: string, row: string[]): string | undefined => {
     const selection = importMapping[fieldKey];
     if (!selection) return undefined;
     if (selection === "__other__") {
@@ -406,24 +641,24 @@ const Checklists = () => {
     }
     const idx = extracted.headers.indexOf(selection);
     return idx !== -1 && row[idx] ? row[idx].trim() : undefined;
-  };
+  }, [importMapping, importManualValues, importUseFixedValue, importFixedValues, extracted.headers]);
 
-  const hasMappedImportValue = (fieldKey: string): boolean => {
+  const hasMappedImportValue = useCallback((fieldKey: string): boolean => {
     if (importMapping[fieldKey] === "__other__") return !!importManualValues[fieldKey]?.trim();
     if (importMapping[fieldKey] && importUseFixedValue[fieldKey]) return !!importFixedValues[fieldKey]?.trim();
     return !!importMapping[fieldKey];
-  };
+  }, [importMapping, importManualValues, importUseFixedValue, importFixedValues]);
 
   const canPreviewImport = hasMappedImportValue("templateName") && hasMappedImportValue("itemText");
 
-  const getUniqueImportValues = (headerName: string): string[] => {
+  const getUniqueImportValues = useCallback((headerName: string): string[] => {
     const idx = extracted.headers.indexOf(headerName);
     if (idx === -1) return [];
     const values = extracted.rows.map((row) => row[idx]?.trim()).filter((v): v is string => !!v);
     return Array.from(new Set(values));
-  };
+  }, [extracted.headers, extracted.rows]);
 
-  const generateImportPreview = () => {
+  const generateImportPreview = useCallback(() => {
     if (!canPreviewImport) {
       toast({ title: "Map a Template Name and Checklist Item column first", variant: "destructive" });
       return;
@@ -446,9 +681,9 @@ const Checklists = () => {
       const totalItems = result.reduce((sum, g) => sum + g.items.length, 0);
       toast({ title: `Preview ready: ${result.length} template(s), ${totalItems} items` });
     }
-  };
+  }, [canPreviewImport, extracted.rows, resolveImportField, toast]);
 
-  const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0] ?? null;
     setImportFile(selected);
     setExtracted({ headers: [], rows: [] });
@@ -481,9 +716,9 @@ const Checklists = () => {
     } finally {
       setParsingPdf(false);
     }
-  };
+  }, [toast]);
 
-  const resetImportDialog = () => {
+  const resetImportDialog = useCallback(() => {
     setImportFile(null);
     setExtracted({ headers: [], rows: [] });
     setImportMapping({});
@@ -492,148 +727,7 @@ const Checklists = () => {
     setImportFixedValues({});
     setImportPreview([]);
     setImportOpen(false);
-  };
-
-  // A project "has categories" if it has at least one Tower set up in
-  // Category Management. Only then does the Category field become a
-  // dropdown of those real categories — a project with none configured
-  // yet falls back to a plain text tag instead of showing an empty,
-  // unusable dropdown.
-  const formProjectHasCategories = formProjectId !== "" && formProjectTowers.length > 0;
-
-  const TemplateForm = ({ onSubmit, submitLabel, submitting }: { onSubmit: () => void; submitLabel: string; submitting: boolean }) => (
-    <div className="grid gap-4 mt-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Template Name *</Label>
-          <Input value={formName} onChange={e => setFormName(e.target.value)} placeholder="e.g., Slab Casting" />
-        </div>
-        <div className="space-y-2">
-          <Label>Project</Label>
-          <Select
-            value={formProjectId}
-            onValueChange={(v) => {
-              setFormProjectId(v);
-              // Switching projects invalidates whatever category/sub
-              // category was picked (or typed) for the previous project.
-              setFormCategoryId("");
-              setFormSubCategoryId("");
-              setFormCategory("");
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select project (optional)" />
-            </SelectTrigger>
-            <SelectContent>
-              {allProjects.map((p) => (
-                <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* ✅ Category: dropdown of the selected project's real Categories
-          (Towers) when it has any; free-text tag otherwise (no project
-          picked yet, or the picked project has zero categories). */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>{formProjectHasCategories ? "Category" : "Category (Type/Tag)"}</Label>
-          {formProjectHasCategories ? (
-            <Select
-              value={formCategoryId}
-              onValueChange={(v) => {
-                setFormCategoryId(v);
-                setFormSubCategoryId("");
-                const tower = formProjectTowers.find((t) => String(t.id) === v);
-                setFormCategory(tower?.name ?? "");
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select category" />
-              </SelectTrigger>
-              <SelectContent>
-                {formProjectTowers.map((t) => (
-                  <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Input
-              value={formCategory}
-              onChange={(e) => setFormCategory(e.target.value)}
-              placeholder={
-                formProjectId ? "No categories set up for this project yet — type a tag" : "e.g., Foundation"
-              }
-            />
-          )}
-        </div>
-
-        {formProjectHasCategories && (
-          <div className="space-y-2">
-            <Label>Sub Category</Label>
-            <Select value={formSubCategoryId} onValueChange={setFormSubCategoryId} disabled={!formCategoryId}>
-              <SelectTrigger>
-                <SelectValue placeholder={!formCategoryId ? "Select category first" : "Select sub category (optional)"} />
-              </SelectTrigger>
-              <SelectContent>
-                {formCategoryFloors.map((f) => (
-                  <SelectItem key={f.id} value={String(f.id)}>
-                    {f.name || `Floor ${f.number}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label>Checklist Items</Label>
-          <span className="text-xs text-muted-foreground">
-            {formItems.filter(i => i.trim()).length} item{formItems.filter(i => i.trim()).length === 1 ? "" : "s"}
-          </span>
-        </div>
-        {/* Scrolls after ~6-7 rows instead of stretching the dialog to fit
-            every item — matters once a template has dozens of items (e.g.
-            from a PDF import). Numbering stays live as items are added/removed. */}
-        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-          {formItems.map((item, i) => (
-            <div key={i} className="flex gap-2 items-center">
-              <span className="text-xs text-muted-foreground w-5 shrink-0 text-right">{i + 1}.</span>
-              <Input value={item} onChange={e => { const items = [...formItems]; items[i] = e.target.value; setFormItems(items); }} placeholder={`Item ${i + 1}`} />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 shrink-0"
-                onClick={() => {
-                  setFormItems(prev => {
-                    const items = [...prev];
-                    items.splice(i + 1, 0, "");
-                    return items;
-                  });
-                }}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-              {formItems.length > 1 && (
-                <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => setFormItems(formItems.filter((_, j) => j !== i))}>
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setFormItems([...formItems, ""])}><Plus className="h-3 w-3 mr-1" />Add Item</Button>
-      </div>
-      <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={() => { setCreateOpen(false); setEditingTemplate(null); resetForm(); }}>Cancel</Button>
-        <Button onClick={onSubmit} disabled={!formName.trim() || submitting}>{submitting ? "Saving…" : submitLabel}</Button>
-      </div>
-    </div>
-  );
+  }, []);
 
   if (isLoading) {
     return <p className="text-center text-muted-foreground py-16">Loading checklist templates…</p>;
@@ -650,13 +744,15 @@ const Checklists = () => {
   const allTemplates = templates ?? [];
   const categories = [...new Set(allTemplates.map(t => t.category))];
 
+  // ✅ FIXED: project/category/sub-category filters now compare against
+  // normalized strings too, matching the same defensive pattern as the
+  // status filter above (guards against stray whitespace in stored ids).
   const filtered = allTemplates.filter(t => {
     if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (category && t.category !== category) return false;
-    // ✅ NEW: filter by linked Project / Category (Tower) / Sub Category (Floor)
-    if (filterProjectId && String(t.projectId ?? "") !== filterProjectId) return false;
-    if (filterCategoryId && String(t.categoryId ?? "") !== filterCategoryId) return false;
-    if (filterSubCategoryId && String(t.subCategoryId ?? "") !== filterSubCategoryId) return false;
+    if (filterProjectId && String(t.projectId ?? "").trim() !== filterProjectId.trim()) return false;
+    if (filterCategoryId && String(t.categoryId ?? "").trim() !== filterCategoryId.trim()) return false;
+    if (filterSubCategoryId && String(t.subCategoryId ?? "").trim() !== filterSubCategoryId.trim()) return false;
     return true;
   });
 
@@ -694,6 +790,21 @@ const Checklists = () => {
                     <DialogTitle className="font-display text-xl">Import Checklist Templates from PDF</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 mt-2">
+                    <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        Not sure how to format your PDF? Grab the sample below.
+                      </p>
+                      {/* ✅ NEW: sample import file download. Place
+                          sample-checklist-import.pdf in your app's public/
+                          folder so this resolves. */}
+                      <a href={SAMPLE_IMPORT_PDF_PATH} download>
+                        <Button type="button" variant="secondary" size="sm">
+                          <FileDown className="h-3.5 w-3.5 mr-1.5" />
+                          Download Sample PDF
+                        </Button>
+                      </a>
+                    </div>
+
                     <div className="grid gap-2">
                       <Label>PDF File</Label>
                       <Input type="file" accept="application/pdf" onChange={handleImportFileChange} />
@@ -838,7 +949,13 @@ const Checklists = () => {
               </Dialog>
 
               {/* ---- Manual create ---- */}
-              <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) resetForm(); }}>
+              <Dialog
+                open={createOpen}
+                onOpenChange={(open) => {
+                  setCreateOpen(open);
+                  if (!open) resetForm();
+                }}
+              >
                 <DialogTrigger asChild>
                   <Button><Plus className="h-4 w-4 mr-2" />New Template</Button>
                 </DialogTrigger>
@@ -846,7 +963,27 @@ const Checklists = () => {
                   <DialogHeader>
                     <DialogTitle className="font-display text-xl">Create Checklist Template</DialogTitle>
                   </DialogHeader>
-                  <TemplateForm onSubmit={handleCreate} submitLabel="Create Template" submitting={createMutation.isPending} />
+                  <TemplateForm
+                    formName={formName}
+                    setFormName={setFormName}
+                    formCategory={formCategory}
+                    setFormCategory={setFormCategory}
+                    formItems={formItems}
+                    setFormItems={setFormItems}
+                    formProjectId={formProjectId}
+                    setFormProjectId={setFormProjectId}
+                    formCategoryId={formCategoryId}
+                    setFormCategoryId={setFormCategoryId}
+                    formSubCategoryId={formSubCategoryId}
+                    setFormSubCategoryId={setFormSubCategoryId}
+                    allProjects={allProjects}
+                    formProjectTowers={formProjectTowers}
+                    formCategoryFloors={formCategoryFloors}
+                    onSubmit={handleCreate}
+                    submitLabel="Create Template"
+                    submitting={createMutation.isPending}
+                    onCancel={() => { setCreateOpen(false); resetForm(); }}
+                  />
                 </DialogContent>
               </Dialog>
             </div>
@@ -859,7 +996,7 @@ const Checklists = () => {
             </div>
           </div>
 
-          {/* ✅ NEW: Project / Category (Tower) / Sub Category (Floor) filters */}
+          {/* Filters */}
           <div className="flex flex-wrap gap-3">
             <Select
               value={filterProjectId}
@@ -925,7 +1062,6 @@ const Checklists = () => {
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((template) => {
-              // ✅ NEW: resolve linked project/category/sub-category names for display
               const linkedProject = template.projectId ? projectById.get(template.projectId) : undefined;
               const linkedCategory = template.categoryId ? towerById.get(template.categoryId) : undefined;
               const linkedSubCategory = template.subCategoryId ? floorById.get(template.subCategoryId) : undefined;
@@ -939,7 +1075,15 @@ const Checklists = () => {
                         <CardTitle className="text-base font-display">{template.name}</CardTitle>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Dialog open={editingTemplate?.id === template.id} onOpenChange={open => { if (!open) { setEditingTemplate(null); resetForm(); } }}>
+                        <Dialog
+                          open={editingTemplate?.id === template.id}
+                          onOpenChange={(open) => {
+                            if (!open) {
+                              setEditingTemplate(null);
+                              resetForm();
+                            }
+                          }}
+                        >
                           <DialogTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(template)}>
                               <Edit2 className="h-3.5 w-3.5" />
@@ -949,7 +1093,27 @@ const Checklists = () => {
                             <DialogHeader>
                               <DialogTitle className="font-display text-xl">Edit Template</DialogTitle>
                             </DialogHeader>
-                            <TemplateForm onSubmit={handleEdit} submitLabel="Save Changes" submitting={updateMutation.isPending} />
+                            <TemplateForm
+                              formName={formName}
+                              setFormName={setFormName}
+                              formCategory={formCategory}
+                              setFormCategory={setFormCategory}
+                              formItems={formItems}
+                              setFormItems={setFormItems}
+                              formProjectId={formProjectId}
+                              setFormProjectId={setFormProjectId}
+                              formCategoryId={formCategoryId}
+                              setFormCategoryId={setFormCategoryId}
+                              formSubCategoryId={formSubCategoryId}
+                              setFormSubCategoryId={setFormSubCategoryId}
+                              allProjects={allProjects}
+                              formProjectTowers={formProjectTowers}
+                              formCategoryFloors={formCategoryFloors}
+                              onSubmit={handleEdit}
+                              submitLabel="Save Changes"
+                              submitting={updateMutation.isPending}
+                              onCancel={() => { setEditingTemplate(null); resetForm(); }}
+                            />
                           </DialogContent>
                         </Dialog>
                         <Button
@@ -965,7 +1129,6 @@ const Checklists = () => {
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <Badge variant="secondary" className="text-xs w-fit">{template.category}</Badge>
-                      {/* ✅ NEW: badges for the linked Project / Category / Sub Category */}
                       {linkedProject && (
                         <Badge variant="outline" className="text-xs w-fit">{linkedProject.name}</Badge>
                       )}

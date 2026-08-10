@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import jsPDF from "jspdf";
 import { Card, CardContent } from "@/components/ui/card";
@@ -172,8 +173,8 @@ function initialsOf(name: string): string {
 
 // ============================================================================
 // PDF export for a single task. Client-side only (jsPDF) — builds a simple
-// text-based summary covering the core fields, checklist, and comments,
-// then triggers a download. No backend round trip required.
+// text-based summary covering the core fields, checklist, comments, and
+// attachments, then triggers a download. No backend round trip required.
 // ============================================================================
 function exportTaskToPDF(
   task: ApiTaskExt,
@@ -182,6 +183,7 @@ function exportTaskToPDF(
     towerName?: string;
     assigneeName?: string;
     dependencyTitle?: string;
+    attachments?: ApiDocument[];
   } = {}
 ) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -255,6 +257,16 @@ function exportTaskToPDF(
     line(`Checklist (${checklist.filter((c) => c.completed).length}/${checklist.length})`, 12, true);
     checklist.forEach((item) => {
       line(`${item.completed ? "[x]" : "[ ]"} ${item.title}`);
+    });
+    spacer();
+    divider();
+  }
+
+  // Attachments
+  if (opts.attachments && opts.attachments.length > 0) {
+    line(`Attachments (${opts.attachments.length})`, 12, true);
+    opts.attachments.forEach((doc) => {
+      line(`- ${doc.name}  (${doc.type} · ${doc.size})`);
     });
     spacer();
     divider();
@@ -421,17 +433,20 @@ function CameraCaptureDialog({
 // and delete both persist immediately via documentsApi.
 // ============================================================================
 
-function TaskAttachments({ task }: { task: ApiTaskExt }) {
+function TaskAttachments({
+  task,
+  attachments = [],
+  attachmentsLoading = false,
+}: {
+  task: ApiTaskExt;
+  attachments?: ApiDocument[];
+  attachmentsLoading?: boolean;
+}) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const browseInputRef = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
-
-  const { data: attachments = [], isLoading } = useQuery({
-    queryKey: ["documents", "task", task.id],
-    queryFn: () => documentsApi.list({ task: task.id }),
-  });
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) =>
@@ -476,7 +491,6 @@ function TaskAttachments({ task }: { task: ApiTaskExt }) {
   const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files && files.length > 0) {
-      // No accept/type filter — every file type is supported.
       Array.from(files).forEach((file) => uploadMutation.mutate(file));
     }
     event.target.value = "";
@@ -531,7 +545,7 @@ function TaskAttachments({ task }: { task: ApiTaskExt }) {
         onCapture={(file) => uploadMutation.mutate(file)}
       />
 
-      {isLoading ? (
+      {attachmentsLoading ? (
         <p className="text-xs text-muted-foreground">Loading attachments…</p>
       ) : attachments.length === 0 ? (
         <p className="text-xs text-muted-foreground">No attachments yet.</p>
@@ -598,7 +612,6 @@ function TaskChat({ task }: { task: ApiTaskExt }) {
     mutationFn: (text: string) => tasksApi.chat.send(task.id, text),
     onSuccess: () => {
       setMessage("");
-      // Reset height back to the single-line minimum after sending
       if (textareaRef.current) textareaRef.current.style.height = "auto";
       queryClient.invalidateQueries({ queryKey: ["taskChat", task.id] });
     },
@@ -641,8 +654,6 @@ function TaskChat({ task }: { task: ApiTaskExt }) {
     sendMutation.mutate(message.trim());
   };
 
-  // Auto-grow: expands the textarea as the user types (min ~40px,
-  // caps at ~160px then scrolls) instead of staying a cramped one-liner.
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
     const el = e.target;
@@ -650,7 +661,6 @@ function TaskChat({ task }: { task: ApiTaskExt }) {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
 
-  // Enter sends, Shift+Enter inserts a newline — standard chat-box behavior.
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -750,9 +760,6 @@ function TaskRelationsPanel({
     });
   };
 
-  // One generic mutation for this whole panel — every field here is a
-  // partial patch against the same task, so a single mutation with an
-  // optimistic merge keeps things simple instead of 5 near-identical ones.
   const patchMutation = useMutation({
     mutationFn: (patch: Partial<ApiTaskExt>) => tasksApi.update(task.id, patch as Partial<ApiTask>),
     onMutate: async (patch) => {
@@ -935,7 +942,6 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
 
   const { data: projects } = useQuery({ queryKey: ["projects"], queryFn: projectsApi.list });
   const { data: towers } = useQuery({ queryKey: ["towers"], queryFn: towersApi.list });
-  // ✅ FIXED: was useProjectStatuses() — this dialog edits a TASK's status.
   const taskStatuses = useTaskStatuses();
 
   // users fetched here (not just inside TaskRelationsPanel) so both the
@@ -947,6 +953,12 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
     queryFn: usersApi.list,
   });
   const { data: allTasksForExport } = useQuery({ queryKey: ["tasks"], queryFn: tasksApi.list });
+
+  // Fetch attachments for this task – shared with TaskAttachments and PDF export
+  const { data: attachments = [], isLoading: attachmentsLoading } = useQuery({
+    queryKey: ["documents", "task", task.id],
+    queryFn: () => documentsApi.list({ task: task.id }),
+  });
 
   // Fallback for tasks loaded from list endpoint (which omit nested arrays)
   const checklist = task.checklist ?? [];
@@ -968,15 +980,31 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
     });
   };
 
-  // optimistic comment post — the comment shows up immediately instead of
-  // waiting for a refetch. Rolls back if the request fails.
+  // ============================================================================
+  // ✅ FIXED: comments were disappearing right after being posted.
+  //
+  // Root cause: `tasksApi.list()` (the ["tasks"] query) omits nested
+  // `comments`/`checklist` arrays — see the "Fallback for tasks loaded from
+  // list endpoint" comment above. The old code did:
+  //   onMutate  -> optimistically appended the comment to task.comments
+  //   onSettled -> invalidateTasks() -> refetches tasksApi.list()
+  // That refetch overwrote the optimistic comment with the comment-less
+  // version from the list endpoint, so the comment vanished the instant the
+  // background refetch resolved.
+  //
+  // Fix: keep the optimistic update, but instead of invalidating the whole
+  // ["tasks"] list on success, reconcile just the new comment's temporary
+  // id with whatever the server actually returned. No more invalidateTasks()
+  // call here, so the list refetch can never strip comments back out.
+  // ============================================================================
   const commentMutation = useMutation({
     mutationFn: (text: string) => tasksApi.addComment(task.id, text),
     onMutate: async (text: string) => {
       await queryClient.cancelQueries({ queryKey: ["tasks"] });
       const previousTasks = queryClient.getQueryData<ApiTask[]>(["tasks"]);
+      const tempId = Date.now(); // temporary id, replaced once the server responds
       const optimisticComment = {
-        id: Date.now(), // temporary id, replaced once the server responds
+        id: tempId,
         user: "You",
         date: new Date().toISOString(),
         text,
@@ -989,7 +1017,23 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
         )
       );
       setNewComment("");
-      return { previousTasks };
+      return { previousTasks, tempId };
+    },
+    onSuccess: (serverComment, _text, context) => {
+      // Swap the temp comment for the real server copy (correct id/date/user)
+      // by patching it in place — no refetch of the comment-less list endpoint.
+      queryClient.setQueryData<ApiTask[]>(["tasks"], (old) =>
+        old?.map((t) =>
+          t.id === task.id
+            ? {
+                ...t,
+                comments: (t.comments ?? []).map((c) =>
+                  c.id === context?.tempId ? (serverComment ?? c) : c
+                ),
+              }
+            : t
+        )
+      );
     },
     onError: (err, _text, context) => {
       if (context?.previousTasks) {
@@ -997,13 +1041,42 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
       }
       onMutationError(err, "Add comment");
     },
-    onSettled: invalidateTasks,
+    // no onSettled: invalidateTasks — that refetch is what was wiping comments out
   });
 
+  // ============================================================================
+  // ✅ FIXED (same root cause as commentMutation above): toggling a checklist
+  // item used to call `invalidateTasks()` on success, which refetched
+  // tasksApi.list() and silently reverted the checklist toggle since the
+  // list endpoint doesn't include `checklist`. Now the toggle is applied
+  // optimistically and kept — no invalidation to undo it.
+  // ============================================================================
   const toggleChecklistMutation = useMutation({
     mutationFn: (itemId: number) => tasksApi.toggleChecklistItem(task.id, itemId),
-    onSuccess: invalidateTasks,
-    onError: (err) => onMutationError(err, "Toggle checklist item"),
+    onMutate: async (itemId: number) => {
+      await queryClient.cancelQueries({ queryKey: ["tasks"] });
+      const previousTasks = queryClient.getQueryData<ApiTask[]>(["tasks"]);
+      queryClient.setQueryData<ApiTask[]>(["tasks"], (old) =>
+        old?.map((t) =>
+          t.id === task.id
+            ? {
+                ...t,
+                checklist: (t.checklist ?? []).map((item) =>
+                  item.id === itemId ? { ...item, completed: !item.completed } : item
+                ),
+              }
+            : t
+        )
+      );
+      return { previousTasks };
+    },
+    onError: (err, _itemId, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(["tasks"], context.previousTasks);
+      }
+      onMutationError(err, "Toggle checklist item");
+    },
+    // no onSettled: invalidateTasks — see comment above
   });
 
   // status changes now also send a matching progress value, and update the
@@ -1039,14 +1112,15 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
     commentMutation.mutate(newComment);
   };
 
-  // wires the shared task/project/tower/assignee/dependency data already
-  // loaded in this dialog into the PDF export helper.
+  // wires the shared task/project/tower/assignee/dependency and attachments data
+  // already loaded in this dialog into the PDF export helper.
   const handleExportPDF = () => {
     exportTaskToPDF(task, {
       projectName: project?.name,
       towerName: tower?.name,
       assigneeName: assignee ? toTitleCase(assignee.name) : undefined,
       dependencyTitle: dependency?.title,
+      attachments,
     });
   };
 
@@ -1074,6 +1148,19 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
         </div>
         <DialogTitle className="font-display text-xl mt-2">{task.title}</DialogTitle>
         <p className="text-sm text-muted-foreground">{task.description}</p>
+        {/* ✅ NEW — created / updated date & time */}
+        {task.createdAt && (
+          <p className="text-xs text-muted-foreground">
+            Created {new Date(task.createdAt).toLocaleString(undefined, {
+              day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+            })}
+            {task.updatedAt && task.updatedAt !== task.createdAt && (
+              <> · Updated {new Date(task.updatedAt).toLocaleString(undefined, {
+                day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+              })}</>
+            )}
+          </p>
+        )}
       </DialogHeader>
 
       <div className="grid md:grid-cols-2 gap-4 mt-4">
@@ -1134,7 +1221,11 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
       )}
 
       {/* Attachments: browse files (any type) / camera capture (front & back) */}
-      <TaskAttachments task={task} />
+      <TaskAttachments
+        task={task}
+        attachments={attachments}
+        attachmentsLoading={attachmentsLoading}
+      />
 
       {/* Chat: separate from Comments below — near-real-time back-and-forth */}
       <TaskChat task={task} />
@@ -1169,9 +1260,9 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
 // (`import { TaskRow } from "@/pages/Tasks"`) to render direct-mode task
 // rows with the full feature set (chat, attachments, dependencies, etc.).
 // Without `export` here, TypeScript reports "no exported member 'TaskRow'".
-export function TaskRow({ task }: { task: ApiTaskExt }) {
+export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?: boolean }) {
   return (
-    <Dialog>
+    <Dialog defaultOpen={openOnMount}>
       <DialogTrigger asChild>
         <div className="grid grid-cols-[auto,1fr,auto,auto,auto,auto] items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors">
           {/* Status dot */}
@@ -1187,6 +1278,13 @@ export function TaskRow({ task }: { task: ApiTaskExt }) {
               <span>{task.department}</span>
               <span>·</span>
               <span>{task.phase}</span>
+              {/* ✅ NEW — created date */}
+              {task.createdAt && (
+                <>
+                  <span>·</span>
+                  <span>Created {new Date(task.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span>
+                </>
+              )}
             </div>
           </div>
 
@@ -1256,6 +1354,12 @@ function KanbanColumn({ status, columnTasks, onDrop }: { status: string; columnT
                       <span>·</span>
                       <span>{task.phase}</span>
                     </div>
+                    {/* ✅ NEW — created date */}
+                    {task.createdAt && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Created {new Date(task.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+                      </p>
+                    )}
                     <Progress value={task.progress} className="h-1" />
                   </CardContent>
                 </Card>
@@ -1272,8 +1376,13 @@ function KanbanColumn({ status, columnTasks, onDrop }: { status: string; columnT
 const Tasks = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const location = useLocation();
+  // Set when arriving here from the top search bar (search result → this
+  // page), so the matching task's detail dialog opens automatically.
+  const openTaskId = (location.state as { openTaskId?: number } | null)?.openTaskId;
+  const incomingStatusFilter = (location.state as { statusFilter?: string } | null)?.statusFilter;
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>(incomingStatusFilter ?? "all");
   const [deptFilter, setDeptFilter] = useState<string>("");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
 
@@ -1281,7 +1390,6 @@ const Tasks = () => {
     queryKey: ["tasks"],
     queryFn: tasksApi.list,
   });
-  // ✅ FIXED: was useProjectStatuses()
   const taskStatuses = useTaskStatuses();
 
   // dragging a card to a new Kanban column also updates progress to match,
@@ -1402,7 +1510,9 @@ const Tasks = () => {
 
         <TabsContent value="list" className="mt-4">
           <div className="space-y-2">
-            {filtered.map((task) => <TaskRow key={task.id} task={task} />)}
+            {filtered.map((task) => (
+              <TaskRow key={task.id} task={task} openOnMount={task.id === openTaskId} />
+            ))}
           </div>
           {filtered.length === 0 && <p className="text-center text-muted-foreground py-8">No tasks match filters</p>}
         </TabsContent>

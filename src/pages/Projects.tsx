@@ -1288,6 +1288,15 @@ function ProjectList({
                     {project.startDate || "--"} — {project.endDate || "--"}
                   </span>
                 </div>
+
+                {/* ✅ NEW — created date & time */}
+                {project.createdAt && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Created {new Date(project.createdAt).toLocaleString(undefined, {
+                      day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+                    })}
+                  </p>
+                )}
               </CardContent>
             </Card>
           );
@@ -1339,6 +1348,14 @@ function ProjectDetail({
             <MapPin className="h-4 w-4" />
             {project.location} · RERA: {project.reraNumber || "NA"}
           </p>
+          {/* ✅ NEW — created date & time */}
+          {project.createdAt && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Created {new Date(project.createdAt).toLocaleString(undefined, {
+                day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+              })}
+            </p>
+          )}
         </div>
         <Badge variant={project.status === "active" ? "default" : "secondary"} className="capitalize self-start">
           {project.status.replace("_", " ")}

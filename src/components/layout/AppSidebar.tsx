@@ -51,10 +51,24 @@ export function AppSidebar() {
   const isActive = (path: string) =>
     location.pathname === path || (path !== "/" && location.pathname.startsWith(path));
 
-  // Helper to get initials from full name
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
+  // Helper to get initials from full name, falling back to username when
+  // name is blank. Handles "Company@Role"-style handles like "Vibe@Admin"
+  // (-> "VA") in addition to normal "First Last" names.
+  const getInitials = (name?: string | null, username?: string | null) => {
+    const source = (name && name.trim()) || (username && username.trim()) || "";
+    if (!source) return "?";
+
+    if (source.includes("@")) {
+      const parts = source.split("@").map((p) => p.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+      }
+      return parts[0]?.charAt(0).toUpperCase() ?? "?";
+    }
+
+    return source
+      .split(/\s+/)
+      .filter(Boolean)
       .map((n) => n[0])
       .join("")
       .toUpperCase()
@@ -124,17 +138,22 @@ export function AppSidebar() {
         <div className="flex items-center gap-3 rounded-lg bg-sidebar-accent px-3 py-2">
           {/* Avatar with initials */}
           <div className="h-8 w-8 rounded-full bg-sidebar-primary text-sidebar-primary-foreground flex items-center justify-center text-xs font-bold shrink-0">
-            {user ? getInitials(user.name) : "?"}
+            {user ? getInitials(user.name, user.username) : "?"}
           </div>
 
           {!collapsed && user && (
             <>
               <div className="flex flex-col flex-1 min-w-0">
                 <span className="text-xs font-medium text-sidebar-foreground truncate">
-                  {user.name}
+                  {user.name || user.username}
                 </span>
+                {/* ✅ NEW — superusers have no Role record on the backend
+                    (role is null for SuperAdmin by design), so show "Super
+                    Admin" explicitly instead of falling back to "User". Any
+                    role assigned via Admin > Invite Users (including newly
+                    added custom roles) still shows here as-is. */}
                 <span className="text-[10px] text-sidebar-foreground/50">
-                  {user.role || "User"}
+                  {user.is_superuser ? "Super Admin" : user.role || "User"}
                 </span>
               </div>
               <button

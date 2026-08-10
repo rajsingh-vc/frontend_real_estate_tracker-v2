@@ -157,6 +157,9 @@ export interface ApiProject {
   entityName?: string | null;
   // ✅ NEW — drives which flow the UI shows for this project
   hierarchyMode: "full" | "direct_task"; // "full" = Tower→Floor→Unit→Task, "direct_task" = Task directly under Project
+  // ✅ NEW — ISO datetime strings from the backend (auto_now_add / auto_now)
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ApiTower {
@@ -273,6 +276,9 @@ export interface ApiTask {
   companyName?: string | null;
   entityId?: number | null;
   entityName?: string | null;
+  // ✅ NEW — ISO datetime strings from the backend (auto_now_add / auto_now)
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ApiChecklistTemplate {
@@ -553,6 +559,21 @@ function normalizeOrganization(raw: any): Organization {
     address: raw.address ?? "",
     company_count: raw.company_count ?? raw.companyCount ?? 0,
     entity_count: raw.entity_count ?? raw.entityCount ?? 0,
+  };
+}
+
+// Guards ApiTask consumers (Dashboard, task detail views, CSV export, etc.)
+// against a backend response that omits or nulls array fields — e.g. a task
+// with no checklist template applied, or no comments yet. Without this,
+// `task.checklist.length` / `task.comments.map(...)` throws and — since
+// there's no error boundary — takes down the whole page.
+function normalizeTask(raw: any): ApiTask {
+  return {
+    ...raw,
+    checklist: raw.checklist ?? [],
+    comments: raw.comments ?? [],
+    dependencies: raw.dependencies ?? [],
+    assignedUsers: raw.assignedUsers ?? [],
   };
 }
 
@@ -930,9 +951,9 @@ export interface ApiChatMessage {
 }
 
 export const tasksApi = {
-  list: () => apiList<ApiTask>("/tasks/"),
-  create: (data: NewTaskPayload) => apiPost<ApiTask>("/tasks/", data),
-  update: (id: number, data: Partial<ApiTask>) => apiPatch<ApiTask>(`/tasks/${id}/`, data),
+  list: async () => (await apiList<any>("/tasks/")).map(normalizeTask),
+  create: async (data: NewTaskPayload) => normalizeTask(await apiPost<any>("/tasks/", data)),
+  update: async (id: number, data: Partial<ApiTask>) => normalizeTask(await apiPatch<any>(`/tasks/${id}/`, data)),
   remove: (id: number) => apiDelete(`/tasks/${id}/`),
   addComment: (id: number, text: string) => apiPost<ApiComment>(`/tasks/${id}/comments/`, { text }),
   toggleChecklistItem: (taskId: number, itemId: number) =>
