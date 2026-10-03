@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";          // 👈 ADD THIS
+import { useNavigate, Link } from "react-router-dom";          // 👈 ADD THIS
 import { useAuth } from "@/contexts/AuthContext";
 import { Building2, Eye, EyeOff, Lock, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -72,7 +72,16 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs font-medium text-primary hover:underline"
+                  tabIndex={-1}
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input

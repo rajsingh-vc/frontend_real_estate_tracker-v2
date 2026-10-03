@@ -184,6 +184,7 @@ function exportTaskToPDF(
     assigneeName?: string;
     dependencyTitle?: string;
     attachments?: ApiDocument[];
+    comments?: { id: number; user: string; date: string; text: string }[];
   } = {}
 ) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -272,8 +273,11 @@ function exportTaskToPDF(
     divider();
   }
 
-  // Comments
-  const comments = task.comments ?? [];
+  // Comments — now sourced from the dedicated per-task comments query
+  // (opts.comments) instead of task.comments, since the list endpoint the
+  // `task` prop comes from never includes comments. Falls back to
+  // task.comments for backward compatibility if opts.comments is omitted.
+  const comments = opts.comments ?? task.comments ?? [];
   if (comments.length > 0) {
     line(`Comments (${comments.length})`, 12, true);
     comments.forEach((c) => {
@@ -960,9 +964,36 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
     queryFn: () => documentsApi.list({ task: task.id }),
   });
 
+  // ============================================================================
+  // ✅ FIX FOR "comments disappear after posting": comments now live in their
+  // OWN query key — ["task", task.id, "comments"] — populated from a
+  // dedicated task-detail fetch, completely separate from the ["tasks"]
+  // list-query cache.
+  //
+  // Root cause of the bug: `tasksApi.list()` (the ["tasks"] query) never
+  // returns nested `comments` for each row. As long as comments were stored
+  // inside that same ["tasks"] cache entry, ANY unrelated invalidation of
+  // ["tasks"] elsewhere in the app — a status change, a Kanban drag-drop, a
+  // checklist toggle on a different task, another open dialog settling its
+  // own mutation — would refetch the list endpoint and silently strip the
+  // comments back out, because the list endpoint doesn't know about them.
+  //
+  // Fix: comments are fetched and mutated through their own query key that
+  // nothing else in the app touches, so no unrelated refetch can ever wipe
+  // them out again.
+  // ============================================================================
+  const {
+    data: taskComments = task.comments ?? [],
+    isLoading: commentsLoading,
+  } = useQuery({
+    queryKey: ["task", task.id, "comments"],
+    queryFn: () => tasksApi.getComments(task.id),
+    initialData: task.comments,
+  });
+
   // Fallback for tasks loaded from list endpoint (which omit nested arrays)
   const checklist = task.checklist ?? [];
-  const comments = task.comments ?? [];
+  const comments = taskComments ?? [];
 
   const project = projects?.find(p => p.id === task.projectId);
   const tower = towers?.find(t => t.id === task.towerId);
@@ -981,27 +1012,17 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
   };
 
   // ============================================================================
-  // ✅ FIXED: comments were disappearing right after being posted.
-  //
-  // Root cause: `tasksApi.list()` (the ["tasks"] query) omits nested
-  // `comments`/`checklist` arrays — see the "Fallback for tasks loaded from
-  // list endpoint" comment above. The old code did:
-  //   onMutate  -> optimistically appended the comment to task.comments
-  //   onSettled -> invalidateTasks() -> refetches tasksApi.list()
-  // That refetch overwrote the optimistic comment with the comment-less
-  // version from the list endpoint, so the comment vanished the instant the
-  // background refetch resolved.
-  //
-  // Fix: keep the optimistic update, but instead of invalidating the whole
-  // ["tasks"] list on success, reconcile just the new comment's temporary
-  // id with whatever the server actually returned. No more invalidateTasks()
-  // call here, so the list refetch can never strip comments back out.
+  // ✅ FIXED: comments now optimistically update + reconcile against their
+  // own ["task", task.id, "comments"] cache key instead of ["tasks"], so the
+  // unrelated list refetch that used to wipe them out can never touch them.
   // ============================================================================
+  const commentsQueryKey = ["task", task.id, "comments"] as const;
+
   const commentMutation = useMutation({
     mutationFn: (text: string) => tasksApi.addComment(task.id, text),
     onMutate: async (text: string) => {
-      await queryClient.cancelQueries({ queryKey: ["tasks"] });
-      const previousTasks = queryClient.getQueryData<ApiTask[]>(["tasks"]);
+      await queryClient.cancelQueries({ queryKey: commentsQueryKey });
+      const previousComments = queryClient.getQueryData<typeof comments>(commentsQueryKey);
       const tempId = Date.now(); // temporary id, replaced once the server responds
       const optimisticComment = {
         id: tempId,
@@ -1009,39 +1030,27 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
         date: new Date().toISOString(),
         text,
       };
-      queryClient.setQueryData<ApiTask[]>(["tasks"], (old) =>
-        old?.map((t) =>
-          t.id === task.id
-            ? { ...t, comments: [...(t.comments ?? []), optimisticComment] }
-            : t
-        )
-      );
+      queryClient.setQueryData(commentsQueryKey, (old: typeof comments = []) => [
+        ...old,
+        optimisticComment,
+      ]);
       setNewComment("");
-      return { previousTasks, tempId };
+      return { previousComments, tempId };
     },
     onSuccess: (serverComment, _text, context) => {
-      // Swap the temp comment for the real server copy (correct id/date/user)
-      // by patching it in place — no refetch of the comment-less list endpoint.
-      queryClient.setQueryData<ApiTask[]>(["tasks"], (old) =>
-        old?.map((t) =>
-          t.id === task.id
-            ? {
-                ...t,
-                comments: (t.comments ?? []).map((c) =>
-                  c.id === context?.tempId ? (serverComment ?? c) : c
-                ),
-              }
-            : t
-        )
+      // Swap the temp comment for the real server copy (correct id/date/user).
+      queryClient.setQueryData(commentsQueryKey, (old: typeof comments = []) =>
+        old.map((c) => (c.id === context?.tempId ? (serverComment ?? c) : c))
       );
     },
     onError: (err, _text, context) => {
-      if (context?.previousTasks) {
-        queryClient.setQueryData(["tasks"], context.previousTasks);
+      if (context?.previousComments) {
+        queryClient.setQueryData(commentsQueryKey, context.previousComments);
       }
       onMutationError(err, "Add comment");
     },
-    // no onSettled: invalidateTasks — that refetch is what was wiping comments out
+    // Deliberately NOT invalidating ["tasks"] here — that refetch is what
+    // was wiping comments out before, and comments no longer live there.
   });
 
   // ============================================================================
@@ -1121,6 +1130,7 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
       assigneeName: assignee ? toTitleCase(assignee.name) : undefined,
       dependencyTitle: dependency?.title,
       attachments,
+      comments,
     });
   };
 
@@ -1230,22 +1240,28 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
       {/* Chat: separate from Comments below — near-real-time back-and-forth */}
       <TaskChat task={task} />
 
-      {/* Comments — the existing dated/structured log, distinct from Chat above */}
+      {/* Comments — the existing dated/structured log, distinct from Chat above.
+          Now sourced from its own ["task", task.id, "comments"] query so it can
+          never be wiped by an unrelated ["tasks"] list refetch. */}
       <div className="mt-4">
         <h4 className="font-display font-semibold mb-2 flex items-center gap-2">
           <MessageSquare className="h-4 w-4" />
           Comments ({comments.length})
         </h4>
         <div className="space-y-2 mb-3">
-          {comments.map((comment) => (
-            <div key={comment.id} className="p-3 rounded-lg bg-muted/50 text-sm">
-              <div className="flex justify-between mb-1">
-                <span className="font-medium">{comment.user}</span>
-                <span className="text-xs text-muted-foreground">{comment.date}</span>
+          {commentsLoading && comments.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Loading comments…</p>
+          ) : (
+            comments.map((comment) => (
+              <div key={comment.id} className="p-3 rounded-lg bg-muted/50 text-sm">
+                <div className="flex justify-between mb-1">
+                  <span className="font-medium">{comment.user}</span>
+                  <span className="text-xs text-muted-foreground">{comment.date}</span>
+                </div>
+                <p className="text-muted-foreground">{comment.text}</p>
               </div>
-              <p className="text-muted-foreground">{comment.text}</p>
-            </div>
-          ))}
+            ))
+          )}
         </div>
         <div className="flex gap-2">
           <Input value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Add a comment..." onKeyDown={e => e.key === 'Enter' && addComment()} />

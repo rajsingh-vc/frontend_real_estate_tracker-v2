@@ -4,8 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { MobileNav } from "./MobileNav";
+import { NotificationBell } from "./NotificationBell";
 import {
-  Bell, Search, Camera, Clock, CheckCircle, LogOut, X,
+  Search, Camera, Clock, CheckCircle, LogOut, X,
   Building2, Layers, ListChecks, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -847,12 +848,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
-              <Button variant="ghost" size="icon" className="relative h-9 w-9">
-                <Bell className="h-4 w-4" />
-                <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground flex items-center justify-center">
-                  3
-                </span>
-              </Button>
+              <NotificationBell />
               <ProfileMenu user={user} onLogout={handleLogout} />
             </div>
           </header>

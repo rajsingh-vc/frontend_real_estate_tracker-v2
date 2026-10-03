@@ -1161,6 +1161,9 @@ function ProjectList({
   projectList,
   towers,
   tasks,
+  organizations = [],
+  selectedOrgId = "",
+  onSelectOrg,
   onCreate,
   onEdit,
   onDelete,
@@ -1168,11 +1171,24 @@ function ProjectList({
   projectList: ApiProject[];
   towers: ApiTower[];
   tasks: ApiTask[];
+  organizations?: Organization[];
+  selectedOrgId?: string;
+  onSelectOrg?: (value: string) => void;
   onCreate: () => void;
   onEdit: (project: ApiProject) => void;
   onDelete: (project: ApiProject) => void;
 }) {
   const navigate = useNavigate();
+
+  // ✅ NEW: whichever organization the user selects is pinned to the top of the list,
+  // without removing/reordering anything else beyond that.
+  const sortedProjectList = useMemo(() => {
+    if (!selectedOrgId) return projectList;
+    const selectedId = Number(selectedOrgId);
+    const matched = projectList.filter((p) => p.organizationId === selectedId);
+    const rest = projectList.filter((p) => p.organizationId !== selectedId);
+    return [...matched, ...rest];
+  }, [projectList, selectedOrgId]);
 
   return (
     <div className="space-y-6">
@@ -1181,11 +1197,31 @@ function ProjectList({
           <h1 className="font-display text-2xl md:text-3xl font-bold">Projects</h1>
           <p className="text-muted-foreground mt-1">{projectList.length} projects in portfolio</p>
         </div>
-        <Button onClick={onCreate}>+ New Project</Button>
+        <div className="flex items-center gap-2">
+          {onSelectOrg && (
+            <Select
+              value={selectedOrgId || "all"}
+              onValueChange={(value) => onSelectOrg(value === "all" ? "" : value)}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filter by organization" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All organizations</SelectItem>
+                {organizations.map((org: Organization) => (
+                  <SelectItem key={org.id} value={String(org.id)}>
+                    {org.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button onClick={onCreate}>+ New Project</Button>
+        </div>
       </div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-        {projectList.map((project) => {
+        {sortedProjectList.map((project) => {
           const pTowers = towers.filter((t) => t.projectId === project.id);
           const pTasks = tasks.filter((t) => t.projectId === project.id);
           const delayed = pTasks.filter((task) => task.status === "delayed" || task.delayDays > 0).length;
@@ -2185,6 +2221,12 @@ const Projects = () => {
     queryKey: ["projects"],
     queryFn: projectsApi.list,
   });
+  // ✅ NEW: organization filter — selected org's projects are pinned to the top of the list
+  const [projectOrgFilter, setProjectOrgFilter] = useState<string>("");
+  const { data: projectListOrganizations = [] } = useQuery({
+    queryKey: ["organizations"],
+    queryFn: organizationApi.list,
+  });
   const { data: towers = [] } = useQuery({
     queryKey: ["towers"],
     queryFn: towersApi.list
@@ -2930,6 +2972,9 @@ const Projects = () => {
         projectList={projects}
         towers={towers}
         tasks={tasks}
+        organizations={projectListOrganizations}
+        selectedOrgId={projectOrgFilter}
+        onSelectOrg={setProjectOrgFilter}
         onCreate={() => {
           setEditingProject(null);
           setDialogOpen(true);

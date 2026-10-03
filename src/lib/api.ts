@@ -155,11 +155,10 @@ export interface ApiProject {
   organizationName?: string;
   companyName?: string;
   entityName?: string | null;
+  createdAt?: string;   // 👈 add this
+  updatedAt?: string;   // 👈 add this
   // ✅ NEW — drives which flow the UI shows for this project
   hierarchyMode: "full" | "direct_task"; // "full" = Tower→Floor→Unit→Task, "direct_task" = Task directly under Project
-  // ✅ NEW — ISO datetime strings from the backend (auto_now_add / auto_now)
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface ApiTower {
@@ -276,9 +275,11 @@ export interface ApiTask {
   companyName?: string | null;
   entityId?: number | null;
   entityName?: string | null;
-  // ✅ NEW — ISO datetime strings from the backend (auto_now_add / auto_now)
-  createdAt: string;
-  updatedAt: string;
+  // Read by Tasks.tsx (created/updated timestamps shown on task rows and
+  // the detail dialog). Optional since older records or a list endpoint
+  // variant might omit them.
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface ApiChecklistTemplate {
@@ -583,6 +584,7 @@ export const usersApi = {
   list: async () => (await apiList<any>("/users/")).map(normalizeUser),
   create: async (payload: UserPayload) => normalizeUser(await apiPost<any>("/users/", payload)),
   update: async (id: number, data: UserUpdatePayload) => normalizeUser(await apiPatch<any>(`/users/${id}/`, data)),
+  remove: (id: number) => apiDelete(`/users/${id}/`),
 };
 
 export const companiesApi = {
@@ -955,6 +957,11 @@ export const tasksApi = {
   create: async (data: NewTaskPayload) => normalizeTask(await apiPost<any>("/tasks/", data)),
   update: async (id: number, data: Partial<ApiTask>) => normalizeTask(await apiPatch<any>(`/tasks/${id}/`, data)),
   remove: (id: number) => apiDelete(`/tasks/${id}/`),
+  // GET counterpart to addComment below — needed so comments can live in
+  // their own ["task", id, "comments"] query key (see Tasks.tsx) instead
+  // of piggybacking on the ["tasks"] list cache, which never includes
+  // nested comments and was wiping them out on unrelated refetches.
+  getComments: (id: number) => apiGet<ApiComment[]>(`/tasks/${id}/comments/`),
   addComment: (id: number, text: string) => apiPost<ApiComment>(`/tasks/${id}/comments/`, { text }),
   toggleChecklistItem: (taskId: number, itemId: number) =>
     apiPost<ApiChecklistItem>(`/tasks/${taskId}/checklist/${itemId}/toggle/`),
@@ -1165,4 +1172,45 @@ export const invitationsApi = {
 export const statusesApi = {
   list: (entity: 'project' | 'tower' | 'task' | 'unit' | 'checklist') =>
     apiList<{ value: string; label: string; }>(`/statuses/?entity=${entity}`),
+};
+// ============================================================
+// ✅ Notifications API – backs the bell icon in AppLayout.
+// Notifications are created server-side only (invite-accept events,
+// and generically by ActivityNotificationMiddleware for any mutating
+// request a non-superadmin user makes) — there's no "create" here.
+// ============================================================
+export interface ApiNotification {
+  id: number;
+  verb: string;
+  description: string;
+  targetUrl: string;
+  isRead: boolean;
+  createdAt: string;
+  actor: number | null;
+  actorName: string | null;
+}
+
+export const notificationsApi = {
+  list: () => apiList<ApiNotification>("/notifications/"),
+  unreadCount: () => apiGet<{ count: number }>("/notifications/unread_count/"),
+  markRead: (id: number) => apiPost<ApiNotification>(`/notifications/${id}/mark_read/`),
+  markAllRead: () => apiPost<{ updated: number }>("/notifications/mark_all_read/"),
+};
+
+
+// ============================================================
+// ✅ Forgot Password API – OTP-based reset flow off the login page
+// ============================================================
+export const passwordResetApi = {
+  forgotPassword: (email: string) =>
+    apiPost<{ detail: string }>("/auth/forgot-password/", { email }),
+  verifyOtp: (email: string, otp: string) =>
+    apiPost<{ detail: string }>("/auth/verify-otp/", { email, otp }),
+  resetPassword: (email: string, otp: string, newPassword: string, confirmPassword: string) =>
+    apiPost<{ detail: string }>("/auth/reset-password/", {
+      email,
+      otp,
+      newPassword,
+      confirmPassword,
+    }),
 };

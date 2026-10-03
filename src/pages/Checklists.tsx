@@ -297,7 +297,9 @@ const TemplateForm = ({
           />
         </div>
         <div className="space-y-2">
-          <Label>Project</Label>
+          {/* ✅ CHANGED: Project is now required — label marked with *,
+              placeholder no longer says "(optional)". */}
+          <Label>Project *</Label>
           <Select
             value={formProjectId}
             onValueChange={(v) => {
@@ -308,7 +310,7 @@ const TemplateForm = ({
             }}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select project (optional)" />
+              <SelectValue placeholder="Select project" />
             </SelectTrigger>
             <SelectContent>
               {allProjects.map((p) => (
@@ -422,7 +424,9 @@ const TemplateForm = ({
       </div>
       <div className="flex justify-end gap-3">
         <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button type="button" onClick={onSubmit} disabled={!formName.trim() || submitting}>
+        {/* ✅ CHANGED: submit is now also disabled until a project is picked,
+            same pattern as the existing formName.trim() guard. */}
+        <Button type="button" onClick={onSubmit} disabled={!formName.trim() || !formProjectId || submitting}>
           {submitting ? "Saving…" : submitLabel}
         </Button>
       </div>
@@ -591,6 +595,8 @@ const Checklists = () => {
 
   const handleCreate = useCallback(() => {
     if (!formName.trim()) return;
+    // ✅ CHANGED: Project is now required for manual template creation too.
+    if (!formProjectId) return;
     const items = formItems.map((it) => it.value).filter((v) => v.trim());
     if (items.length === 0) return;
     createMutation.mutate({
@@ -605,6 +611,8 @@ const Checklists = () => {
 
   const handleEdit = useCallback(() => {
     if (!editingTemplate || !formName.trim()) return;
+    // ✅ CHANGED: Project is now required when editing a template too.
+    if (!formProjectId) return;
     const items = formItems.map((it) => it.value).filter((v) => v.trim());
     updateMutation.mutate({
       id: editingTemplate.id,
@@ -790,21 +798,6 @@ const Checklists = () => {
                     <DialogTitle className="font-display text-xl">Import Checklist Templates from PDF</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 mt-2">
-                    <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2">
-                      <p className="text-xs text-muted-foreground">
-                        Not sure how to format your PDF? Grab the sample below.
-                      </p>
-                      {/* ✅ NEW: sample import file download. Place
-                          sample-checklist-import.pdf in your app's public/
-                          folder so this resolves. */}
-                      <a href={SAMPLE_IMPORT_PDF_PATH} download>
-                        <Button type="button" variant="secondary" size="sm">
-                          <FileDown className="h-3.5 w-3.5 mr-1.5" />
-                          Download Sample PDF
-                        </Button>
-                      </a>
-                    </div>
-
                     <div className="grid gap-2">
                       <Label>PDF File</Label>
                       <Input type="file" accept="application/pdf" onChange={handleImportFileChange} />

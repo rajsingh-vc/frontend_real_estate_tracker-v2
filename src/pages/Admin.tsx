@@ -5,6 +5,7 @@ import {
   Settings as SettingsIcon,
   Bell,
   Trash2,
+  Pencil,
   Plus,
   X,
   Building2,
@@ -12,6 +13,8 @@ import {
   Network,
   ChevronRight,
   ArrowLeft,
+  ToggleLeft,
+  ToggleRight,
 } from "lucide-react";
 import {
   usersApi,
@@ -63,22 +66,22 @@ function Admin() {
       <div className="max-w-5xl mx-auto px-6 py-8">
         {/* Page header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
             {user?.is_superuser ? "Super Admin" : "Admin"}
           </h1>
-          <p className="text-gray-500 mt-1">System configuration and user management</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">System configuration and user management</p>
         </div>
 
         {/* Tab switcher */}
-        <div className="inline-flex items-center gap-1 bg-gray-100 rounded-xl p-1 mb-6">
+        <div className="inline-flex items-center gap-1 bg-gray-100 dark:bg-secondary/80 border border-transparent dark:border-border rounded-xl p-1 mb-6">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === tab.key
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
+                  ? "bg-white dark:bg-card text-gray-900 dark:text-gray-100 shadow-sm border border-transparent dark:border-border"
+                  : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
               }`}
             >
               {tab.label}
@@ -87,7 +90,7 @@ function Admin() {
         </div>
 
         {/* Tab content */}
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+        <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-sm dark:shadow-none p-6">
           {activeTab === "users" && <UsersTab currentUser={user!} />}
           {activeTab === "escalation" && <EscalationMatrixTab />}
           {activeTab === "settings" && (
@@ -116,12 +119,67 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+// Cycled by row position so the avatar colors vary the way they do in the
+// design (each user isn't tied to a specific color, it's just alternated).
+const AVATAR_COLORS = [
+  "bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border dark:border-indigo-800/40",
+  "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border dark:border-emerald-800/40",
+  "bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300 dark:border dark:border-amber-800/40",
+  "bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-300 dark:border dark:border-rose-800/40",
+  "bg-cyan-100 text-cyan-600 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border dark:border-cyan-800/40",
+];
+
+// Role names are free text (set per-company, see accounts.Role), so this
+// matches on keywords rather than an exact/fixed list — any role containing
+// "admin", "manager", etc. still gets a sensible color instead of falling
+// through to the gray default.
+function roleBadgeClasses(role: string) {
+  const key = (role || "").toLowerCase();
+  if (key.includes("super")) return "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 dark:border dark:border-blue-800/50";
+  if (key.includes("admin")) return "bg-green-50 text-green-700 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border dark:border-emerald-800/50";
+  if (key.includes("manager")) return "bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 dark:border dark:border-purple-800/50";
+  if (key.includes("viewer")) return "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 dark:border dark:border-amber-800/50";
+  if (key.includes("engineer")) return "bg-cyan-50 text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300 dark:border dark:border-cyan-800/50";
+  return "bg-gray-100 text-gray-700 dark:bg-secondary dark:text-gray-300 dark:border dark:border-border";
+}
+
+function formatLastLogin(lastLogin: string | null) {
+  if (!lastLogin) return "Never";
+  const date = new Date(lastLogin);
+  const datePart = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timePart = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return { datePart, timePart };
+}
+
+// A user's row is only considered "Active" once two things are true:
+//   1) their account is enabled (is_active), AND
+//   2) if they came in through an invite, that invite was actually
+//      accepted — a pending/expired/revoked invite always reads as
+//      "Inactive" regardless of the raw is_active flag on the account.
+// This is what ties the badge to "did the invited person accept the
+// invite link", per how invitationsApi/usersApi report status.
+function getUserActivity(user: User, invitesByEmail: Map<string, Invitation>): "active" | "inactive" {
+  const invite = invitesByEmail.get(user.email.trim().toLowerCase());
+  if (invite && invite.status !== "accepted") return "inactive";
+  return user.is_active ? "active" : "inactive";
+}
+
 function UsersTab({ currentUser }: { currentUser: User }) {
   const [users, setUsers] = useState<User[]>([]);
+  const [invitesByEmail, setInvitesByEmail] = useState<Map<string, Invitation>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInviteUser, setShowInviteUser] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
   // Only SuperAdmin or an Admin whose Role actually carries
   // 'can_manage_users' may invite people — this used to be shown to
@@ -132,8 +190,11 @@ function UsersTab({ currentUser }: { currentUser: User }) {
     setLoading(true);
     setError(null);
     try {
-      const data = await usersApi.list();
-      setUsers(data);
+      const [usersData, invites] = await Promise.all([usersApi.list(), invitationsApi.list()]);
+      setUsers(usersData);
+      const byEmail = new Map<string, Invitation>();
+      invites.forEach((inv) => byEmail.set(inv.email.trim().toLowerCase(), inv));
+      setInvitesByEmail(byEmail);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load users");
     } finally {
@@ -145,61 +206,156 @@ function UsersTab({ currentUser }: { currentUser: User }) {
     loadUsers();
   }, []);
 
+  // Manual override for admins: flips the account's is_active flag
+  // directly. Note that getUserActivity() will still report "Inactive"
+  // for a user whose invite is pending/expired/revoked even if this sets
+  // is_active to true — the invite state always wins, since that's the
+  // real signal for "did they accept".
+  async function handleToggleActive(user: User) {
+    setTogglingId(user.id);
+    setError(null);
+    try {
+      await usersApi.update(user.id, { is_active: !user.is_active });
+      await loadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update user status");
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
-        <h2 className="text-xl font-bold text-gray-900">User Management</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">User Management</h2>
         {canInvite && (
           <button
             onClick={() => setShowInviteUser(true)}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
           >
             <Plus size={16} />
-            {/* Invite User */}
+            Invite New User
           </button>
         )}
       </div>
 
-      {loading && <p className="text-sm text-gray-500 py-6 text-center">Loading users…</p>}
-      {error && <p className="text-sm text-red-600 py-6 text-center">{error}</p>}
+      {loading && <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Loading users…</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400 py-6 text-center">{error}</p>}
 
       {!loading && !error && (
-        <div className="space-y-3">
-          {users.map((user) => (
-            <button
-              key={user.id}
-              type="button"
-              onClick={() => setEditingUser(user)}
-              className="w-full flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3 hover:bg-gray-50 transition-colors text-left"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 font-semibold flex items-center justify-center text-sm">
-                  {initials(user.name)}
-                </div>
-                <div>
-                  <p className="font-semibold text-gray-900 text-sm">{user.name}</p>
-                  <p className="text-gray-500 text-sm">{user.email}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    user.is_active ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"
-                  }`}
-                >
-                  {user.activity_status}
-                </span>
-                <span className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">
-                  {user.department}
-                </span>
-                <span className="px-3 py-1 rounded-full bg-blue-600 text-white text-xs font-medium">
-                  {user.role}
-                </span>
-              </div>
-            </button>
-          ))}
+        <div className="overflow-x-auto border border-gray-100 dark:border-border rounded-xl">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-border bg-gray-50/60 dark:bg-muted/50">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  User
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Email
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Role
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Last Login
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user, index) => {
+                const lastLogin = formatLastLogin(user.last_login);
+                const activity = getUserActivity(user, invitesByEmail);
+                const isToggling = togglingId === user.id;
+                return (
+                  <tr
+                    key={user.id}
+                    className="border-b border-gray-100 dark:border-border last:border-b-0 hover:bg-gray-50/60 dark:hover:bg-muted/30 transition-colors"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-10 h-10 rounded-full font-semibold flex items-center justify-center text-sm shrink-0 ${
+                            AVATAR_COLORS[index % AVATAR_COLORS.length]
+                          }`}
+                        >
+                          {initials(user.name)}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{user.name}</p>
+                          <p className="text-gray-400 dark:text-gray-500 text-xs">ID: USR-{String(user.id).padStart(4, "0")}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{user.email}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${roleBadgeClasses(user.role)}`}
+                      >
+                        {user.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300">
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            activity === "active" ? "bg-green-500 shadow-sm shadow-green-500/50" : "bg-gray-400 dark:bg-gray-500"
+                          }`}
+                        />
+                        {activity === "active" ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                      {typeof lastLogin === "string" ? (
+                        lastLogin
+                      ) : (
+                        <>
+                          {lastLogin.datePart}
+                          <br />
+                          {lastLogin.timePart}
+                        </>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingUser(user)}
+                          className="p-1.5 rounded-md border border-blue-200 dark:border-blue-800/60 bg-transparent dark:bg-secondary/40 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/60 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-colors"
+                          aria-label={`Edit ${user.name}`}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleActive(user)}
+                          disabled={isToggling}
+                          className={`p-1.5 rounded-md border transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+                            activity === "active"
+                              ? "border-green-200 dark:border-emerald-800/60 bg-transparent dark:bg-secondary/40 text-green-600 dark:text-emerald-400 hover:bg-green-50 dark:hover:bg-emerald-950/60"
+                              : "border-gray-200 dark:border-border bg-transparent dark:bg-secondary/40 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-muted"
+                          }`}
+                          aria-label={
+                            activity === "active" ? `Deactivate ${user.name}` : `Activate ${user.name}`
+                          }
+                          title={activity === "active" ? "Deactivate user" : "Activate user"}
+                        >
+                          {activity === "active" ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
           {users.length === 0 && (
-            <p className="text-sm text-gray-500 py-6 text-center">No users yet.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">No users yet.</p>
           )}
         </div>
       )}
@@ -322,17 +478,17 @@ function AddInvitationDialog({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+      <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-xl w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-900">Invite User</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Invite User</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
             <X size={20} />
           </button>
         </div>
 
         {success ? (
-          <div className="text-center py-6 text-green-600">
+          <div className="text-center py-6 text-green-600 dark:text-green-400">
             <p className="font-medium">Invitation sent!</p>
             <p className="text-sm mt-1">An email has been sent to {form.email}.</p>
           </div>
@@ -391,35 +547,35 @@ function AddInvitationDialog({
                 disabled={orgsLoading}
                 value={form.company || ""}
                 onChange={(e) => update("company", Number(e.target.value))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
+                className="w-full rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-secondary/80 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 disabled:bg-gray-50 dark:disabled:bg-muted/60 disabled:text-gray-400 transition-colors"
               >
-                <option value="">
+                <option value="" className="bg-white dark:bg-card text-gray-900 dark:text-gray-100">
                   {orgsLoading ? "Loading organizations…" : "Select organization"}
                 </option>
                 {organizations.map((org) => (
-                  <option key={org.id} value={org.id}>
+                  <option key={org.id} value={org.id} className="bg-white dark:bg-card text-gray-900 dark:text-gray-100">
                     {org.name}
                   </option>
                 ))}
               </select>
-              {orgsError && <p className="text-xs text-red-600 mt-1">{orgsError}</p>}
+              {orgsError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{orgsError}</p>}
             </Field>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={onClose}
                 disabled={submitting}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100"
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-secondary border border-transparent dark:border-border transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white disabled:opacity-50 transition-colors shadow-sm"
               >
                 {submitting ? "Sending…" : "Send Invitation"}
               </button>
@@ -518,11 +674,11 @@ function EditUserDialog({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+      <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-xl w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-900">Edit User</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Edit User</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -564,44 +720,44 @@ function EditUserDialog({
               disabled={orgsLoading}
               value={company || ""}
               onChange={(e) => setCompany(Number(e.target.value))}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
+              className="w-full rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-secondary/80 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 disabled:bg-gray-50 dark:disabled:bg-muted/60 disabled:text-gray-400 transition-colors"
             >
-              <option value="">
+              <option value="" className="bg-white dark:bg-card text-gray-900 dark:text-gray-100">
                 {orgsLoading ? "Loading organizations…" : "Select organization"}
               </option>
               {organizations.map((org) => (
-                <option key={org.id} value={org.id}>
+                <option key={org.id} value={org.id} className="bg-white dark:bg-card text-gray-900 dark:text-gray-100">
                   {org.name}
                 </option>
               ))}
             </select>
-            {orgsError && <p className="text-xs text-red-600 mt-1">{orgsError}</p>}
+            {orgsError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{orgsError}</p>}
           </Field>
 
-          <label className="flex items-center gap-2 text-sm text-gray-700 pt-1">
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 pt-1">
             <input
               type="checkbox"
               checked={isActive}
               onChange={(e) => setIsActive(e.target.checked)}
-              className="rounded border-gray-300"
+              className="rounded border-gray-300 dark:border-border bg-white dark:bg-secondary text-blue-600 focus:ring-blue-500"
             />
             Active
           </label>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100"
+              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-secondary border border-transparent dark:border-border transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white disabled:opacity-50 transition-colors shadow-sm"
             >
               {submitting ? "Saving…" : "Save"}
             </button>
@@ -615,7 +771,7 @@ function EditUserDialog({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="block text-xs font-medium text-gray-600 mb-1">{label}</span>
+      <span className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">{label}</span>
       {children}
     </label>
   );
@@ -625,7 +781,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+      className={`w-full rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-secondary/80 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 disabled:bg-gray-50 dark:disabled:bg-muted/60 disabled:text-gray-500 dark:disabled:text-gray-400 transition-colors ${props.className || ""}`}
     />
   );
 }
@@ -662,20 +818,20 @@ function EscalationMatrixTab() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">
-          <Shield size={20} className="text-blue-600" />
-          <h2 className="text-xl font-bold text-gray-900">Escalation Matrix</h2>
+          <Shield size={20} className="text-blue-600 dark:text-blue-400" />
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Escalation Matrix</h2>
         </div>
         <button
           onClick={() => setShowAddRule(true)}
-          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
         >
           <Plus size={16} />
           Add Rule
         </button>
       </div>
 
-      {loading && <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>}
-      {error && <p className="text-sm text-red-600 py-6 text-center">{error}</p>}
+      {loading && <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Loading…</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400 py-6 text-center">{error}</p>}
 
       {!loading && !error && (
         <div className="space-y-3">
@@ -684,24 +840,24 @@ function EscalationMatrixTab() {
               key={rule.id}
               type="button"
               onClick={() => setEditingRule(rule)}
-              className="w-full flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+              className="w-full flex items-center justify-between border border-gray-100 dark:border-border bg-white dark:bg-card rounded-xl px-4 py-3 hover:bg-gray-50 dark:hover:bg-muted/40 transition-colors text-left shadow-sm dark:shadow-none"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-semibold flex items-center justify-center text-sm">
+                <div className="w-10 h-10 rounded-full bg-blue-600 dark:bg-blue-600 text-white font-semibold flex items-center justify-center text-sm shadow-sm">
                   L{rule.level}
                 </div>
                 <div>
-                  <p className="font-semibold text-gray-900 text-sm">{rule.role}</p>
-                  <p className="text-gray-500 text-sm">{rule.description}</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{rule.role}</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">{rule.description}</p>
                 </div>
               </div>
-              <span className="px-3 py-1 rounded-full border border-gray-200 text-gray-700 text-xs font-medium">
+              <span className="px-3 py-1 rounded-full border border-gray-200 dark:border-border text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-secondary/60 text-xs font-medium">
                 {rule.days} days
               </span>
             </button>
           ))}
           {rules.length === 0 && (
-            <p className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-xl px-4 py-6 text-center">
+            <p className="text-sm text-gray-400 dark:text-gray-500 border border-dashed border-gray-200 dark:border-border rounded-xl px-4 py-6 text-center">
               No escalation rules yet.
             </p>
           )}
@@ -804,11 +960,11 @@ function EscalationRuleDialog({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+      <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-xl w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-900">{isEditing ? "Edit Rule" : "Add Rule"}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{isEditing ? "Edit Rule" : "Add Rule"}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -847,11 +1003,11 @@ function EscalationRuleDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+              className="w-full rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-secondary/80 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
             />
           </Field>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
           <div className="flex justify-between items-center pt-2">
             {isEditing ? (
@@ -859,7 +1015,7 @@ function EscalationRuleDialog({
                 type="button"
                 onClick={handleDelete}
                 disabled={submitting}
-                className="flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-600 disabled:opacity-50"
+                className="flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 transition-colors"
               >
                 <Trash2 size={16} />
                 Delete
@@ -872,14 +1028,14 @@ function EscalationRuleDialog({
                 type="button"
                 onClick={onClose}
                 disabled={submitting}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-secondary border border-transparent dark:border-border disabled:opacity-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white disabled:opacity-50 transition-colors shadow-sm"
               >
                 {submitting ? "Saving…" : isEditing ? "Save" : "Create rule"}
               </button>
@@ -969,23 +1125,23 @@ function SettingsTab({
           onClick={disabled ? undefined : onClick}
           disabled={disabled}
           aria-disabled={disabled}
-          className={`text-left flex items-start gap-3 border rounded-xl px-5 py-4 transition-colors ${
+          className={`text-left flex items-start gap-3 border rounded-xl px-5 py-4 transition-colors bg-white dark:bg-card shadow-sm dark:shadow-none ${
             disabled
-              ? "border-gray-100 opacity-50 cursor-not-allowed"
-              : "border-gray-100 hover:bg-gray-50"
+              ? "border-gray-100 dark:border-border opacity-50 cursor-not-allowed"
+              : "border-gray-100 dark:border-border hover:bg-gray-50 dark:hover:bg-muted/40"
           }`}
         >
-          <Icon size={20} className="text-gray-500 mt-0.5" />
+          <Icon size={20} className="text-gray-500 dark:text-gray-400 mt-0.5" />
           <div>
-            <p className="font-semibold text-sm text-gray-900 flex items-center gap-2">
+            <p className="font-semibold text-sm text-gray-900 dark:text-gray-100 flex items-center gap-2">
               {title}
               {disabled && (
-                <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-400 bg-gray-100 dark:bg-secondary rounded-full px-2 py-0.5 border border-transparent dark:border-border">
                   Coming soon
                 </span>
               )}
             </p>
-            <p className="text-sm mt-0.5 text-gray-500">{description}</p>
+            <p className="text-sm mt-0.5 text-gray-500 dark:text-gray-400">{description}</p>
           </div>
         </button>
       ))}
@@ -1061,12 +1217,12 @@ function RolesPermissionsApp({ onExit }: { onExit: () => void }) {
   const inactiveCount = invitations.filter((inv) => getInvitationActivity(inv, usersByEmail) === "inactive").length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-background">
       <div className="max-w-3xl mx-auto px-6 py-8">
         <button
           type="button"
           onClick={onExit}
-          className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-700 mb-6"
+          className="flex items-center gap-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 mb-6 transition-colors"
         >
           <ArrowLeft size={16} />
           Back to Settings
@@ -1074,29 +1230,29 @@ function RolesPermissionsApp({ onExit }: { onExit: () => void }) {
 
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Roles & Permissions</h1>
-            <p className="text-gray-500 mt-1">Everyone who's been invited, and where they stand</p>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Roles & Permissions</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">Everyone who's been invited, and where they stand</p>
           </div>
           {!loading && !error && invitations.length > 0 && (
             <div className="flex items-center gap-3 text-sm shrink-0">
-              <span className="flex items-center gap-1.5 text-gray-500">
+              <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
                 <span className="w-2 h-2 rounded-full bg-green-500" />
                 {activeCount} active
               </span>
-              <span className="flex items-center gap-1.5 text-gray-500">
+              <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
                 <span className="w-2 h-2 rounded-full bg-amber-400" />
                 {pendingCount} pending
               </span>
-              <span className="flex items-center gap-1.5 text-gray-500">
-                <span className="w-2 h-2 rounded-full bg-gray-300" />
+              <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" />
                 {inactiveCount} inactive
               </span>
             </div>
           )}
         </div>
 
-        {loading && <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>}
-        {error && <p className="text-sm text-red-600 py-6 text-center">{error}</p>}
+        {loading && <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Loading…</p>}
+        {error && <p className="text-sm text-red-600 dark:text-red-400 py-6 text-center">{error}</p>}
 
         {!loading && !error && (
           <div className="space-y-2.5">
@@ -1106,37 +1262,37 @@ function RolesPermissionsApp({ onExit }: { onExit: () => void }) {
                   key={inv.id}
                   type="button"
                   onClick={() => setSelected(inv)}
-                  className="w-full flex items-center justify-between gap-4 border border-gray-100 bg-white rounded-xl px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+                  className="w-full flex items-center justify-between gap-4 border border-gray-100 dark:border-border bg-white dark:bg-card rounded-xl px-4 py-3 hover:bg-gray-50 dark:hover:bg-muted/40 transition-colors text-left shadow-sm dark:shadow-none"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 shrink-0 rounded-full font-semibold flex items-center justify-center text-sm bg-blue-50 text-blue-600">
+                    <div className="w-10 h-10 shrink-0 rounded-full font-semibold flex items-center justify-center text-sm bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-300 dark:border dark:border-blue-800/40">
                       {initials(inv.name || inv.email)}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-semibold text-gray-900 text-sm truncate">{inv.name || inv.email}</p>
-                      <p className="text-gray-500 text-sm truncate">{inv.email}</p>
+                      <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate">{inv.name || inv.email}</p>
+                      <p className="text-gray-500 dark:text-gray-400 text-sm truncate">{inv.email}</p>
                     </div>
                   </div>
                   {/* Note: invite status is intentionally not shown in this list
                       row — open the invitation to see its status. */}
                   <div className="flex items-center gap-2 shrink-0">
                     {inv.department_name && (
-                      <span className="hidden sm:inline-block px-3 py-1 rounded-full bg-gray-50 text-gray-600 text-xs font-medium">
+                      <span className="hidden sm:inline-block px-3 py-1 rounded-full bg-gray-50 text-gray-600 dark:bg-secondary dark:text-gray-300 dark:border dark:border-border text-xs font-medium">
                         {inv.department_name}
                       </span>
                     )}
                     {inv.role_name && (
-                      <span className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">
+                      <span className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-secondary dark:text-gray-300 dark:border dark:border-border text-xs font-medium">
                         {inv.role_name}
                       </span>
                     )}
-                    <ChevronRight size={18} className="text-gray-300" />
+                    <ChevronRight size={18} className="text-gray-300 dark:text-gray-600" />
                   </div>
                 </button>
               );
             })}
             {invitations.length === 0 && (
-              <p className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-xl px-4 py-6 text-center">
+              <p className="text-sm text-gray-400 dark:text-gray-500 border border-dashed border-gray-200 dark:border-border rounded-xl px-4 py-6 text-center">
                 No invitations sent yet.
               </p>
             )}
@@ -1199,9 +1355,21 @@ function getInvitationActivity(invitation: Invitation, usersByEmail: Map<string,
 }
 
 const ACTIVITY_DISPLAY: Record<InvitationActivity, { label: string; dot: string; badge: string }> = {
-  active: { label: "Active", dot: "bg-green-500", badge: "bg-green-50 text-green-700" },
-  pending: { label: "Pending", dot: "bg-amber-400", badge: "bg-amber-50 text-amber-700" },
-  inactive: { label: "Inactive", dot: "bg-gray-400", badge: "bg-gray-100 text-gray-500" },
+  active: {
+    label: "Active",
+    dot: "bg-green-500",
+    badge: "bg-green-50 text-green-700 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border dark:border-emerald-800/50",
+  },
+  pending: {
+    label: "Pending",
+    dot: "bg-amber-400",
+    badge: "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 dark:border dark:border-amber-800/50",
+  },
+  inactive: {
+    label: "Inactive",
+    dot: "bg-gray-400 dark:bg-gray-500",
+    badge: "bg-gray-100 text-gray-500 dark:bg-secondary dark:text-gray-400 dark:border dark:border-border",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1326,11 +1494,11 @@ function InvitationDetailDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+      <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-xl w-full max-w-lg p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-900">Invitation Details</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Invitation Details</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -1413,10 +1581,10 @@ function InvitationDetailDialog({
           </Field>
         </div>
 
-        {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
-        {resent && !error && <p className="text-sm text-green-600 mt-3">Invitation email resent.</p>}
+        {error && <p className="text-sm text-red-600 dark:text-red-400 mt-3">{error}</p>}
+        {resent && !error && <p className="text-sm text-green-600 dark:text-green-400 mt-3">Invitation email resent.</p>}
 
-        <div className="flex flex-col gap-3 pt-4 mt-2 border-t border-gray-100">
+        <div className="flex flex-col gap-3 pt-4 mt-2 border-t border-gray-100 dark:border-border">
           {/* Top row: invitation-level actions (unchanged) */}
           <div className="flex flex-wrap items-center gap-3">
             {invitation.status === "pending" && (
@@ -1424,7 +1592,7 @@ function InvitationDetailDialog({
                 type="button"
                 onClick={handleRevoke}
                 disabled={submitting}
-                className="flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-600 disabled:opacity-50"
+                className="flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 transition-colors"
               >
                 <Trash2 size={16} />
                 {submitting ? "Revoking…" : "Revoke invitation"}
@@ -1435,7 +1603,7 @@ function InvitationDetailDialog({
                 type="button"
                 onClick={handleResend}
                 disabled={submitting}
-                className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 disabled:opacity-50 transition-colors"
               >
                 {submitting ? "Resending…" : "Resend invite"}
               </button>
@@ -1445,7 +1613,7 @@ function InvitationDetailDialog({
                 type="button"
                 onClick={() => onEditUser(matchedUser as User)}
                 disabled={submitting}
-                className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 disabled:opacity-50 transition-colors"
               >
                 Edit user
               </button>
@@ -1460,7 +1628,7 @@ function InvitationDetailDialog({
                   type="button"
                   onClick={handleEdit}
                   disabled={submitting}
-                  className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                  className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 disabled:opacity-50 transition-colors"
                 >
                   Edit
                 </button>
@@ -1470,7 +1638,7 @@ function InvitationDetailDialog({
                     type="button"
                     onClick={handleCancel}
                     disabled={submitting}
-                    className="text-sm font-medium text-gray-600 hover:text-gray-700 disabled:opacity-50"
+                    className="text-sm font-medium text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50 transition-colors"
                   >
                     Cancel
                   </button>
@@ -1478,7 +1646,7 @@ function InvitationDetailDialog({
                     type="button"
                     onClick={handleSave}
                     disabled={submitting}
-                    className="text-sm font-medium text-green-600 hover:text-green-700 disabled:opacity-50"
+                    className="text-sm font-medium text-green-600 hover:text-green-700 dark:text-emerald-400 dark:hover:text-emerald-300 disabled:opacity-50 transition-colors"
                   >
                     {submitting ? "Saving…" : "Save changes"}
                   </button>
@@ -1488,7 +1656,7 @@ function InvitationDetailDialog({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100"
+              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-secondary border border-transparent dark:border-border transition-colors"
             >
               Close
             </button>
@@ -1597,12 +1765,12 @@ function GeneralSettingsApp({ onExit }: { onExit: () => void }) {
       : "Back to Organization";
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-background">
       <div className="max-w-3xl mx-auto px-6 py-8">
         <button
           type="button"
           onClick={goBack}
-          className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-700 mb-6"
+          className="flex items-center gap-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 mb-6 transition-colors"
         >
           <ArrowLeft size={16} />
           {backLabel}
@@ -1611,12 +1779,12 @@ function GeneralSettingsApp({ onExit }: { onExit: () => void }) {
         {screen.name === "list" && (
           <>
             <div className="mb-8">
-              <h1 className="text-2xl font-bold text-gray-900">General Settings</h1>
-              <p className="text-gray-500 mt-1">Manage your organizations</p>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">General Settings</h1>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">Manage your organizations</p>
             </div>
 
-            {orgsLoading && <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>}
-            {orgsError && <p className="text-sm text-red-600 py-6 text-center">{orgsError}</p>}
+            {orgsLoading && <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Loading…</p>}
+            {orgsError && <p className="text-sm text-red-600 dark:text-red-400 py-6 text-center">{orgsError}</p>}
 
             {!orgsLoading && !orgsError && (
               <RecordSection
@@ -1653,11 +1821,11 @@ function GeneralSettingsApp({ onExit }: { onExit: () => void }) {
             if (!org) {
               return (
                 <div className="text-center py-12">
-                  <p className="text-sm text-gray-500 mb-4">This organization no longer exists.</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">This organization no longer exists.</p>
                   <button
                     type="button"
                     onClick={() => setScreen({ name: "list" })}
-                    className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                    className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                   >
                     Back to organizations
                   </button>
@@ -1687,11 +1855,11 @@ function GeneralSettingsApp({ onExit }: { onExit: () => void }) {
             if (!org) {
               return (
                 <div className="text-center py-12">
-                  <p className="text-sm text-gray-500 mb-4">This organization no longer exists.</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">This organization no longer exists.</p>
                   <button
                     type="button"
                     onClick={() => setScreen({ name: "list" })}
-                    className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                    className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                   >
                     Back to organizations
                   </button>
@@ -1816,18 +1984,18 @@ function OrganizationDetailScreen({
             <img
               src={organization.logo}
               alt=""
-              className="w-14 h-14 rounded-xl object-cover border border-gray-200"
+              className="w-14 h-14 rounded-xl object-cover border border-gray-200 dark:border-border"
             />
           ) : (
-            <span className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center">
-              <Building2 size={22} className="text-gray-400" />
+            <span className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-secondary flex items-center justify-center">
+              <Building2 size={22} className="text-gray-400 dark:text-gray-500" />
             </span>
           )}
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
               {organization.name.trim() || "Untitled organization"}
             </h1>
-            <p className="text-gray-500 text-sm mt-0.5">
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
               {organization.address.trim() || "No address yet"}
             </p>
           </div>
@@ -1835,14 +2003,14 @@ function OrganizationDetailScreen({
         <button
           type="button"
           onClick={onEditOrganization}
-          className="text-sm font-medium text-blue-600 hover:text-blue-700 shrink-0"
+          className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 shrink-0 transition-colors"
         >
           Edit
         </button>
       </div>
 
       {isEmpty && (
-        <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+        <div className="mb-6 rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-950/40 px-4 py-3 text-sm text-blue-700 dark:text-blue-300">
           No companies or entities yet. Anything you add below belongs to{" "}
           <span className="font-semibold">{orgLabel}</span> — use "Add company" or "Add entity" to
           get started.
@@ -1909,14 +2077,14 @@ function RecordSection({
     <div className="mb-8">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Icon size={18} className="text-blue-600" />
-          <h2 className="text-base font-bold text-gray-900">{title}</h2>
-          <span className="text-xs font-medium text-gray-400">{items.length}</span>
+          <Icon size={18} className="text-blue-600 dark:text-blue-400" />
+          <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">{title}</h2>
+          <span className="text-xs font-medium text-gray-400 dark:text-gray-500">{items.length}</span>
         </div>
         <button
           type="button"
           onClick={onAdd}
-          className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
+          className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
         >
           <Plus size={16} />
           {addLabel}
@@ -1924,7 +2092,7 @@ function RecordSection({
       </div>
 
       {items.length === 0 ? (
-        <p className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-xl px-4 py-6 text-center">
+        <p className="text-sm text-gray-400 dark:text-gray-500 border border-dashed border-gray-200 dark:border-border rounded-xl px-4 py-6 text-center">
           {emptyLabel}
         </p>
       ) : (
@@ -1934,26 +2102,26 @@ function RecordSection({
               key={item.id}
               type="button"
               onClick={() => onSelect(item.id)}
-              className="w-full flex items-center justify-between border border-gray-100 bg-white rounded-xl px-4 py-3 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center justify-between border border-gray-100 dark:border-border bg-white dark:bg-card rounded-xl px-4 py-3 hover:bg-gray-50 dark:hover:bg-muted/40 transition-colors shadow-sm dark:shadow-none"
             >
               <div className="flex items-center gap-3 text-left">
                 {item.logo ? (
                   <img
                     src={item.logo}
                     alt=""
-                    className="w-9 h-9 rounded-lg object-cover border border-gray-200"
+                    className="w-9 h-9 rounded-lg object-cover border border-gray-200 dark:border-border"
                   />
                 ) : (
-                  <span className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center">
-                    <Icon size={16} className="text-gray-400" />
+                  <span className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-secondary flex items-center justify-center">
+                    <Icon size={16} className="text-gray-400 dark:text-gray-500" />
                   </span>
                 )}
                 <div>
-                  <p className="font-semibold text-gray-900 text-sm">{item.title}</p>
-                  <p className="text-gray-500 text-xs mt-0.5">{item.subtitle}</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{item.title}</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{item.subtitle}</p>
                 </div>
               </div>
-              <ChevronRight size={18} className="text-gray-300" />
+              <ChevronRight size={18} className="text-gray-300 dark:text-gray-600" />
             </button>
           ))}
         </div>
@@ -1982,13 +2150,13 @@ function FormScreenShell({
   return (
     <form onSubmit={onSubmit}>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{title}</h1>
         {onDelete && (
           <button
             type="button"
             onClick={onDelete}
             disabled={submitting}
-            className="flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-600 disabled:opacity-50"
+            className="flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 transition-colors"
           >
             <Trash2 size={16} />
             Delete
@@ -1996,21 +2164,21 @@ function FormScreenShell({
         )}
       </div>
 
-      <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-3">{children}</div>
+      <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl p-6 space-y-3 shadow-sm dark:shadow-none">{children}</div>
 
       <div className="flex justify-end gap-2 mt-6">
         <button
           type="button"
           onClick={onCancel}
           disabled={submitting}
-          className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+          className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-secondary border border-transparent dark:border-border disabled:opacity-50 transition-colors"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={submitting}
-          className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+          className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white disabled:opacity-50 transition-colors shadow-sm"
         >
           {submitting ? "Saving…" : submitLabel}
         </button>
@@ -2077,13 +2245,13 @@ function OrganizationFormScreen({
       <Field label="Logo">
         <div className="flex items-center gap-3">
           {logoPreview && (
-            <img src={logoPreview} alt="Logo preview" className="w-12 h-12 rounded-lg object-cover border border-gray-200" />
+            <img src={logoPreview} alt="Logo preview" className="w-12 h-12 rounded-lg object-cover border border-gray-200 dark:border-border" />
           )}
           <input
             type="file"
             accept="image/*"
             onChange={handleLogoChange}
-            className="text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-700 file:text-sm file:font-medium hover:file:bg-gray-200"
+            className="text-sm text-gray-600 dark:text-gray-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 dark:file:bg-secondary file:text-gray-700 dark:file:text-gray-200 file:text-sm file:font-medium hover:file:bg-gray-200 dark:hover:file:bg-muted transition-colors"
           />
         </div>
       </Field>
@@ -2093,11 +2261,11 @@ function OrganizationFormScreen({
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           rows={3}
-          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+          className="w-full rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-secondary/80 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
           placeholder="Street, city, state, ZIP"
         />
       </Field>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
     </FormScreenShell>
   );
 }
@@ -2209,7 +2377,7 @@ function CompanyFormScreen({
   }
 
   if (loading) {
-    return <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>;
+    return <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Loading…</p>;
   }
 
   return (
@@ -2248,7 +2416,7 @@ function CompanyFormScreen({
           <TextInput required value={form.region} onChange={(e) => update("region", e.target.value)} />
         </Field>
       </div>
-      {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400 mt-1">{error}</p>}
     </FormScreenShell>
   );
 }
@@ -2343,7 +2511,7 @@ function EntityFormScreen({
   }
 
   if (loading) {
-    return <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>;
+    return <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Loading…</p>;
   }
 
   return (
@@ -2368,7 +2536,7 @@ function EntityFormScreen({
           <TextInput required value={zone} onChange={(e) => setZone(e.target.value)} />
         </Field>
       </div>
-      {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400 mt-1">{error}</p>}
     </FormScreenShell>
   );
 }
@@ -2540,37 +2708,49 @@ function OrganizationWizardScreen({
           return (
             <div key={s.label} className="flex items-center gap-2 flex-1">
               <div
-                className={`flex items-center gap-2 flex-1 rounded-xl px-3 py-2 border ${
-                  isActive ? "border-blue-500 bg-blue-50" : isDone ? "border-green-200 bg-green-50" : "border-gray-100 bg-gray-50"
+                className={`flex items-center gap-2 flex-1 rounded-xl px-3 py-2 border transition-colors ${
+                  isActive
+                    ? "border-blue-500 bg-blue-50 dark:border-blue-600 dark:bg-blue-950/50"
+                    : isDone
+                    ? "border-green-200 bg-green-50 dark:border-emerald-800 dark:bg-emerald-950/40"
+                    : "border-gray-100 bg-gray-50 dark:border-border dark:bg-secondary/40"
                 }`}
               >
                 <span
                   className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-                    isActive ? "bg-blue-600 text-white" : isDone ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500"
+                    isActive
+                      ? "bg-blue-600 text-white"
+                      : isDone
+                      ? "bg-green-500 text-white"
+                      : "bg-gray-200 dark:bg-muted text-gray-500 dark:text-gray-400"
                   }`}
                 >
                   {n}
                 </span>
                 <span
                   className={`text-sm font-medium truncate ${
-                    isActive ? "text-blue-700" : isDone ? "text-green-700" : "text-gray-400"
+                    isActive
+                      ? "text-blue-700 dark:text-blue-300"
+                      : isDone
+                      ? "text-green-700 dark:text-emerald-300"
+                      : "text-gray-400 dark:text-gray-500"
                   }`}
                 >
                   {s.label}
                 </span>
               </div>
-              {i < WIZARD_STEPS.length - 1 && <ChevronRight size={16} className="text-gray-300 shrink-0" />}
+              {i < WIZARD_STEPS.length - 1 && <ChevronRight size={16} className="text-gray-300 dark:text-gray-600 shrink-0" />}
             </div>
           );
         })}
       </div>
 
       <form onSubmit={handleFormSubmit}>
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
           {step === 1 ? "New Organization" : step === 2 ? "Company Setup" : "Entity Setup"}
         </h1>
 
-        <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-3">
+        <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl p-6 space-y-3 shadow-sm dark:shadow-none">
           {step === 1 && (
             <>
               <Field label="Organization name">
@@ -2579,13 +2759,13 @@ function OrganizationWizardScreen({
               <Field label="Logo">
                 <div className="flex items-center gap-3">
                   {orgLogoPreview && (
-                    <img src={orgLogoPreview} alt="Logo preview" className="w-12 h-12 rounded-lg object-cover border border-gray-200" />
+                    <img src={orgLogoPreview} alt="Logo preview" className="w-12 h-12 rounded-lg object-cover border border-gray-200 dark:border-border" />
                   )}
                   <input
                     type="file"
                     accept="image/*"
                     onChange={handleLogoChange}
-                    className="text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-700 file:text-sm file:font-medium hover:file:bg-gray-200"
+                    className="text-sm text-gray-600 dark:text-gray-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 dark:file:bg-secondary file:text-gray-700 dark:file:text-gray-200 file:text-sm file:font-medium hover:file:bg-gray-200 dark:hover:file:bg-muted transition-colors"
                   />
                 </div>
               </Field>
@@ -2595,7 +2775,7 @@ function OrganizationWizardScreen({
                   value={orgAddress}
                   onChange={(e) => setOrgAddress(e.target.value)}
                   rows={3}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                  className="w-full rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-secondary/80 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
                   placeholder="Street, city, state, ZIP"
                 />
               </Field>
@@ -2652,22 +2832,22 @@ function OrganizationWizardScreen({
             </>
           )}
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         </div>
 
-        <div className="flex justify-end gap-2 mt-6">invite user
+        <div className="flex justify-end gap-2 mt-6">
           <button
             type="button"
             onClick={handleBackClick}
             disabled={submitting}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+            className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-secondary border border-transparent dark:border-border disabled:opacity-50 transition-colors"
           >
             Back
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white disabled:opacity-50 transition-colors shadow-sm"
           >
             {submitting ? "Saving…" : step === 3 ? "Submit" : "Next"}
           </button>
