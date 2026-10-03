@@ -41,7 +41,8 @@ async function refreshAccessToken(): Promise<string | null> {
 }
 
 async function request<T>(pathOrUrl: string, options: RequestInit = {}, isRetry = false): Promise<T> {
-  const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${API_BASE_URL}${pathOrUrl}`;
+  const normalizedPath = pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`;
+  const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${API_BASE_URL}${normalizedPath}`;
   const token = getAccessToken();
 
   const headers: HeadersInit = {
