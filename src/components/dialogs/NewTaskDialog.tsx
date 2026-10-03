@@ -59,7 +59,7 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
   const { data: organizations = [], isLoading: orgsLoading } = useQuery({
     queryKey: ["organizations"], queryFn: organizationApi.list, enabled: open && !lockedProjectId,
   });
-  const orgId = form.organizationId ? Number(form.organizationId) : null;
+  const orgId = form.organizationId && form.organizationId !== 'all' ? Number(form.organizationId) : null;
   const { data: companies = [], isLoading: companiesLoading } = useQuery({
     queryKey: ["organization-companies", orgId],
     queryFn: () => companyApi.list(orgId as number),
@@ -74,18 +74,14 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
   const { data: projects = [] } = useQuery({ queryKey: ["projects"], queryFn: projectsApi.list, enabled: open });
   const { data: towers = [] } = useQuery({ queryKey: ["towers"], queryFn: towersApi.list, enabled: open });
   const { data: floors = [] } = useQuery({ queryKey: ["floors"], queryFn: floorsApi.list, enabled: open });
-  // ✅ NEW: units, needed to fill the missing Unit selector below.
   const { data: units = [] } = useQuery({ queryKey: ["units"], queryFn: unitsApi.list, enabled: open });
   const { data: checklistTemplates = [] } = useQuery({
     queryKey: ["checklist-templates"], queryFn: checklistTemplatesApi.list, enabled: open,
   });
-  // ✅ NEW: users list, needed for the Assign to HOD picker below.
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ["users"], queryFn: usersApi.list, enabled: open,
   });
 
-  // ✅ FIXED: was entity="project" — this dropdown is for a TASK's status,
-  // so it must read the task status list, not the project status list.
   const { data: taskStatuses = [] } = useQuery({
     queryKey: ["statuses", "task"],
     queryFn: () => statusesApi.list("task"),
@@ -93,28 +89,123 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
   });
   const statusOptions = taskStatuses.length > 0 ? taskStatuses : FALLBACK_TASK_STATUSES;
 
-  // Resolve the active project (locked or picked) and read its
-  // hierarchy mode straight from the record — single source of truth.
   const activeProjectId = lockedProjectId ?? (form.projectId ? Number(form.projectId) : null);
   const activeProject = projects.find(p => p.id === activeProjectId);
   const isDirectMode = activeProject?.hierarchyMode === "direct_task";
 
   const filteredProjects = projects.filter(p => {
     if (orgId !== null && p.organizationId !== orgId) return false;
-    if (form.companyId && p.companyId !== Number(form.companyId)) return false;
-    if (form.entityId && p.entityId !== Number(form.entityId)) return false;
+    if (form.companyId && form.companyId !== 'all' && p.companyId !== Number(form.companyId)) return false;
+    if (form.entityId && form.entityId !== 'all' && p.entityId !== Number(form.entityId)) return false;
     return true;
   });
   const projectTowers = towers.filter(t => String(t.projectId) === form.projectId);
   const towerFloors = floors.filter(f => String(f.towerId) === form.towerId);
-  // ✅ NEW: units cascade from the chosen floor, same pattern as floors from tower.
   const floorUnits = units.filter(u => String(u.floorId) === form.floorId);
 
   const handleOrgChange = (value: string) => {
+    const nextOrg = value === "all" ? "" : value;
     setForm(prev => ({
-      ...prev, organizationId: value, companyId: '', entityId: '',
-      projectId: '', towerId: '', floorId: '', unitId: '',
+      ...prev,
+      organizationId: nextOrg,
+      companyId: '',
+      entityId: '',
+      projectId: '',
+      towerId: '',
+      floorId: '',
+      unitId: '',
     }));
+  };
+
+  const handleCompanyChange = (value: string) => {
+    const nextCompany = value === "all" ? "" : value;
+    setForm(prev => ({
+      ...prev,
+      companyId: nextCompany,
+      projectId: '',
+      towerId: '',
+      floorId: '',
+      unitId: '',
+    }));
+  };
+
+  const handleEntityChange = (value: string) => {
+    const nextEntity = value === "all" ? "" : value;
+    setForm(prev => ({
+      ...prev,
+      entityId: nextEntity,
+      projectId: '',
+      towerId: '',
+      floorId: '',
+      unitId: '',
+    }));
+  };
+
+  const handleProjectChange = (projId: string) => {
+    const proj = projects.find(p => String(p.id) === projId);
+    const availableTowers = towers.filter(t => String(t.projectId) === projId);
+    let autoTowerId = '';
+    let autoFloorId = '';
+    let autoUnitId = '';
+
+    if (availableTowers.length === 1) {
+      autoTowerId = String(availableTowers[0].id);
+      const availableFloors = floors.filter(f => String(f.towerId) === autoTowerId);
+      if (availableFloors.length === 1) {
+        autoFloorId = String(availableFloors[0].id);
+        const availableUnits = units.filter(u => String(u.floorId) === autoFloorId);
+        if (availableUnits.length === 1) {
+          autoUnitId = String(availableUnits[0].id);
+        }
+      }
+    }
+
+    setForm(prev => ({
+      ...prev,
+      projectId: projId,
+      organizationId: proj?.organizationId ? String(proj.organizationId) : prev.organizationId,
+      companyId: proj?.companyId ? String(proj.companyId) : prev.companyId,
+      entityId: proj?.entityId ? String(proj.entityId) : prev.entityId,
+      towerId: autoTowerId,
+      floorId: autoFloorId,
+      unitId: autoUnitId,
+    }));
+  };
+
+  const handleTowerChange = (towerId: string) => {
+    const availableFloors = floors.filter(f => String(f.towerId) === towerId);
+    let autoFloorId = '';
+    let autoUnitId = '';
+    if (availableFloors.length === 1) {
+      autoFloorId = String(availableFloors[0].id);
+      const availableUnits = units.filter(u => String(u.floorId) === autoFloorId);
+      if (availableUnits.length === 1) {
+        autoUnitId = String(availableUnits[0].id);
+      }
+    }
+    setForm(prev => ({
+      ...prev,
+      towerId,
+      floorId: autoFloorId,
+      unitId: autoUnitId,
+    }));
+  };
+
+  const handleFloorChange = (floorId: string) => {
+    const availableUnits = units.filter(u => String(u.floorId) === floorId);
+    let autoUnitId = '';
+    if (availableUnits.length === 1) {
+      autoUnitId = String(availableUnits[0].id);
+    }
+    setForm(prev => ({
+      ...prev,
+      floorId,
+      unitId: autoUnitId,
+    }));
+  };
+
+  const handleUnitChange = (unitId: string) => {
+    setForm(prev => ({ ...prev, unitId }));
   };
 
   const createMutation = useMutation({
@@ -216,28 +307,43 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
               <div className="grid md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Organization</Label>
-                  <Select value={form.organizationId} onValueChange={handleOrgChange}>
+                  <Select value={form.organizationId || "all"} onValueChange={handleOrgChange}>
                     <SelectTrigger>
-                      <SelectValue placeholder={orgsLoading ? "Loading…" : "Select organization"} />
+                      <SelectValue placeholder={orgsLoading ? "Loading…" : "All Organizations"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {organizations.map((org: Organization) => (
-                        <SelectItem key={org.id} value={String(org.id)}>{org.name}</SelectItem>
-                      ))}
+                      <SelectItem value="all">All Organizations</SelectItem>
+                      {organizations.map((org: Organization) => {
+                        const count = projects.filter(p => p.organizationId === org.id).length;
+                        return (
+                          <SelectItem key={org.id} value={String(org.id)}>
+                            {org.name} ({count} {count === 1 ? 'project' : 'projects'})
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Company</Label>
                   <Select
-                    value={form.companyId}
-                    onValueChange={v => setForm(prev => ({ ...prev, companyId: v, projectId: '', towerId: '', floorId: '', unitId: '' }))}
-                    disabled={!form.organizationId}
+                    value={form.companyId || "all"}
+                    onValueChange={handleCompanyChange}
+                    disabled={!form.organizationId || form.organizationId === "all"}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder={!form.organizationId ? "Select organization first" : companiesLoading ? "Loading…" : "Select company"} />
+                      <SelectValue
+                        placeholder={
+                          !form.organizationId || form.organizationId === "all"
+                            ? "All Companies"
+                            : companiesLoading
+                            ? "Loading…"
+                            : "Select company"
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="all">All Companies</SelectItem>
                       {companies.map((c: OrganizationCompany) => (
                         <SelectItem key={c.id} value={String(c.id)}>{c.company_name}</SelectItem>
                       ))}
@@ -247,14 +353,23 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
                 <div className="space-y-2">
                   <Label>Entity</Label>
                   <Select
-                    value={form.entityId}
-                    onValueChange={v => setForm(prev => ({ ...prev, entityId: v, projectId: '', towerId: '', floorId: '', unitId: '' }))}
-                    disabled={!form.organizationId}
+                    value={form.entityId || "all"}
+                    onValueChange={handleEntityChange}
+                    disabled={!form.organizationId || form.organizationId === "all"}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder={!form.organizationId ? "Select organization first" : entitiesLoading ? "Loading…" : "Select entity (optional)"} />
+                      <SelectValue
+                        placeholder={
+                          !form.organizationId || form.organizationId === "all"
+                            ? "All Entities"
+                            : entitiesLoading
+                            ? "Loading…"
+                            : "Select entity (optional)"
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="all">All Entities</SelectItem>
                       {entities.map((e: Entity) => (
                         <SelectItem key={e.id} value={String(e.id)}>{e.entity_name}</SelectItem>
                       ))}
@@ -263,31 +378,76 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
                 </div>
               </div>
 
+              {form.organizationId && form.organizationId !== 'all' && filteredProjects.length === 0 && (
+                <div className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 p-2.5 rounded-md flex items-center justify-between gap-2">
+                  <span>No projects exist under this organization/company yet.</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs border-amber-400 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                    onClick={() => handleOrgChange("all")}
+                  >
+                    Show All Projects
+                  </Button>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label>Project *</Label>
-                <Select value={form.projectId} onValueChange={v => setForm({ ...form, projectId: v, towerId: '', floorId: '', unitId: '' })}>
-                  <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
+                <Select value={form.projectId} onValueChange={handleProjectChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={filteredProjects.length === 0 ? "No projects available" : "Select project"} />
+                  </SelectTrigger>
                   <SelectContent>
-                    {filteredProjects.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+                    {filteredProjects.length === 0 ? (
+                      <SelectItem disabled value="__none__">
+                        {form.organizationId ? "No projects in this organization" : "No projects found"}
+                      </SelectItem>
+                    ) : (
+                      filteredProjects.map(p => (
+                        <SelectItem key={p.id} value={String(p.id)}>
+                          {p.name} {p.hierarchyMode === "direct_task" ? "⚡ (Direct Task)" : ""}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
             </>
           )}
 
-          {/* Tower/Floor/Unit hidden when locked project (or picked project) is direct_task.
-              ✅ NEW: Unit select added — the backend requires tower+floor+unit
-              together for full-hierarchy projects, but only Tower/Floor existed
-              before, so every full-hierarchy submission from this dialog failed
-              validation. */}
+          {activeProject && isDirectMode && (
+            <div className="text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-2.5 rounded-md flex items-center gap-2">
+              <span>⚡ <strong>Direct-to-Task mode:</strong> Tasks in &ldquo;{activeProject.name}&rdquo; connect directly to the project without Tower, Floor, or Unit.</span>
+            </div>
+          )}
+
+          {/* Tower/Floor/Unit hidden when locked project (or picked project) is direct_task. */}
           {!isDirectMode && (
             <div className="grid md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Tower *</Label>
-                <Select value={form.towerId} onValueChange={v => setForm({ ...form, towerId: v, floorId: '', unitId: '' })}>
-                  <SelectTrigger><SelectValue placeholder="Select tower" /></SelectTrigger>
+                <Select
+                  value={form.towerId}
+                  onValueChange={handleTowerChange}
+                  disabled={!form.projectId || projectTowers.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        !form.projectId
+                          ? "Select project first"
+                          : projectTowers.length === 0
+                          ? "No towers in this project"
+                          : "Select tower"
+                      }
+                    />
+                  </SelectTrigger>
                   <SelectContent>
-                    {projectTowers.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
+                    {projectTowers.map(t => (
+                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -295,12 +455,24 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
                 <Label>Floor *</Label>
                 <Select
                   value={form.floorId}
-                  onValueChange={v => setForm({ ...form, floorId: v, unitId: '' })}
-                  disabled={!form.towerId}
+                  onValueChange={handleFloorChange}
+                  disabled={!form.towerId || towerFloors.length === 0}
                 >
-                  <SelectTrigger><SelectValue placeholder={!form.towerId ? "Select tower first" : "Select floor"} /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        !form.towerId
+                          ? "Select tower first"
+                          : towerFloors.length === 0
+                          ? "No floors in this tower"
+                          : "Select floor"
+                      }
+                    />
+                  </SelectTrigger>
                   <SelectContent>
-                    {towerFloors.map(f => <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>)}
+                    {towerFloors.map(f => (
+                      <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -308,12 +480,24 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
                 <Label>Unit *</Label>
                 <Select
                   value={form.unitId}
-                  onValueChange={v => setForm({ ...form, unitId: v })}
-                  disabled={!form.floorId}
+                  onValueChange={handleUnitChange}
+                  disabled={!form.floorId || floorUnits.length === 0}
                 >
-                  <SelectTrigger><SelectValue placeholder={!form.floorId ? "Select floor first" : "Select unit"} /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        !form.floorId
+                          ? "Select floor first"
+                          : floorUnits.length === 0
+                          ? "No units on this floor"
+                          : "Select unit"
+                      }
+                    />
+                  </SelectTrigger>
                   <SelectContent>
-                    {floorUnits.map(u => <SelectItem key={u.id} value={String(u.id)}>{u.unitNumber}</SelectItem>)}
+                    {floorUnits.map(u => (
+                      <SelectItem key={u.id} value={String(u.id)}>{u.unitNumber}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
