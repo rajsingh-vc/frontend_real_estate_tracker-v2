@@ -173,7 +173,8 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
   };
 
   const handleTowerChange = (towerId: string) => {
-    const availableFloors = floors.filter(f => String(f.towerId) === towerId);
+    const nextTower = towerId === "none" ? "" : towerId;
+    const availableFloors = nextTower ? floors.filter(f => String(f.towerId) === nextTower) : [];
     let autoFloorId = '';
     let autoUnitId = '';
     if (availableFloors.length === 1) {
@@ -185,27 +186,29 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
     }
     setForm(prev => ({
       ...prev,
-      towerId,
+      towerId: nextTower,
       floorId: autoFloorId,
       unitId: autoUnitId,
     }));
   };
 
   const handleFloorChange = (floorId: string) => {
-    const availableUnits = units.filter(u => String(u.floorId) === floorId);
+    const nextFloor = floorId === "none" ? "" : floorId;
+    const availableUnits = nextFloor ? units.filter(u => String(u.floorId) === nextFloor) : [];
     let autoUnitId = '';
     if (availableUnits.length === 1) {
       autoUnitId = String(availableUnits[0].id);
     }
     setForm(prev => ({
       ...prev,
-      floorId,
+      floorId: nextFloor,
       unitId: autoUnitId,
     }));
   };
 
   const handleUnitChange = (unitId: string) => {
-    setForm(prev => ({ ...prev, unitId }));
+    const nextUnit = unitId === "none" ? "" : unitId;
+    setForm(prev => ({ ...prev, unitId: nextUnit }));
   };
 
   const createMutation = useMutation({
@@ -228,10 +231,6 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
 
   const handleSubmit = () => {
     if (!form.title || !form.projectId) return;
-    // ✅ NEW: full-hierarchy projects require tower+floor+unit — mirrors
-    // the backend's TaskSerializer.validate(), enforced client-side too so
-    // the user gets immediate feedback instead of a round-trip 400.
-    if (!isDirectMode && (!form.towerId || !form.floorId || !form.unitId)) return;
 
     const payload: NewTaskPayload = {
       title: form.title,
@@ -242,7 +241,7 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
     };
     if (form.priority) payload.priority = form.priority;
     if (form.status) payload.status = form.status;
-    // Tower/Floor/Unit only ever sent when not in direct mode.
+    // Tower/Floor/Unit only ever sent when not in direct mode and selected.
     if (!isDirectMode) {
       if (form.towerId) payload.towerId = Number(form.towerId);
       if (form.floorId) payload.floorId = Number(form.floorId);
@@ -269,8 +268,7 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
     }
   };
 
-  const canSubmit =
-    !!form.title && !!form.projectId && (isDirectMode || (!!form.towerId && !!form.floorId && !!form.unitId));
+  const canSubmit = !!form.title && !!form.projectId;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -427,9 +425,9 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
           {!isDirectMode && (
             <div className="grid md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Tower *</Label>
+                <Label>Tower</Label>
                 <Select
-                  value={form.towerId}
+                  value={form.towerId || "none"}
                   onValueChange={handleTowerChange}
                   disabled={!form.projectId || projectTowers.length === 0}
                 >
@@ -439,12 +437,13 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
                         !form.projectId
                           ? "Select project first"
                           : projectTowers.length === 0
-                          ? "No towers in this project"
-                          : "Select tower"
+                          ? "No towers (optional)"
+                          : "Select tower (optional)"
                       }
                     />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">None (Project level)</SelectItem>
                     {projectTowers.map(t => (
                       <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                     ))}
@@ -452,9 +451,9 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Floor *</Label>
+                <Label>Floor</Label>
                 <Select
-                  value={form.floorId}
+                  value={form.floorId || "none"}
                   onValueChange={handleFloorChange}
                   disabled={!form.towerId || towerFloors.length === 0}
                 >
@@ -465,11 +464,12 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
                           ? "Select tower first"
                           : towerFloors.length === 0
                           ? "No floors in this tower"
-                          : "Select floor"
+                          : "Select floor (optional)"
                       }
                     />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">None (Tower level)</SelectItem>
                     {towerFloors.map(f => (
                       <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
                     ))}
@@ -477,9 +477,9 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Unit *</Label>
+                <Label>Unit</Label>
                 <Select
-                  value={form.unitId}
+                  value={form.unitId || "none"}
                   onValueChange={handleUnitChange}
                   disabled={!form.floorId || floorUnits.length === 0}
                 >
@@ -490,11 +490,12 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
                           ? "Select floor first"
                           : floorUnits.length === 0
                           ? "No units on this floor"
-                          : "Select unit"
+                          : "Select unit (optional)"
                       }
                     />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">None (Floor level)</SelectItem>
                     {floorUnits.map(u => (
                       <SelectItem key={u.id} value={String(u.id)}>{u.unitNumber}</SelectItem>
                     ))}

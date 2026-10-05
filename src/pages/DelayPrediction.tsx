@@ -570,31 +570,93 @@ const DelayPrediction = () => {
     fetchData();
   }, []);
 
+  // ── Active Projects Filter ──
+  const validProjects = useMemo(() => {
+    return projects.filter(
+      (p) => p && p.status?.toLowerCase() !== "deleted" && p.status?.toLowerCase() !== "archived"
+    );
+  }, [projects]);
+
+  const activeProjectIds = useMemo(() => new Set(validProjects.map((p) => p.id)), [validProjects]);
+
+  const validTasks = useMemo(() => {
+    return tasks.filter((t) => t.projectId && activeProjectIds.has(t.projectId));
+  }, [tasks, activeProjectIds]);
+
+  const validTowers = useMemo(() => {
+    return towers.filter((t) => t.projectId && activeProjectIds.has(t.projectId));
+  }, [towers, activeProjectIds]);
+
+  const validHurdles = useMemo(() => {
+    return hurdles.filter((h) => {
+      if (h.affectedTaskId) return validTasks.some((t) => t.id === h.affectedTaskId);
+      return true;
+    });
+  }, [hurdles, validTasks]);
+
   // ── Memoized lookups ──
   const getProjectById = useMemo(
-    () => (id: number) => projects.find((p) => p.id === id) || null,
-    [projects]
+    () => (id: number) => validProjects.find((p) => p.id === id) || null,
+    [validProjects]
   );
   const getTowerById = useMemo(
-    () => (id: number) => towers.find((t) => t.id === id) || null,
-    [towers]
+    () => (id: number) => validTowers.find((t) => t.id === id) || null,
+    [validTowers]
   );
 
   // ── Predictions (re‑computed whenever any data or filter changes) ──
   const predictions = useMemo(() => {
     if (loading) return [];
-    return getPredictions(tasks, hurdles, projects, towers, selectedProjectId);
-  }, [tasks, hurdles, projects, towers, selectedProjectId, loading]);
+    return getPredictions(validTasks, validHurdles, validProjects, validTowers, selectedProjectId);
+  }, [validTasks, validHurdles, validProjects, validTowers, selectedProjectId, loading]);
 
   // ── Derived aggregates ──
   const highRisk = predictions.filter((p) => p.riskScore >= 60);
   const mediumRisk = predictions.filter((p) => p.riskScore >= 30 && p.riskScore < 60);
   const lowRisk = predictions.filter((p) => p.riskScore < 30);
+  const onTrack = predictions.filter((p) => p.riskScore < 30 && (p.task.delayDays || 0) === 0);
+  const delayedTasks = predictions.filter((p) => (p.task.delayDays || 0) > 0 || p.task.status === "delayed");
+
+  const avgPredictedDelayDays = predictions.length
+    ? Math.round(
+        predictions.reduce(
+          (sum, p) => sum + (p.task.delayDays || 0) + (p.riskScore >= 60 ? 4 : p.riskScore >= 30 ? 1 : 0),
+          0
+        ) / predictions.length
+      )
+    : 0;
+
+  const selectedProject =
+    selectedProjectId === ALL_PROJECTS ? null : getProjectById(Number(selectedProjectId));
+
+  const completionProgress = selectedProject
+    ? selectedProject.progress
+    : validProjects.length
+    ? Math.round(validProjects.reduce((a, p) => a + (p.progress || 0), 0) / validProjects.length)
+    : 0;
+
+  const expectedCompletionDate = useMemo(() => {
+    const dates = predictions
+      .map((p) => p.task.endDate)
+      .filter(Boolean) as string[];
+    if (dates.length > 0) {
+      dates.sort();
+      return dates[dates.length - 1];
+    }
+    return selectedProject?.endDate || "On Schedule";
+  }, [predictions, selectedProject]);
+
+  const overallDelayRisk = highRisk.length > 0 ? "High Risk" : mediumRisk.length > 0 ? "Moderate Risk" : "Low Risk";
+  const overallRiskBadge = highRisk.length > 0
+    ? "bg-destructive text-destructive-foreground"
+    : mediumRisk.length > 0
+    ? "bg-warning text-warning-foreground"
+    : "bg-success text-success-foreground";
 
   const riskByDept = Object.entries(
     predictions.reduce(
       (acc, p) => {
-        const dept = p.task.department;
+        const dept = p.task.department || "General";
         if (!acc[dept]) acc[dept] = { high: 0, medium: 0, low: 0 };
         if (p.riskScore >= 60) acc[dept].high++;
         else if (p.riskScore >= 30) acc[dept].medium++;
@@ -634,8 +696,24 @@ const DelayPrediction = () => {
     );
   }
 
-  // ── Render ──
-  const selectedProject = selectedProjectId === ALL_PROJECTS ? null : getProjectById(Number(selectedProjectId));
+  // ── Empty State if no active projects ──
+  if (validProjects.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="font-display text-2xl md:text-3xl font-bold">Delay Prediction Engine</h1>
+          <p className="text-muted-foreground mt-1">Schedule risk and forecasting</p>
+        </div>
+        <Card className="p-12 text-center">
+          <Building2 className="h-12 w-12 text-muted-foreground/50 mx-auto mb-3" />
+          <h3 className="font-display font-semibold text-lg">No Active Projects Found</h3>
+          <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
+            Delay predictions are based only on currently existing projects. Create a project and add tasks to generate forecasts.
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   if (drillDept) {
     return (
@@ -643,10 +721,10 @@ const DelayPrediction = () => {
         department={drillDept.name}
         level={drillDept.level}
         projectId={selectedProjectId}
-        tasks={tasks}
-        hurdles={hurdles}
-        projects={projects}
-        towers={towers}
+        tasks={validTasks}
+        hurdles={validHurdles}
+        projects={validProjects}
+        towers={validTowers}
         onBack={() => setDrillDept(null)}
       />
     );
@@ -661,8 +739,8 @@ const DelayPrediction = () => {
             Delay Prediction Engine
           </h1>
           <p className="text-muted-foreground mt-1">
-            AI-powered construction delay forecasting
-            {selectedProject ? ` for ${selectedProject.name}` : " across all projects"}
+            Real-time construction delay forecasting
+            {selectedProject ? ` for ${selectedProject.name}` : " across all active projects"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -673,7 +751,7 @@ const DelayPrediction = () => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL_PROJECTS}>All Projects</SelectItem>
-              {projects.map((p) => (
+              {validProjects.map((p) => (
                 <SelectItem key={p.id} value={String(p.id)}>
                   {p.name}
                 </SelectItem>
@@ -683,17 +761,17 @@ const DelayPrediction = () => {
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* KPI Cards: On Track, At Risk, Delayed, Predicted Delay */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
+              <div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center">
+                <Shield className="h-5 w-5 text-success" />
               </div>
               <div>
-                <p className="text-2xl font-display font-bold">{highRisk.length}</p>
-                <p className="text-xs text-muted-foreground">High Risk</p>
+                <p className="text-2xl font-display font-bold text-success">{onTrack.length}</p>
+                <p className="text-xs text-muted-foreground">On Track</p>
               </div>
             </div>
           </CardContent>
@@ -702,11 +780,11 @@ const DelayPrediction = () => {
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-warning/10 flex items-center justify-center">
-                <Clock className="h-5 w-5 text-warning" />
+                <AlertTriangle className="h-5 w-5 text-warning" />
               </div>
               <div>
-                <p className="text-2xl font-display font-bold">{mediumRisk.length}</p>
-                <p className="text-xs text-muted-foreground">Medium Risk</p>
+                <p className="text-2xl font-display font-bold text-warning">{mediumRisk.length + highRisk.length}</p>
+                <p className="text-xs text-muted-foreground">At Risk</p>
               </div>
             </div>
           </CardContent>
@@ -714,12 +792,12 @@ const DelayPrediction = () => {
         <Card>
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center">
-                <Shield className="h-5 w-5 text-success" />
+              <div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center">
+                <Clock className="h-5 w-5 text-destructive" />
               </div>
               <div>
-                <p className="text-2xl font-display font-bold">{lowRisk.length}</p>
-                <p className="text-xs text-muted-foreground">Low Risk</p>
+                <p className="text-2xl font-display font-bold text-destructive">{delayedTasks.length}</p>
+                <p className="text-xs text-muted-foreground">Delayed</p>
               </div>
             </div>
           </CardContent>
@@ -732,19 +810,39 @@ const DelayPrediction = () => {
               </div>
               <div>
                 <p className="text-2xl font-display font-bold">
-                  {predictions.length
-                    ? Math.round(
-                        predictions.reduce((a, p) => a + p.riskScore, 0) /
-                          predictions.length
-                      )
-                    : 0}
+                  {avgPredictedDelayDays > 0 ? `+${avgPredictedDelayDays}d` : "0d"}
                 </p>
-                <p className="text-xs text-muted-foreground">Avg Risk Score</p>
+                <p className="text-xs text-muted-foreground">Predicted Delay</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Project Status Banner: Completion Progress, Expected Completion, Delay Risk */}
+      <Card className="bg-card/50 border">
+        <CardContent className="p-4 md:p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-muted-foreground">Completion Progress</span>
+                <span className="font-bold">{completionProgress}%</span>
+              </div>
+              <Progress value={completionProgress} className="h-2" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Expected Completion</p>
+              <p className="text-lg font-display font-bold mt-1">{expectedCompletionDate}</p>
+            </div>
+            <div className="flex items-center justify-between md:justify-end gap-3">
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Delay Risk</p>
+                <Badge className={`mt-1 ${overallRiskBadge}`}>{overallDelayRisk}</Badge>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Charts */}
       <div className="grid md:grid-cols-2 gap-6">
@@ -754,22 +852,28 @@ const DelayPrediction = () => {
             <CardTitle className="text-lg font-display">Risk Trend (8 Weeks)</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={riskTrend}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="week" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip content={<ChartTooltip />} />
-                <Line
-                  type="monotone"
-                  dataKey="risk"
-                  stroke="hsl(0, 72%, 51%)"
-                  strokeWidth={2}
-                  dot={{ r: 4 }}
-                  name="Risk Index"
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {riskTrend.some((r) => r.risk > 0) ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={riskTrend}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="week" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Line
+                    type="monotone"
+                    dataKey="risk"
+                    stroke="hsl(0, 72%, 51%)"
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                    name="Risk Index"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-48 text-center text-xs text-muted-foreground">
+                Not enough historical timeline data to generate an 8-week risk trend.
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -784,28 +888,44 @@ const DelayPrediction = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <RiskByDepartmentChart
-              data={riskByDept}
-              onSegmentClick={(name, level) => setDrillDept({ name, level })}
-            />
+            {riskByDept.length > 0 ? (
+              <RiskByDepartmentChart
+                data={riskByDept}
+                onSegmentClick={(name, level) => setDrillDept({ name, level })}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-48 text-center text-xs text-muted-foreground">
+                No department task data available.
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* High Risk Tasks */}
+      {/* Affected Tasks / Activities */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg font-display flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-destructive" />
-            Critical Risk Tasks
+          <CardTitle className="text-lg font-display flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-warning" />
+              Affected Tasks &amp; Schedule Risk
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {predictions.length} active task{predictions.length === 1 ? "" : "s"} evaluated
+            </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {predictions.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              No active tasks{selectedProject ? ` for ${selectedProject.name}` : ""} right
-              now.
-            </p>
+            <div className="text-center py-10">
+              <AlertTriangle className="h-10 w-10 text-amber-500/70 mx-auto mb-2" />
+              <p className="font-semibold text-foreground">
+                Not enough data available to generate a reliable prediction.
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                No active tasks with progress or timeline data found{selectedProject ? ` for ${selectedProject.name}` : ""}.
+              </p>
+            </div>
           )}
           {predictions.slice(0, 10).map(({ task, riskScore, risk, project, tower }) => (
             <Dialog key={task.id}>

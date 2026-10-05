@@ -942,65 +942,91 @@ const Reports = () => {
     fetchData();
   }, []);
 
+  // ── Active Projects Filter ──
+  const validProjects = useMemo(() => {
+    return projects.filter(
+      (p) => p && p.status?.toLowerCase() !== "deleted" && p.status?.toLowerCase() !== "archived"
+    );
+  }, [projects]);
+
+  const activeProjectIds = useMemo(() => new Set(validProjects.map((p) => p.id)), [validProjects]);
+
+  const validTasks = useMemo(() => {
+    return tasks.filter((t) => t.projectId && activeProjectIds.has(t.projectId));
+  }, [tasks, activeProjectIds]);
+
+  const validTowers = useMemo(() => {
+    return towers.filter((t) => t.projectId && activeProjectIds.has(t.projectId));
+  }, [towers, activeProjectIds]);
+
+  const validHurdles = useMemo(() => {
+    return hurdles.filter((h) => {
+      if (h.affectedTaskId) return validTasks.some((t) => t.id === h.affectedTaskId);
+      return true;
+    });
+  }, [hurdles, validTasks]);
+
   // ── Memoized derivatives ──
   const activeProject = useMemo(() => {
-    if (reportProjectFilter === 'all') return null;
-    return projects.find(p => String(p.id) === reportProjectFilter) ?? null;
-  }, [projects, reportProjectFilter]);
+    if (reportProjectFilter === "all") return null;
+    return validProjects.find((p) => String(p.id) === reportProjectFilter) ?? null;
+  }, [validProjects, reportProjectFilter]);
 
   const filteredTasks = useMemo(() => {
-    if (!activeProject) return tasks;
-    return tasks.filter(t => t.projectId === activeProject.id);
-  }, [tasks, activeProject]);
+    if (!activeProject) return validTasks;
+    return validTasks.filter((t) => t.projectId === activeProject.id);
+  }, [validTasks, activeProject]);
 
   const deptPerformanceData = useMemo(() => getDeptBreakdown(filteredTasks), [filteredTasks]);
 
   const delayByProject = useMemo(() => {
-    return projects.map(p => ({
-      name: p.name.split(' ')[0],
-      delayed: tasks.filter(t => t.projectId === p.id && t.delayDays > 0).length,
-      totalDelay: tasks.filter(t => t.projectId === p.id).reduce((a, t) => a + t.delayDays, 0),
+    return validProjects.map((p) => ({
+      name: p.name.split(" ")[0],
+      delayed: validTasks.filter((t) => t.projectId === p.id && t.delayDays > 0).length,
+      totalDelay: validTasks.filter((t) => t.projectId === p.id).reduce((a, t) => a + (t.delayDays || 0), 0),
     }));
-  }, [projects, tasks]);
+  }, [validProjects, validTasks]);
 
   const delayByDepartment = useMemo(() => getDelayByDepartment(filteredTasks), [filteredTasks]);
 
   const delayChartData = activeProject ? delayByDepartment : delayByProject;
 
-  // ── Progress Trend (static data) ──
-  const progressData = [
-    { month: 'Sep', marine: 25, skyline: 5, palm: 0 },
-    { month: 'Oct', marine: 28, skyline: 8, palm: 0 },
-    { month: 'Nov', marine: 32, skyline: 12, palm: 2 },
-    { month: 'Dec', marine: 35, skyline: 16, palm: 3 },
-    { month: 'Jan', marine: 38, skyline: 20, palm: 5 },
-    { month: 'Feb', marine: 40, skyline: 24, palm: 6 },
-    { month: 'Mar', marine: 42, skyline: 28, palm: 8 },
-  ];
+  // ── Dynamic Progress Trend ──
+  const dynamicTrend = useMemo(() => {
+    if (validProjects.length === 0) return { data: [], lines: [] };
+    const months = ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
+    const palette = [
+      "hsl(224, 76%, 48%)",
+      "hsl(152, 60%, 42%)",
+      "hsl(38, 92%, 50%)",
+      "hsl(280, 65%, 60%)",
+      "hsl(190, 85%, 45%)",
+    ];
 
-  // Build line config from projects that exist and have a known mapping.
-  const projectTrendMapping: Record<string, { key: string; name: string; color: string }> = {
-    'Marine Heights': { key: 'marine', name: 'Marine Heights', color: 'hsl(224, 76%, 48%)' },
-    'Skyline Residences': { key: 'skyline', name: 'Skyline Residences', color: 'hsl(152, 60%, 42%)' },
-    'Palm Gardens': { key: 'palm', name: 'Palm Gardens', color: 'hsl(38, 92%, 50%)' },
-  };
+    const displayProjects = activeProject ? [activeProject] : validProjects.slice(0, 5);
+    const lines = displayProjects.map((p, idx) => ({
+      key: `p_${p.id}`,
+      name: p.name,
+      color: palette[idx % palette.length],
+    }));
 
-  const trendLines = useMemo(() => {
-    if (activeProject) {
-      const mapping = projectTrendMapping[activeProject.name];
-      return mapping ? [mapping] : [];
-    }
-    // Show lines for projects that exist in the fetched list and have a mapping.
-    return Object.entries(projectTrendMapping)
-      .filter(([name]) => projects.some(p => p.name === name))
-      .map(([_, config]) => config);
-  }, [activeProject, projects]);
+    const data = months.map((m, mIdx) => {
+      const entry: any = { month: m };
+      displayProjects.forEach((p) => {
+        const factor = (mIdx + 1) / months.length;
+        entry[`p_${p.id}`] = Math.round((p.progress || 0) * factor);
+      });
+      return entry;
+    });
+
+    return { data, lines };
+  }, [validProjects, activeProject]);
 
   // ── Drill handlers ──
   const handleDepartmentSegmentClick = (deptName: string, status: StatusFocusKey) => {
     setSelectedDepartment(deptName);
     setSelectedStatusFocus(status);
-    setDrillLevel('department');
+    setDrillLevel("department");
   };
 
   const handleProjectDelayClick = (data: any) => {
@@ -1010,12 +1036,12 @@ const Reports = () => {
       // In single-project view the bars are departments — drill into that department.
       setSelectedDepartment(barName);
       setSelectedStatusFocus(null);
-      setDrillLevel('department');
+      setDrillLevel("department");
     } else {
-      const project = projects.find(p => p.name.startsWith(barName));
+      const project = validProjects.find((p) => p.name.startsWith(barName));
       if (project) {
         setSelectedProject(project);
-        setDrillLevel('project');
+        setDrillLevel("project");
       }
     }
   };
@@ -1053,8 +1079,8 @@ const Reports = () => {
       <TaskDrillDown
         task={selectedTask}
         onBack={() => { setDrillLevel('overview'); setSelectedTask(null); }}
-        projects={projects}
-        towers={towers}
+        projects={validProjects}
+        towers={validTowers}
       />
     );
   }
@@ -1067,9 +1093,9 @@ const Reports = () => {
         scopeProjectId={activeProject?.id ?? null}
         onBack={() => { setDrillLevel('overview'); setSelectedDepartment(null); setSelectedStatusFocus(null); }}
         onDrillTask={(task) => { setSelectedTask(task); setDrillLevel('task'); }}
-        tasks={tasks}
-        projects={projects}
-        towers={towers}
+        tasks={validTasks}
+        projects={validProjects}
+        towers={validTowers}
       />
     );
   }
@@ -1080,14 +1106,36 @@ const Reports = () => {
         project={selectedProject}
         onBack={() => { setDrillLevel('overview'); setSelectedProject(null); }}
         onDrillTower={(tower) => {
-          // You can extend this to show tasks for that tower.
-          alert(`Tower ${tower.name} clicked – you can drill further to tasks here.`);
+          const towerTask = validTasks.find((t) => t.towerId === tower.id);
+          if (towerTask) {
+            setSelectedTask(towerTask);
+            setDrillLevel('task');
+          }
         }}
         onDrillTask={(task) => { setSelectedTask(task); setDrillLevel('task'); }}
-        tasks={tasks}
-        towers={towers}
-        hurdles={hurdles}
+        tasks={validTasks}
+        towers={validTowers}
+        hurdles={validHurdles}
       />
+    );
+  }
+
+  // ── Empty State if no active projects ──
+  if (validProjects.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="font-display text-2xl md:text-3xl font-bold">Reports</h1>
+          <p className="text-muted-foreground mt-1">Analytics and insights across active projects</p>
+        </div>
+        <Card className="p-12 text-center">
+          <Building2 className="h-12 w-12 text-muted-foreground/50 mx-auto mb-3" />
+          <h3 className="font-display font-semibold text-lg">No Active Projects Found</h3>
+          <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
+            All reports, charts, and statistics represent currently existing projects only. Create or activate a project to begin viewing live performance dashboards.
+          </p>
+        </Card>
+      </div>
     );
   }
 
@@ -1105,7 +1153,7 @@ const Reports = () => {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Projects</SelectItem>
-            {projects.map(p => (
+            {validProjects.map(p => (
               <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
             ))}
           </SelectContent>
@@ -1121,7 +1169,11 @@ const Reports = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <LineChartWithHoverTooltip data={progressData} lines={trendLines} />
+            {dynamicTrend.lines.length > 0 ? (
+              <LineChartWithHoverTooltip data={dynamicTrend.data} lines={dynamicTrend.lines} />
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-16">No progress trend data available for current selection.</p>
+            )}
           </CardContent>
         </Card>
 
@@ -1153,7 +1205,11 @@ const Reports = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <StackedBarWithHoverTooltip data={deptPerformanceData} onSegmentClick={handleDepartmentSegmentClick} />
+            {deptPerformanceData.length > 0 ? (
+              <StackedBarWithHoverTooltip data={deptPerformanceData} onSegmentClick={handleDepartmentSegmentClick} />
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-16">No department task data available.</p>
+            )}
           </CardContent>
         </Card>
       </div>

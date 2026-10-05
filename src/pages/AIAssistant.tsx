@@ -1,37 +1,35 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Bot, Send, Trash2, ArrowLeft, ChevronRight, History,
   Building2, AlertTriangle, Clock, Construction, Users, Activity,
-  PieChart as PieChartIcon, type LucideIcon,
+  PieChart as PieChartIcon, type LucideIcon, RefreshCw,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { analyticsApi, ApiError } from "@/lib/api";
+import {
+  projectsApi,
+  tasksApi,
+  hurdlesApi,
+  towersApi,
+  analyticsApi,
+  ApiError,
+  type ApiProject,
+  type ApiTask,
+  type ApiHurdle,
+  type ApiTower,
+} from "@/lib/api";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, CartesianGrid, Legend, PieChart, Pie, Cell,
 } from "recharts";
-import {
-  tasks, hurdles, projects, towers, departmentStats,
-  getProjectById, type Task,
-} from "@/data/demo-data";
 
 /* =========================================================================
- * 1. CHART SPEC
- * -------------------------------------------------------------------------
- * Every bar / pie datum can optionally carry drill-down info:
- *   - Bar series: `drillTemplate` is a string with {label} / {seriesName}
- *     placeholders. On click we build a natural-language follow-up
- *     question and "ask" it via send(), which re-enters the local answer
- *     engine below (resolveLocalAnswer) — that's how a click "goes inside"
- *     a chart and gets a deeper, more specific answer + chart.
- *   - Pie slices: `drillQuery` is the fully-formed follow-up question.
- *   - Bar rows can carry `_fullLabel` when the visible `name` is truncated
- *     (e.g. long task titles) so the follow-up question uses the real name.
+ * 1. CHART SPEC & TYPES
  * ===================================================================== */
 type ChartBarSeries = { key: string; name: string; color: string; drillTemplate?: string };
 type ChartSpec =
@@ -43,12 +41,16 @@ type ChatMessage = {
   role: "user" | "assistant";
   text: string;
   chart?: ChartSpec;
-  // A message/answer can now surface *several* charts at once (e.g. a project
-  // summary showing status pie + progress-by-tower bar + department bar
-  // together), instead of being limited to one visual per answer.
   charts?: ChartSpec[];
   grounded?: boolean;
 };
+
+interface LiveContext {
+  projects: ApiProject[];
+  tasks: ApiTask[];
+  towers: ApiTower[];
+  hurdles: ApiHurdle[];
+}
 
 /* =========================================================================
  * 2. CHART TOOLTIP & RENDERER
@@ -70,11 +72,19 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 }
 
 function ChatChart({ chart, onDrillQuery }: { chart: ChartSpec; onDrillQuery?: (q: string) => void }) {
+  if (!chart.data || chart.data.length === 0) {
+    return (
+      <div className="mt-3 pt-3 border-t border-border/50 text-center py-4 text-xs text-muted-foreground">
+        No data available for this chart.
+      </div>
+    );
+  }
+
   if (chart.kind === "pie") {
     const drillable = chart.data.some((d) => d.drillQuery);
     return (
       <div className="mt-3 pt-3 border-t border-border/50">
-        <p className="text-xs font-medium mb-2">{chart.title}</p>
+        <p className="text-xs font-semibold mb-2">{chart.title}</p>
         <ResponsiveContainer width="100%" height={200}>
           <PieChart>
             <Pie
@@ -119,7 +129,7 @@ function ChatChart({ chart, onDrillQuery }: { chart: ChartSpec; onDrillQuery?: (
   if (chart.kind === "line") {
     return (
       <div className="mt-3 pt-3 border-t border-border/50">
-        <p className="text-xs font-medium mb-2">{chart.title}</p>
+        <p className="text-xs font-semibold mb-2">{chart.title}</p>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={chart.data}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -140,13 +150,13 @@ function ChatChart({ chart, onDrillQuery }: { chart: ChartSpec; onDrillQuery?: (
   const drillable = chart.bars.some((b) => b.drillTemplate);
   return (
     <div className="mt-3 pt-3 border-t border-border/50">
-      <p className="text-xs font-medium mb-2">{chart.title}</p>
+      <p className="text-xs font-semibold mb-2">{chart.title}</p>
       <ResponsiveContainer width="100%" height={vertical ? Math.max(160, chart.data.length * 34 + 20) : 220}>
         <BarChart data={chart.data} layout={vertical ? "vertical" : "horizontal"} margin={{ left: vertical ? 8 : 0, bottom: vertical ? 0 : 28 }}>
           {vertical ? (
             <>
               <XAxis type="number" hide />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={78} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={88} />
             </>
           ) : (
             <>
@@ -180,9 +190,6 @@ function ChatChart({ chart, onDrillQuery }: { chart: ChartSpec; onDrillQuery?: (
   );
 }
 
-// Renders the text body plus every chart attached to an answer/message.
-// `charts` (array) takes priority when present; falls back to the single
-// `chart` field for matchers that only ever produce one visual.
 function AnswerBody({
   text,
   chart,
@@ -197,7 +204,7 @@ function AnswerBody({
   const allCharts = charts && charts.length > 0 ? charts : chart ? [chart] : [];
   return (
     <>
-      <div className="whitespace-pre-line">
+      <div className="whitespace-pre-line leading-relaxed">
         {text.split(/(\*\*.*?\*\*)/g).map((part, j) =>
           part.startsWith("**") && part.endsWith("**") ? <strong key={j}>{part.slice(2, -2)}</strong> : part
         )}
@@ -210,7 +217,7 @@ function AnswerBody({
 }
 
 /* =========================================================================
- * 3. LOCAL DATA ENGINE — matchers, helpers, and drill-down matchers
+ * 3. DYNAMIC DATA ENGINE — Uses LiveContext only
  * ===================================================================== */
 const statusColorMap: Record<string, string> = {
   completed: "hsl(152, 60%, 42%)",
@@ -229,9 +236,12 @@ const severityColor: Record<string, string> = {
   low: "hsl(152, 60%, 42%)",
 };
 
-function buildStatusPieData(list: Task[], contextLabel?: string) {
+function buildStatusPieData(list: ApiTask[], contextLabel?: string) {
   const byStatus: Record<string, number> = {};
-  list.forEach((t) => { byStatus[t.status] = (byStatus[t.status] || 0) + 1; });
+  list.forEach((t) => {
+    const s = t.status || "not_started";
+    byStatus[s] = (byStatus[s] || 0) + 1;
+  });
   return Object.entries(byStatus)
     .map(([status, value]) => {
       const name = status.replace("_", " ");
@@ -245,29 +255,27 @@ function buildStatusPieData(list: Task[], contextLabel?: string) {
     .filter((d) => d.value > 0);
 }
 
-// Builds the completed / in-progress / delayed stacked-bar dataset for a
-// given task list, grouped by department. Reused by the project summary so
-// "Skyline" (etc.) can show this alongside its status pie.
-function buildDeptStatusBars(list: Task[]) {
+function buildDeptStatusBars(list: ApiTask[]) {
   const byDept: Record<string, { completed: number; inProgress: number; delayed: number }> = {};
   list.forEach((t) => {
-    if (!byDept[t.department]) byDept[t.department] = { completed: 0, inProgress: 0, delayed: 0 };
-    if (t.status === "completed") byDept[t.department].completed++;
-    else if (t.status === "delayed" || t.status === "blocked") byDept[t.department].delayed++;
-    else byDept[t.department].inProgress++;
+    const dept = t.department || "General";
+    if (!byDept[dept]) byDept[dept] = { completed: 0, inProgress: 0, delayed: 0 };
+    if (t.status === "completed") byDept[dept].completed++;
+    else if (t.status === "delayed" || t.status === "blocked") byDept[dept].delayed++;
+    else byDept[dept].inProgress++;
   });
   return Object.entries(byDept).map(([name, v]) => ({ name, ...v }));
 }
 
-function calculateRiskScore(task: Task): number {
+function calculateRiskScore(task: ApiTask, allTasks: ApiTask[], allHurdles: ApiHurdle[]): number {
   let score = 0;
   if (task.delayDays > 0) score += Math.min(task.delayDays * 3, 30);
 
-  const deps = tasks.filter((t) => task.dependencies?.includes(t.id));
+  const deps = allTasks.filter((t) => task.dependencies?.includes(t.id));
   score += deps.filter((d) => d.status === "delayed" || d.status === "blocked").length * 15;
 
-  const towerHurdles = hurdles.filter((h) => {
-    const affected = tasks.find((t) => t.id === h.affectedTaskId);
+  const towerHurdles = allHurdles.filter((h) => {
+    const affected = allTasks.find((t) => t.id === h.affectedTaskId);
     return affected?.towerId === task.towerId && h.status !== "resolved";
   });
   score += towerHurdles.length * 10;
@@ -277,10 +285,13 @@ function calculateRiskScore(task: Task): number {
     const start = new Date(task.startDate).getTime();
     const end = new Date(task.endDate).getTime();
     const now = Date.now();
-    const expected = Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100));
-    const gap = expected - task.progress;
-    if (gap > 20) score += 20;
-    else if (gap > 10) score += 10;
+    const totalDuration = end - start;
+    if (totalDuration > 0) {
+      const expected = Math.min(100, Math.max(0, ((now - start) / totalDuration) * 100));
+      const gap = expected - task.progress;
+      if (gap > 20) score += 20;
+      else if (gap > 10) score += 10;
+    }
   }
 
   if (task.criticalPath) score = Math.round(score * 1.3);
@@ -294,57 +305,60 @@ function riskLabel(score: number) {
   return score >= 60 ? "High Risk" : score >= 30 ? "Medium Risk" : "Low Risk";
 }
 
-function getPredictions() {
-  return tasks
+function getPredictions(ctx: LiveContext) {
+  return ctx.tasks
     .filter((t) => t.status !== "completed")
-    .map((task) => ({ task, score: calculateRiskScore(task) }))
+    .map((task) => ({ task, score: calculateRiskScore(task, ctx.tasks, ctx.hurdles) }))
     .sort((a, b) => b.score - a.score);
 }
 
 const CHART_WORDS = /(chart|graph|plot|visuali[sz]e|pie|bar\s?chart|breakdown)/;
 
-function findProject(q: string) {
-  return projects.find((p) => q.includes(p.name.toLowerCase()) || q.includes(p.name.toLowerCase().split(" ")[0]));
+function findProject(q: string, projects: ApiProject[]) {
+  return projects.find((p) => {
+    const pName = p.name.toLowerCase();
+    const firstWord = pName.split(" ")[0];
+    return q.includes(pName) || (firstWord.length > 2 && q.includes(firstWord));
+  });
 }
-function findTower(q: string) {
+
+function findTower(q: string, towers: ApiTower[]) {
   return towers.find((t) => q.includes(t.name.toLowerCase()));
 }
-function findDepartment(q: string) {
-  const depts = Array.from(new Set(tasks.map((t) => t.department)));
+
+function findDepartment(q: string, tasks: ApiTask[]) {
+  const depts = Array.from(new Set(tasks.map((t) => t.department).filter(Boolean)));
   return depts.find((d) => q.includes(d.toLowerCase()));
 }
 
 const STATUS_WORD_RE = "(completed|in progress|delayed|blocked|not started|review|ready)";
 
-function tasksByStatusWord(list: Task[], statusWord: string) {
+function tasksByStatusWord(list: ApiTask[], statusWord: string) {
   if (statusWord === "in progress") return list.filter((t) => !["completed", "delayed", "blocked"].includes(t.status));
   return list.filter((t) => t.status === statusWord.replace(" ", "_"));
 }
 
 type LocalAnswer = { text: string; chart?: ChartSpec; charts?: ChartSpec[] };
-type Matcher = (q: string) => LocalAnswer | null;
+type Matcher = (q: string, ctx: LiveContext) => LocalAnswer | null;
 
 /* -------------------------------------------------------------------------
- * DRILL-DOWN MATCHERS (innermost first) — these handle the follow-up
- * questions synthesized when a user taps a bar / pie slice in a chart.
+ * DRILL-DOWN MATCHERS
  * ---------------------------------------------------------------------- */
-
-// Deepest level: full detail on one specific task (terminal — no further chart).
-const matchTaskDetail: Matcher = (q) => {
+const matchTaskDetail: Matcher = (q, ctx) => {
   if (!/(full details on|details on)/.test(q)) return null;
-  const task = tasks.find((t) => q.includes(t.title.toLowerCase()));
+  const task = ctx.tasks.find((t) => q.includes(t.title.toLowerCase()));
   if (!task) return null;
-  const project = getProjectById(task.projectId);
-  const tower = towers.find((t) => t.id === task.towerId);
-  const score = calculateRiskScore(task);
+  const project = ctx.projects.find((p) => p.id === task.projectId);
+  const tower = ctx.towers.find((t) => t.id === task.towerId);
+  const score = calculateRiskScore(task, ctx.tasks, ctx.hurdles);
   const checklistTotal = task.checklist?.length ?? 0;
   const checklistDone = task.checklist?.filter((c) => c.completed).length ?? 0;
 
   const lines = [
     `**${task.title}**`,
-    task.description,
-    `Project: ${project?.name ?? "—"} · Tower: ${tower?.name ?? "—"} · Department: ${task.department}`,
-    `Status: ${task.status.replace("_", " ")} · Priority: ${task.priority} · Progress: ${task.progress}%`,
+    task.description || "No description provided.",
+    `Project: ${project?.name ?? "—"} · Tower: ${tower?.name ?? "Project level"} · Department: ${task.department || "General"}`,
+    `Status: ${(task.status || "not_started").replace("_", " ")} · Priority: ${task.priority} · Progress: ${task.progress}%`,
     `Risk score: **${score}** (${riskLabel(score)})`,
     task.delayDays > 0
       ? `Delayed by **${task.delayDays} day(s)**${task.delayReason ? ` — ${task.delayReason}` : ""}`
@@ -356,31 +370,30 @@ const matchTaskDetail: Matcher = (q) => {
   return { text: lines.join("\n") };
 };
 
-// Explain High/Medium/Low risk tasks within a specific department.
-const matchRiskLevelDeptExplain: Matcher = (q) => {
+const matchRiskLevelDeptExplain: Matcher = (q, ctx) => {
   const m = q.match(/(high|medium|low)\s+risk\s+tasks\s+in\s+(.+)/);
   if (!m) return null;
   const level = m[1] as "high" | "medium" | "low";
-  const dept = findDepartment(q);
+  const dept = findDepartment(q, ctx.tasks);
   if (!dept) return null;
 
-  const preds = getPredictions().filter((p) => p.task.department === dept);
+  const preds = getPredictions(ctx).filter((p) => (p.task.department || "General") === dept);
   const levelTasks = preds.filter((p) =>
     level === "high" ? p.score >= 60 : level === "medium" ? p.score >= 30 && p.score < 60 : p.score < 30
   );
   const label = level === "high" ? "High Risk" : level === "medium" ? "Medium Risk" : "Low Risk";
-  const explain: Record<typeof level, string> = {
-    high: "stacking up multiple red flags at once — a history of delays, dependencies that are themselves blocked or delayed, active hurdles on the same tower, and progress falling behind the expected pace. Critical-path tasks get an extra 1.3x weighting, since a slip here pushes out the whole schedule.",
-    medium: "usually one or two things are off — a modest historical delay, a single blocked dependency, or a noticeable but not severe progress gap — without enough compounding factors to tip into High Risk yet.",
-    low: "progress is roughly tracking the plan, dependencies are clear, and there are no active hurdles on the same tower dragging the score up. This is the healthy zone.",
-  } as any;
+  const explain = {
+    high: "stacking up multiple risk factors: timeline slippage, delayed dependencies, and active hurdles.",
+    medium: "showing moderate delay or minor progress gaps without severe compounding blocks.",
+    low: "tracking expected schedules with dependencies clear and no blocking hurdles.",
+  }[level];
 
   if (levelTasks.length === 0) {
-    return { text: `No ${label} tasks in **${dept}** right now — that band is where ${explain[level]}` };
+    return { text: `No ${label} tasks in **${dept}** right now — this group is ${explain}` };
   }
 
   const text =
-    `**${levelTasks.length} ${label} task(s)** in **${dept}** — that band is where ${explain[level]}\n\n` +
+    `**${levelTasks.length} ${label} task(s)** in **${dept}** (${explain}):\n\n` +
     levelTasks.map((p) => `• ${p.task.title} — score **${p.score}**${p.task.delayDays > 0 ? `, +${p.task.delayDays}d delay` : ""}`).join("\n");
 
   const color = level === "high" ? "hsl(0, 72%, 51%)" : level === "medium" ? "hsl(38, 92%, 50%)" : "hsl(152, 60%, 42%)";
@@ -398,16 +411,15 @@ const matchRiskLevelDeptExplain: Matcher = (q) => {
   return { text, chart };
 };
 
-// Explain a specific status (completed/in progress/delayed/...) within a department.
-const matchStatusExplainInDept: Matcher = (q) => {
+const matchStatusExplainInDept: Matcher = (q, ctx) => {
   const re = new RegExp(`${STATUS_WORD_RE}\\s+tasks\\s+in\\s+(.+)`);
   const m = q.match(re);
   if (!m) return null;
   const statusWord = m[1];
-  const dept = findDepartment(q);
+  const dept = findDepartment(q, ctx.tasks);
   if (!dept) return null;
 
-  const dTasks = tasks.filter((t) => t.department === dept);
+  const dTasks = ctx.tasks.filter((t) => (t.department || "General") === dept);
   const filtered = tasksByStatusWord(dTasks, statusWord);
   const total = dTasks.length;
   const pct = total ? Math.round((filtered.length / total) * 100) : 0;
@@ -429,20 +441,28 @@ const matchStatusExplainInDept: Matcher = (q) => {
   return { text, chart };
 };
 
-// Explain a specific status across the whole portfolio (no department clause).
-const matchStatusExplainGlobal: Matcher = (q) => {
+const matchStatusExplainGlobal: Matcher = (q, ctx) => {
   const re = new RegExp(`^explain\\s+${STATUS_WORD_RE}\\s+tasks\\s*$`);
   const m = q.match(re);
   if (!m) return null;
   const statusWord = m[1];
-  const filtered = tasksByStatusWord(tasks, statusWord);
+  const filtered = tasksByStatusWord(ctx.tasks, statusWord);
 
+  if (filtered.length === 0) {
+    return { text: `No active tasks are currently marked as **${statusWord}** across your projects.` };
+  }
+
+  const projectMap = new Map(ctx.projects.map((p) => [p.id, p.name]));
   const text =
-    `**${filtered.length} task(s)** across all projects are ${statusWord}.\n\n` +
-    filtered.slice(0, 10).map((t) => `• ${t.title} (${getProjectById(t.projectId)?.name ?? "—"})${t.delayDays > 0 ? ` — +${t.delayDays}d` : ""}`).join("\n");
+    `**${filtered.length} task(s)** across existing projects are ${statusWord}.\n\n` +
+    filtered.slice(0, 10).map((t) => `• ${t.title} (${projectMap.get(t.projectId) ?? "—"})${t.delayDays > 0 ? ` — +${t.delayDays}d` : ""}`).join("\n");
 
   const byDept: Record<string, number> = {};
-  filtered.forEach((t) => { byDept[t.department] = (byDept[t.department] || 0) + 1; });
+  filtered.forEach((t) => {
+    const d = t.department || "General";
+    byDept[d] = (byDept[d] || 0) + 1;
+  });
+
   const chart: ChartSpec | undefined = Object.keys(byDept).length
     ? {
         kind: "bar",
@@ -456,21 +476,31 @@ const matchStatusExplainGlobal: Matcher = (q) => {
 };
 
 /* -------------------------------------------------------------------------
- * TOP-LEVEL MATCHERS (unchanged behaviour, now with drill metadata added
- * to their charts so you can tap into them)
+ * TOP-LEVEL DYNAMIC MATCHERS
  * ---------------------------------------------------------------------- */
-
-const matchMostDelayedProject: Matcher = (q) => {
+const matchMostDelayedProject: Matcher = (q, ctx) => {
   if (!/(most|which).*delay|delay.*(most|worst|highest)/.test(q)) return null;
-  const perProject = projects
+  if (ctx.projects.length === 0) {
+    return { text: "No active projects found in the system." };
+  }
+
+  const perProject = ctx.projects
     .map((p) => {
-      const pTasks = tasks.filter((t) => t.projectId === p.id);
-      return { project: p, totalDelay: pTasks.reduce((a, t) => a + t.delayDays, 0), delayedCount: pTasks.filter((t) => t.delayDays > 0).length };
+      const pTasks = ctx.tasks.filter((t) => t.projectId === p.id);
+      return {
+        project: p,
+        totalDelay: pTasks.reduce((a, t) => a + (t.delayDays || 0), 0),
+        delayedCount: pTasks.filter((t) => (t.delayDays || 0) > 0).length,
+      };
     })
     .sort((a, b) => b.totalDelay - a.totalDelay);
+
   const top = perProject[0];
-  if (!top || top.totalDelay === 0) return { text: "None of your projects currently show delay days — everything is tracking on schedule." };
-  const text = `**${top.project.name}** is the most delayed project, with **${top.totalDelay} cumulative delay day(s)** across **${top.delayedCount} task(s)**. Overall completion is at ${top.project.progress}%.`;
+  if (!top || top.totalDelay === 0) {
+    return { text: "None of your current projects show delay days — all active projects are tracking on schedule." };
+  }
+
+  const text = `**${top.project.name}** is currently the most delayed project, with **${top.totalDelay} cumulative delay day(s)** across **${top.delayedCount} task(s)**. Overall completion is at ${top.project.progress}%.`;
   const chart: ChartSpec = {
     kind: "bar",
     title: "Total Delay Days by Project",
@@ -480,71 +510,94 @@ const matchMostDelayedProject: Matcher = (q) => {
   return { text, chart };
 };
 
-const matchOverdueTasks: Matcher = (q) => {
+const matchOverdueTasks: Matcher = (q, ctx) => {
   if (!/(overdue|delayed tasks|show.*delay|which tasks.*delay)/.test(q)) return null;
-  const overdue = tasks.filter((t) => t.delayDays > 0).sort((a, b) => b.delayDays - a.delayDays);
-  if (overdue.length === 0) return { text: "There are no overdue tasks right now — everything is on schedule." };
+  const overdue = ctx.tasks.filter((t) => (t.delayDays || 0) > 0).sort((a, b) => b.delayDays - a.delayDays);
+  if (overdue.length === 0) {
+    return { text: "There are no overdue tasks right now across your existing projects — everything is tracking on time." };
+  }
+
+  const projectMap = new Map(ctx.projects.map((p) => [p.id, p.name]));
   const top = overdue.slice(0, 8);
   const text =
-    `There are **${overdue.length} overdue task(s)**, totalling **${overdue.reduce((a, t) => a + t.delayDays, 0)} delay days**. Top ones:\n` +
-    top.map((t) => `• ${t.title} (${getProjectById(t.projectId)?.name ?? "—"}) — +${t.delayDays}d${t.delayReason ? `, ${t.delayReason}` : ""}`).join("\n");
+    `Found **${overdue.length} overdue task(s)**, totalling **${overdue.reduce((a, t) => a + t.delayDays, 0)} delay days**. Top delayed tasks:\n\n` +
+    top.map((t) => `• ${t.title} (${projectMap.get(t.projectId) ?? "—"}) — +${t.delayDays}d${t.delayReason ? ` (${t.delayReason})` : ""}`).join("\n");
+
   const chart: ChartSpec = {
     kind: "bar",
     title: "Delay Days by Task",
     layout: "vertical",
-    data: top.map((t) => ({ name: t.title.length > 16 ? t.title.slice(0, 16) + "…" : t.title, _fullLabel: t.title, delayDays: t.delayDays })),
+    data: top.map((t) => ({ name: t.title.length > 18 ? t.title.slice(0, 18) + "…" : t.title, _fullLabel: t.title, delayDays: t.delayDays })),
     bars: [{ key: "delayDays", name: "Delay Days", color: "hsl(0, 72%, 51%)", drillTemplate: "Give me full details on {label}" }],
   };
   return { text, chart };
 };
 
-const matchHurdlesByTower: Matcher = (q) => {
+const matchHurdlesByTower: Matcher = (q, ctx) => {
   if (!/hurdle/.test(q)) return null;
-  const tower = findTower(q);
+  const tower = findTower(q, ctx.towers);
   const severityMatch = (["critical", "high", "medium", "low"] as const).find((s) => q.includes(`${s} severity`));
+
   const base = tower
-    ? hurdles.filter((h) => h.affectedTower?.toLowerCase().includes(tower.name.toLowerCase()))
-    : hurdles.filter((h) => h.status !== "resolved");
+    ? ctx.hurdles.filter((h) => h.affectedTower?.toLowerCase().includes(tower.name.toLowerCase()))
+    : ctx.hurdles.filter((h) => h.status !== "resolved");
+
   const relevant = severityMatch ? base.filter((h) => h.severity === severityMatch) : base;
-  const label = tower ? tower.name : "all towers (open only)";
-  if (relevant.length === 0) return { text: `No${severityMatch ? ` ${severityMatch} severity` : ""} hurdles are currently logged for ${label}.` };
+  const label = tower ? tower.name : "all active projects (open hurdles)";
+
+  if (relevant.length === 0) {
+    return { text: `No${severityMatch ? ` ${severityMatch} severity` : ""} open hurdles are currently logged for ${label}.` };
+  }
+
   const text =
-    `**${relevant.length} hurdle(s)**${severityMatch ? ` (${severityMatch} severity)` : ""} for ${label}:\n` +
+    `**${relevant.length} hurdle(s)**${severityMatch ? ` (${severityMatch} severity)` : ""} for ${label}:\n\n` +
     relevant.slice(0, 8).map((h) => `• ${h.title} — ${h.severity} severity, ${h.status.replace("_", " ")}, ${h.impactDays}d impact`).join("\n");
+
   const bySeverity = ["critical", "high", "medium", "low"]
     .map((sev) => ({ name: sev, value: base.filter((h) => h.severity === sev).length, color: severityColor[sev], drillQuery: `Show ${sev} severity hurdles for ${label}` }))
     .filter((d) => d.value > 0);
+
   const chart: ChartSpec | undefined = bySeverity.length ? { kind: "pie", title: `Hurdles by Severity — ${label}`, data: bySeverity } : undefined;
   return { text, chart };
 };
 
-const matchDelayRisk: Matcher = (q) => {
+const matchDelayRisk: Matcher = (q, ctx) => {
   if (!/(predict|risk)/.test(q)) return null;
-  const preds = getPredictions().slice(0, 6);
-  if (preds.length === 0) return { text: "No active tasks to score for risk right now." };
-  const text = "Top delay-risk tasks right now:\n" + preds.map((p) => `• ${p.task.title} — score **${p.score}** (${riskLabel(p.score)})`).join("\n");
+  const preds = getPredictions(ctx);
+  if (preds.length === 0) {
+    return { text: "Not enough data available to generate a reliable prediction. Please ensure active projects and tasks are populated." };
+  }
+
+  const top = preds.slice(0, 6);
+  const text = "Top delay-risk tasks across existing projects:\n\n" + top.map((p) => `• ${p.task.title} — score **${p.score}** (${riskLabel(p.score)})`).join("\n");
   const chart: ChartSpec = {
     kind: "bar",
     title: "Risk Score by Task",
     layout: "vertical",
-    data: preds.map((p) => ({ name: p.task.title.length > 16 ? p.task.title.slice(0, 16) + "…" : p.task.title, _fullLabel: p.task.title, score: p.score })),
+    data: top.map((p) => ({ name: p.task.title.length > 18 ? p.task.title.slice(0, 18) + "…" : p.task.title, _fullLabel: p.task.title, score: p.score })),
     bars: [{ key: "score", name: "Risk Score", color: "hsl(0, 72%, 51%)", drillTemplate: "Give me full details on {label}" }],
   };
   return { text, chart };
 };
 
-const matchRiskByDepartment: Matcher = (q) => {
+const matchRiskByDepartment: Matcher = (q, ctx) => {
   if (!/risk.*(department|dept)/.test(q)) return null;
+  const preds = getPredictions(ctx);
+  if (preds.length === 0) {
+    return { text: "No active tasks found to evaluate department risk." };
+  }
+
   const byDept: Record<string, { high: number; medium: number; low: number }> = {};
-  getPredictions().forEach((p) => {
-    const d = p.task.department;
+  preds.forEach((p) => {
+    const d = p.task.department || "General";
     if (!byDept[d]) byDept[d] = { high: 0, medium: 0, low: 0 };
     if (p.score >= 60) byDept[d].high++;
     else if (p.score >= 30) byDept[d].medium++;
     else byDept[d].low++;
   });
+
   const data = Object.entries(byDept).map(([name, v]) => ({ name, ...v }));
-  const text = "Risk breakdown by department (High / Medium / Low task counts):\n" + data.map((d) => `• ${d.name}: ${d.high} high, ${d.medium} medium, ${d.low} low`).join("\n");
+  const text = "Risk breakdown by department (High / Medium / Low task counts):\n\n" + data.map((d) => `• ${d.name}: ${d.high} high, ${d.medium} medium, ${d.low} low`).join("\n");
   const chart: ChartSpec = {
     kind: "bar",
     title: "Risk by Department",
@@ -560,13 +613,21 @@ const matchRiskByDepartment: Matcher = (q) => {
   return { text, chart };
 };
 
-const matchDelayByProject: Matcher = (q) => {
+const matchDelayByProject: Matcher = (q, ctx) => {
   if (!/(delay analysis|delay.*project|project.*delay)/.test(q)) return null;
-  const data = projects.map((p) => {
-    const pTasks = tasks.filter((t) => t.projectId === p.id);
-    return { name: p.name.split(" ")[0], _fullLabel: p.name, delayed: pTasks.filter((t) => t.delayDays > 0).length, totalDelay: pTasks.reduce((a, t) => a + t.delayDays, 0) };
+  if (ctx.projects.length === 0) return { text: "No active projects found." };
+
+  const data = ctx.projects.map((p) => {
+    const pTasks = ctx.tasks.filter((t) => t.projectId === p.id);
+    return {
+      name: p.name.split(" ")[0],
+      _fullLabel: p.name,
+      delayed: pTasks.filter((t) => (t.delayDays || 0) > 0).length,
+      totalDelay: pTasks.reduce((a, t) => a + (t.delayDays || 0), 0),
+    };
   });
-  const text = "Delay analysis by project:\n" + data.map((d) => `• ${d._fullLabel}: ${d.delayed} delayed task(s), ${d.totalDelay} total delay days`).join("\n");
+
+  const text = "Delay analysis across current projects:\n\n" + data.map((d) => `• ${d._fullLabel}: ${d.delayed} delayed task(s), ${d.totalDelay} total delay days`).join("\n");
   const chart: ChartSpec = {
     kind: "bar",
     title: "Delay Analysis by Project",
@@ -579,10 +640,12 @@ const matchDelayByProject: Matcher = (q) => {
   return { text, chart };
 };
 
-const matchDepartmentPerformance: Matcher = (q) => {
+const matchDepartmentPerformance: Matcher = (q, ctx) => {
   if (!/department performance|department.*(completed|progress)/.test(q)) return null;
-  const data = departmentStats as any[];
-  const text = "Department performance (completed / in progress / delayed):\n" + data.map((d) => `• ${d.name}: ${d.completed} completed, ${d.inProgress} in progress, ${d.delayed} delayed`).join("\n");
+  const data = buildDeptStatusBars(ctx.tasks);
+  if (data.length === 0) return { text: "No department task records available in active projects." };
+
+  const text = "Department performance (completed / in progress / delayed):\n\n" + data.map((d) => `• ${d.name}: ${d.completed} completed, ${d.inProgress} in progress, ${d.delayed} delayed`).join("\n");
   const chart: ChartSpec = {
     kind: "bar",
     title: "Department Performance",
@@ -597,39 +660,46 @@ const matchDepartmentPerformance: Matcher = (q) => {
   return { text, chart };
 };
 
-const matchStatusDistribution: Matcher = (q) => {
+const matchStatusDistribution: Matcher = (q, ctx) => {
   if (!/(status distribution|task status|status breakdown)/.test(q)) return null;
-  const data = buildStatusPieData(tasks);
-  const text = "Current task status distribution:\n" + data.map((d) => `• ${d.name}: ${d.value}`).join("\n");
+  const data = buildStatusPieData(ctx.tasks);
+  if (data.length === 0) return { text: "No active tasks recorded to display status distribution." };
+
+  const text = "Current task status distribution across active projects:\n\n" + data.map((d) => `• ${d.name}: ${d.value}`).join("\n");
   return { text, chart: { kind: "pie", title: "Task Status Distribution", data } };
 };
 
-const matchProgressSummary: Matcher = (q) => {
+const matchProgressSummary: Matcher = (q, ctx) => {
   if (!/(progress summary|overall progress|status summary|how.*(is|are).*progress)/.test(q)) return null;
-  const total = tasks.length;
-  const completed = tasks.filter((t) => t.status === "completed").length;
+  if (ctx.projects.length === 0) return { text: "No active projects available in your workspace." };
+
+  const total = ctx.tasks.length;
+  const completed = ctx.tasks.filter((t) => t.status === "completed").length;
   const pct = total ? Math.round((completed / total) * 100) : 0;
-  const text = `Portfolio is **${pct}% complete** (${completed}/${total} tasks). Per project:\n` + projects.map((p) => `• ${p.name}: ${p.progress}%`).join("\n");
+  const text = `Portfolio overall completion is **${pct}%** (${completed}/${total} active tasks completed). Current projects:\n\n` +
+    ctx.projects.map((p) => `• **${p.name}**: ${p.progress}% (${p.status || "Active"})`).join("\n");
+
   const chart: ChartSpec = {
     kind: "bar",
-    title: "Progress by Project",
-    data: projects.map((p) => ({ name: p.name.split(" ")[0], _fullLabel: p.name, progress: p.progress })),
+    title: "Progress by Current Project",
+    data: ctx.projects.map((p) => ({ name: p.name.split(" ")[0], _fullLabel: p.name, progress: p.progress })),
     bars: [{ key: "progress", name: "Progress %", color: "hsl(224, 76%, 48%)", drillTemplate: "Tell me more about {label}" }],
   };
   return { text, chart };
 };
 
-// Fires for questions naming a project (e.g. "Skyline", "how's Marine
-// Heights doing"). Previously returned a single status pie chart; now
-// returns the pie PLUS a progress-by-tower bar AND a completed/in-progress/
-// delayed-by-department stacked bar, so asking about "Skyline" gives you
-// the pie chart, the progress bar, and the completion breakdown together.
-const matchProjectSummary: Matcher = (q) => {
-  const project = findProject(q);
+const matchProjectSummary: Matcher = (q, ctx) => {
+  const project = findProject(q, ctx.projects);
   if (!project) return null;
-  const pTasks = tasks.filter((t) => t.projectId === project.id);
-  const delayed = pTasks.filter((t) => t.delayDays > 0);
-  const text = `**${project.name}** (${project.location}) — **${project.progress}%** complete, status: ${project.status}. ${pTasks.length} task(s), ${delayed.length} delayed (${delayed.reduce((a, t) => a + t.delayDays, 0)} delay days). RERA: ${project.reraNumber}.`;
+
+  const pTasks = ctx.tasks.filter((t) => t.projectId === project.id);
+  const delayed = pTasks.filter((t) => (t.delayDays || 0) > 0);
+  const totalDelayDays = delayed.reduce((a, t) => a + (t.delayDays || 0), 0);
+
+  const text = `**${project.name}** (${project.location || "Site"}) — **${project.progress}%** complete, status: **${project.status || "Active"}**.\n\n` +
+    `• Total Tasks: **${pTasks.length}**\n` +
+    `• Delayed Tasks: **${delayed.length}** (${totalDelayDays} total delay days)\n` +
+    `• RERA Number: **${project.reraNumber || "N/A"}**`;
 
   const statusPie: ChartSpec = {
     kind: "pie",
@@ -637,7 +707,7 @@ const matchProjectSummary: Matcher = (q) => {
     data: buildStatusPieData(pTasks, project.name),
   };
 
-  const projectTowers = towers.filter((t) => t.projectId === project.id);
+  const projectTowers = ctx.towers.filter((t) => t.projectId === project.id);
   const towerProgressBar: ChartSpec | undefined = projectTowers.length
     ? {
         kind: "bar",
@@ -651,7 +721,7 @@ const matchProjectSummary: Matcher = (q) => {
   const deptBar: ChartSpec | undefined = deptData.length
     ? {
         kind: "bar",
-        title: `${project.name} — Completed / In Progress / Delayed by Department`,
+        title: `${project.name} — Department Breakdown`,
         layout: "vertical",
         stacked: true,
         data: deptData,
@@ -667,26 +737,24 @@ const matchProjectSummary: Matcher = (q) => {
   return { text, charts };
 };
 
-const matchDepartmentSummary: Matcher = (q) => {
-  const dept = findDepartment(q);
+const matchDepartmentSummary: Matcher = (q, ctx) => {
+  const dept = findDepartment(q, ctx.tasks);
   if (!dept) return null;
-  const dTasks = tasks.filter((t) => t.department === dept);
+  const dTasks = ctx.tasks.filter((t) => (t.department || "General") === dept);
   const completed = dTasks.filter((t) => t.status === "completed").length;
   const delayed = dTasks.filter((t) => t.status === "delayed" || t.status === "blocked").length;
-  const text = `**${dept}** has ${dTasks.length} task(s): ${completed} completed, ${delayed} delayed/blocked, ${dTasks.reduce((a, t) => a + t.delayDays, 0)} total delay days.`;
+  const text = `**${dept}** has ${dTasks.length} task(s): ${completed} completed, ${delayed} delayed/blocked, ${dTasks.reduce((a, t) => a + (t.delayDays || 0), 0)} total delay days.`;
   return { text, chart: { kind: "pie", title: `${dept} — Task Status`, data: buildStatusPieData(dTasks, dept) } };
 };
 
-const matchTowerSummary: Matcher = (q) => {
-  const tower = findTower(q);
+const matchTowerSummary: Matcher = (q, ctx) => {
+  const tower = findTower(q, ctx.towers);
   if (!tower) return null;
-  const tTasks = tasks.filter((t) => t.towerId === tower.id);
-  const text = `**${tower.name}** is at **${tower.progress}%** progress (${tower.status}), ${tTasks.length} task(s) across ${tower.totalFloors} floors.`;
+  const tTasks = ctx.tasks.filter((t) => t.towerId === tower.id);
+  const text = `**${tower.name}** is currently at **${tower.progress}%** progress (${tower.status || "In Construction"}), with ${tTasks.length} task(s) across ${tower.totalFloors || 0} floors.`;
   return { text, chart: { kind: "pie", title: `${tower.name} — Task Status`, data: buildStatusPieData(tTasks, tower.name) } };
 };
 
-// Order matters: the specific drill-down matchers run first so a tapped
-// chart always resolves to the deeper answer instead of a broader one.
 const matchers: Matcher[] = [
   matchTaskDetail,
   matchRiskLevelDeptExplain,
@@ -706,60 +774,50 @@ const matchers: Matcher[] = [
   matchTowerSummary,
 ];
 
-function resolveLocalAnswer(rawQuery: string): LocalAnswer | null {
+function resolveLocalAnswer(rawQuery: string, ctx: LiveContext): LocalAnswer | null {
   const q = rawQuery.toLowerCase().trim();
   for (const matcher of matchers) {
-    const result = matcher(q);
+    const result = matcher(q, ctx);
     if (result) {
       if (CHART_WORDS.test(q) && !result.chart && !result.charts?.length) {
-        return { ...result, chart: { kind: "pie", title: "Task Status Distribution", data: buildStatusPieData(tasks) } };
+        return { ...result, chart: { kind: "pie", title: "Task Status Distribution", data: buildStatusPieData(ctx.tasks) } };
       }
       return result;
     }
   }
   if (CHART_WORDS.test(q)) {
+    if (ctx.tasks.length === 0) {
+      return {
+        text: "Not enough data available to generate a reliable chart. No active tasks found.",
+      };
+    }
     return {
-      text: "I couldn't match that to a specific report, so here's a general snapshot of your current task status:",
-      chart: { kind: "pie", title: "Task Status Distribution", data: buildStatusPieData(tasks) },
+      text: "Here is the current task status distribution for your active projects:",
+      chart: { kind: "pie", title: "Task Status Distribution", data: buildStatusPieData(ctx.tasks) },
     };
   }
   return null;
 }
 
-function buildGroundingContext(): string {
-  const total = tasks.length;
-  const completed = tasks.filter((t) => t.status === "completed").length;
-  const delayed = tasks.filter((t) => t.delayDays > 0).length;
-  const openHurdles = hurdles.filter((h) => h.status !== "resolved").length;
+function buildGroundingContext(ctx: LiveContext): string {
+  const total = ctx.tasks.length;
+  const completed = ctx.tasks.filter((t) => t.status === "completed").length;
+  const delayed = ctx.tasks.filter((t) => (t.delayDays || 0) > 0).length;
+  const openHurdles = ctx.hurdles.filter((h) => h.status !== "resolved").length;
+  const depts = Array.from(new Set(ctx.tasks.map((t) => t.department).filter(Boolean)));
+
   return [
-    "You are answering strictly from the following real project data. Do not invent numbers, names, or facts not listed here. If the answer isn't derivable from this data, say so explicitly.",
-    `Projects: ${projects.map((p) => `${p.name} (${p.progress}% complete, ${p.status})`).join("; ")}`,
-    `Towers: ${towers.map((t) => t.name).join(", ")}`,
-    `Departments: ${Array.from(new Set(tasks.map((t) => t.department))).join(", ")}`,
+    "You are answering strictly from the following live, active project data. Do not invent numbers or names not listed here.",
+    `Active Projects: ${ctx.projects.length ? ctx.projects.map((p) => `${p.name} (${p.progress}% complete, ${p.status || "Active"})`).join("; ") : "None"}`,
+    `Towers: ${ctx.towers.length ? ctx.towers.map((t) => t.name).join(", ") : "None"}`,
+    `Departments: ${depts.join(", ") || "None"}`,
     `Totals: ${total} tasks, ${completed} completed, ${delayed} delayed, ${openHurdles} open hurdles.`,
   ].join("\n");
 }
 
 /* =========================================================================
- * 4. MAIN COMPONENT – with per‑user persistence, clear button, NO badge
+ * 4. MAIN COMPONENT
  * ===================================================================== */
-
-const suggestions = [
-  "Which project is most delayed?",
-  "Show overdue tasks",
-  "Show hurdles affecting a tower",
-  "Predict next delay risk",
-  "Give me a progress summary",
-  "Show risk by department as a chart",
-  "Department performance chart",
-  "Task status distribution pie chart",
-  "Tell me about Skyline",
-];
-
-// Always-visible quick-topic nav — distinct from `suggestions` above, which
-// only shows for the first couple of messages. Each entry maps straight to
-// an existing matcher's trigger phrase, so tapping one behaves exactly like
-// typing that question and hitting send.
 const navTopics: { label: string; icon: LucideIcon; query: string }[] = [
   { label: "Projects", icon: Building2, query: "Give me a progress summary" },
   { label: "Risk", icon: AlertTriangle, query: "Predict next delay risk" },
@@ -770,22 +828,81 @@ const navTopics: { label: string; icon: LucideIcon; query: string }[] = [
   { label: "Status", icon: PieChartIcon, query: "Task status distribution pie chart" },
 ];
 
-// One level of the drill-down panel's navigation stack. `label` is what
-// shows in the breadcrumb; `answer` is the resolved text + optional chart(s)
-// for that level, so re-opening the panel doesn't need to recompute anything.
 type DrillStep = { query: string; label: string; answer: LocalAnswer };
 
 const AIAssistant = () => {
   const { user } = useAuth();
 
-  const getStorageKey = () => {
-    if (!user) return "ai_chat_messages_guest";
-    return `ai_chat_messages_${user.id}`;
+  // ── Live Data Queries ──
+  const { data: rawProjects = [], isLoading: projectsLoading, refetch: refetchProjects } = useQuery({
+    queryKey: ["projects"],
+    queryFn: projectsApi.list,
+  });
+  const { data: rawTasks = [], isLoading: tasksLoading, refetch: refetchTasks } = useQuery({
+    queryKey: ["tasks"],
+    queryFn: tasksApi.list,
+  });
+  const { data: rawHurdles = [], isLoading: hurdlesLoading, refetch: refetchHurdles } = useQuery({
+    queryKey: ["hurdles"],
+    queryFn: hurdlesApi.list,
+  });
+  const { data: rawTowers = [], isLoading: towersLoading, refetch: refetchTowers } = useQuery({
+    queryKey: ["towers"],
+    queryFn: towersApi.list,
+  });
+
+  // Filter strictly by active / existing projects
+  const liveContext: LiveContext = useMemo(() => {
+    const projects = rawProjects.filter(
+      (p) => p && p.status?.toLowerCase() !== "deleted" && p.status?.toLowerCase() !== "archived"
+    );
+    const activeProjectIds = new Set(projects.map((p) => p.id));
+    const tasks = rawTasks.filter((t) => t.projectId && activeProjectIds.has(t.projectId));
+    const towers = rawTowers.filter((t) => t.projectId && activeProjectIds.has(t.projectId));
+    const hurdles = rawHurdles.filter((h) => {
+      if (h.affectedTaskId) return tasks.some((t) => t.id === h.affectedTaskId);
+      return true;
+    });
+
+    return { projects, tasks, towers, hurdles };
+  }, [rawProjects, rawTasks, rawTowers, rawHurdles]);
+
+  const refreshAll = () => {
+    refetchProjects();
+    refetchTasks();
+    refetchHurdles();
+    refetchTowers();
   };
 
-  const getDrillStorageKey = () => {
-    if (!user) return "ai_drill_stack_guest";
-    return `ai_drill_stack_${user.id}`;
+  const getStorageKey = () => (user ? `ai_chat_messages_${user.id}` : "ai_chat_messages_guest");
+  const getDrillStorageKey = () => (user ? `ai_drill_stack_${user.id}` : "ai_drill_stack_guest");
+
+  const buildInitialMessage = (): ChatMessage => {
+    if (liveContext.projects.length > 0) {
+      const sampleProj = liveContext.projects[0].name;
+      return {
+        role: "assistant",
+        text: `Hello! I'm your **Project Intelligence AI Assistant**. I provide real-time reports, delay predictions, and live charts based **strictly on your current active projects**.\n\nTry asking: "Tell me about ${sampleProj}", "Predict next delay risk", or "Department performance chart". You can tap on any chart bar or slice to drill into details. What would you like to explore?`,
+        grounded: true,
+      };
+    }
+    return {
+      role: "assistant",
+      text: "Hello! I'm your **Project Intelligence AI Assistant**. There are currently no active projects in your workspace. Once you add projects and tasks, I will provide live progress metrics, risk predictions, and interactive reports.",
+      grounded: true,
+    };
+  };
+
+  const loadMessages = (): ChatMessage[] => {
+    const key = getStorageKey();
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (_) {}
+    }
+    return [buildInitialMessage()];
   };
 
   const loadDrillStack = (): DrillStep[] => {
@@ -795,32 +912,8 @@ const AIAssistant = () => {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) return parsed;
       }
-    } catch (_) {
-      // ignore
-    }
+    } catch (_) {}
     return [];
-  };
-
-  const INITIAL_MESSAGE: ChatMessage = {
-    role: "assistant",
-    text: "Hello! I'm your **Real Estate Execution OS** assistant. I answer directly from your live project data — delays, hurdles, risk, and performance — and I can show any of it as a chart if you ask. Ask about a project (like \"Skyline\") to get its status pie, progress-by-tower bar, and department breakdown all at once. Tap any bar or slice in a chart to drill into the details. What would you like to know?",
-    grounded: true,
-  };
-
-  const loadMessages = (): ChatMessage[] => {
-    const key = getStorageKey();
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      } catch (_) {
-        // ignore
-      }
-    }
-    return [INITIAL_MESSAGE];
   };
 
   const [messages, setMessages] = useState<ChatMessage[]>(loadMessages());
@@ -830,8 +923,7 @@ const AIAssistant = () => {
   const [drillOpen, setDrillOpen] = useState(false);
 
   useEffect(() => {
-    const key = getStorageKey();
-    localStorage.setItem(key, JSON.stringify(messages));
+    localStorage.setItem(getStorageKey(), JSON.stringify(messages));
   }, [messages, user]);
 
   useEffect(() => {
@@ -842,21 +934,12 @@ const AIAssistant = () => {
     localStorage.setItem(getDrillStorageKey(), JSON.stringify(drillStack));
   }, [drillStack, user]);
 
-  useEffect(() => {
-    setDrillStack(loadDrillStack());
-    setDrillOpen(false);
-  }, [user]);
-
   const clearChat = () => {
-    setMessages([INITIAL_MESSAGE]);
+    setMessages([buildInitialMessage()]);
   };
 
-  // Tapping a bar/slice never touches the chat — it resolves the follow-up
-  // question and pushes it onto the drill-down panel's stack instead, going
-  // one level deeper each time (whether the tap came from the chat or from
-  // inside the panel itself).
   const openDrill = (query: string) => {
-    const answer = resolveLocalAnswer(query);
+    const answer = resolveLocalAnswer(query, liveContext);
     if (!answer) return;
     const label = answer.chart?.title || answer.charts?.[0]?.title || (query.length > 32 ? query.slice(0, 32) + "…" : query);
     setDrillStack((prev) => [...prev, { query, label, answer }]);
@@ -889,15 +972,18 @@ const AIAssistant = () => {
     setMessages((prev) => [...prev, { role: "user", text: msg }]);
     setInput("");
 
-    const local = resolveLocalAnswer(msg);
+    const local = resolveLocalAnswer(msg, liveContext);
     if (local) {
-      setMessages((prev) => [...prev, { role: "assistant", text: local.text, chart: local.chart, charts: local.charts, grounded: true }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: local.text, chart: local.chart, charts: local.charts, grounded: true },
+      ]);
       return;
     }
 
     setSending(true);
     try {
-      const context = buildGroundingContext();
+      const context = buildGroundingContext(liveContext);
       const { response } = await analyticsApi.aiAssistant(`${context}\n\nUser question: ${msg}`);
       setMessages((prev) => [...prev, { role: "assistant", text: response, grounded: false }]);
     } catch (err) {
@@ -913,16 +999,42 @@ const AIAssistant = () => {
     }
   };
 
+  // Dynamic suggestions based on active projects
+  const suggestions = useMemo(() => {
+    const list = [
+      "Which project is most delayed?",
+      "Show overdue tasks",
+      "Predict next delay risk",
+      "Give me a progress summary",
+      "Show risk by department as a chart",
+      "Department performance chart",
+      "Task status distribution pie chart",
+    ];
+    if (liveContext.projects.length > 0) {
+      list.push(`Tell me about ${liveContext.projects[0].name}`);
+      if (liveContext.projects.length > 1) {
+        list.push(`Tell me about ${liveContext.projects[1].name}`);
+      }
+    }
+    return list;
+  }, [liveContext.projects]);
+
   const currentDrill = drillStack[drillStack.length - 1];
+  const isLoading = projectsLoading || tasksLoading;
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">AI Assistant</h1>
-          <p className="text-muted-foreground mt-1">Answers grounded in your project data — ask for a chart, then tap it to drill in</p>
+          <p className="text-muted-foreground mt-1">
+            Real-time project intelligence grounded in your active projects
+          </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={refreshAll} title="Refresh live data">
+            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+          </Button>
           {drillStack.length > 0 && !drillOpen && (
             <Button variant="outline" size="sm" onClick={() => setDrillOpen(true)}>
               <History className="h-4 w-4 mr-1" />
@@ -941,10 +1053,7 @@ const AIAssistant = () => {
         </div>
       </div>
 
-      {/* Always-visible quick-topic nav — separate from the first-message-only
-          suggestion chips below. These stay put for the life of the page so
-          a common report is always one tap away, no matter how long the
-          conversation has gotten. */}
+      {/* Quick-topic navigation buttons */}
       <div className="flex flex-wrap gap-2">
         {navTopics.map((topic) => (
           <button
@@ -968,7 +1077,11 @@ const AIAssistant = () => {
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
               )}
-              <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+              <div
+                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
+                  msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
+                }`}
+              >
                 <AnswerBody text={msg.text} chart={msg.chart} charts={msg.charts} onDrillQuery={openDrill} />
               </div>
             </div>
@@ -986,7 +1099,11 @@ const AIAssistant = () => {
           {messages.length <= 2 && (
             <div className="flex flex-wrap gap-2 mb-3">
               {suggestions.map((s, i) => (
-                <button key={i} onClick={() => send(s)} className="text-xs px-3 py-1.5 rounded-full border hover:bg-muted transition-colors">
+                <button
+                  key={i}
+                  onClick={() => send(s)}
+                  className="text-xs px-3 py-1.5 rounded-full border hover:bg-muted transition-colors"
+                >
                   {s}
                 </button>
               ))}
@@ -1007,10 +1124,7 @@ const AIAssistant = () => {
         </div>
       </Card>
 
-      {/* Drill-down panel — lives outside the chat entirely. Tapping a chart
-          bar/slice never posts into the conversation; it opens or pushes
-          onto this panel instead, and the whole stack is saved per-user so
-          it's still there next time you open the assistant. */}
+      {/* Drill-down modal */}
       <Dialog open={drillOpen} onOpenChange={setDrillOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
@@ -1040,7 +1154,12 @@ const AIAssistant = () => {
 
           {currentDrill && (
             <div className="text-sm">
-              <AnswerBody text={currentDrill.answer.text} chart={currentDrill.answer.chart} charts={currentDrill.answer.charts} onDrillQuery={openDrill} />
+              <AnswerBody
+                text={currentDrill.answer.text}
+                chart={currentDrill.answer.chart}
+                charts={currentDrill.answer.charts}
+                onDrillQuery={openDrill}
+              />
             </div>
           )}
 
