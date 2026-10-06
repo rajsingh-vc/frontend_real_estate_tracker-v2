@@ -15,7 +15,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  projectsApi, towersApi, floorsApi, tasksApi, hurdlesApi,
+  projectsApi, towersApi, floorsApi, tasksApi, hurdlesApi, resolveImageUrl,
   type ApiProject, type ApiTower, type ApiFloor, type ApiTask, type ApiHurdle,
 } from "@/lib/api";
 
@@ -1034,8 +1034,22 @@ const Dashboard = () => {
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Building2 className="h-4 w-4 text-primary" />
+                    <div className="relative h-9 w-9 rounded-lg overflow-hidden shrink-0 border border-border/80 flex items-center justify-center bg-white dark:bg-card p-0.5">
+                      {project.organizationLogo ? (
+                        <img
+                          src={resolveImageUrl(project.organizationLogo) || ""}
+                          alt=""
+                          className="h-full w-full object-contain"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = "none";
+                            const fallback = e.currentTarget.parentElement?.querySelector(".fallback-icon");
+                            if (fallback) (fallback as HTMLElement).style.display = "flex";
+                          }}
+                        />
+                      ) : null}
+                      <div className={`fallback-icon h-full w-full bg-primary/10 flex items-center justify-center ${project.organizationLogo ? "hidden" : "flex"}`}>
+                        <Building2 className="h-4 w-4 text-primary" />
+                      </div>
                     </div>
                     <div>
                       <p className="font-medium text-sm">{project.name}</p>

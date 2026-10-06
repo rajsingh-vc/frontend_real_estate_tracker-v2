@@ -14,6 +14,7 @@ import {
   floorsApi,
   tasksApi,
   ApiError,
+  resolveImageUrl,
   type ApiProject,
   type ApiTower,
   type ApiFloor,
@@ -350,7 +351,7 @@ const DigitalTwin = () => {
       </div>
 
       {/* Task status summary — clickable, jumps to Tasks page filtered by status */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
         <button
           type="button"
           onClick={() => goToTasksFilteredBy("not_started")}
@@ -427,13 +428,26 @@ const DigitalTwin = () => {
                     }}
                   >
                     <CardContent className="p-5 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <Building2 className="h-5 w-5 text-primary" />
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-11 w-11 rounded-xl bg-muted/60 border flex items-center justify-center shrink-0 p-1 overflow-hidden">
+                          {resolveImageUrl(project.organizationLogo) ? (
+                            <img
+                              src={resolveImageUrl(project.organizationLogo)!}
+                              alt={project.organizationName || project.name}
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLElement).style.display = 'none';
+                                e.currentTarget.parentElement?.querySelector('.fallback-icon')?.classList.remove('hidden');
+                              }}
+                            />
+                          ) : null}
+                          <Building2 className={`h-5 w-5 text-primary fallback-icon ${resolveImageUrl(project.organizationLogo) ? 'hidden' : ''}`} />
                         </div>
-                        <div>
-                          <h3 className="font-display font-bold">{project.name}</h3>
-                          <p className="text-xs text-muted-foreground">{project.location}</p>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-display font-bold truncate">{project.name}</h3>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {[project.organizationName, project.location].filter(Boolean).join(" · ") || "No organization"}
+                          </p>
                         </div>
                       </div>
                       <EditableProgress

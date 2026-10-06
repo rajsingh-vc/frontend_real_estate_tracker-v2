@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
-  organizationApi, companyApi, entityApi, projectsApi, towersApi, floorsApi,
+  organizationApi, companyApi, entityApi, projectsApi, towersApi, floorsApi, resolveImageUrl,
   type Organization, type OrganizationCompany, type Entity,
   type ApiProject, type ApiTower, type ApiFloor,
   type TowerPayload, type FloorPayload, ApiError,
@@ -508,11 +508,21 @@ function CategoryManagement() {
                   <SelectValue placeholder={orgsLoading ? "Loading…" : "Select organization"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {organizations.map((org: Organization) => (
-                    <SelectItem key={org.id} value={String(org.id)}>
-                      {org.name}
-                    </SelectItem>
-                  ))}
+                  {organizations.map((org: Organization) => {
+                    const orgLogo = resolveImageUrl(org.logo);
+                    return (
+                      <SelectItem key={org.id} value={String(org.id)}>
+                        <div className="flex items-center gap-2">
+                          {orgLogo ? (
+                            <img src={orgLogo} alt="" className="w-4 h-4 rounded object-contain bg-white dark:bg-card shrink-0" />
+                          ) : (
+                            <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                          )}
+                          <span className="truncate">{org.name}</span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -581,28 +591,51 @@ function CategoryManagement() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredProjects.map((project: ApiProject) => (
-              <Card
-                key={project.id}
-                onClick={() => handleSelectProject(project.id)}
-                className={`cursor-pointer transition-shadow hover:shadow-md ${
-                  selectedProjectId === project.id ? "ring-2 ring-primary" : ""
-                }`}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="font-display font-bold text-sm">{project.name}</h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">{project.location}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredProjects.map((project: ApiProject) => {
+              const matchedOrg = organizations.find((o: Organization) => o.id === project.organizationId);
+              const orgLogoUrl = resolveImageUrl(project.organizationLogo || matchedOrg?.logo);
+              return (
+                <Card
+                  key={project.id}
+                  onClick={() => handleSelectProject(project.id)}
+                  className={`cursor-pointer transition-all hover:shadow-md ${
+                    selectedProjectId === project.id ? "ring-2 ring-primary" : ""
+                  }`}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="relative h-11 w-11 rounded-xl overflow-hidden shrink-0 border border-border/80 flex items-center justify-center bg-white dark:bg-card p-1 shadow-xs">
+                          {orgLogoUrl ? (
+                            <img
+                              src={orgLogoUrl}
+                              alt=""
+                              className="h-full w-full object-contain"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLElement).style.display = "none";
+                                const fallback = e.currentTarget.parentElement?.querySelector(".fallback-icon");
+                                if (fallback) (fallback as HTMLElement).style.display = "flex";
+                              }}
+                            />
+                          ) : null}
+                          <div className={`fallback-icon h-full w-full bg-primary/10 flex items-center justify-center ${orgLogoUrl ? "hidden" : "flex"}`}>
+                            <Building2 className="h-5 w-5 text-primary" />
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-display font-bold text-sm truncate">{project.name}</h3>
+                          <p className="text-xs text-muted-foreground truncate">{project.location}</p>
+                        </div>
+                      </div>
+                      <Badge variant="secondary" className="capitalize shrink-0 text-xs">
+                        {project.status}
+                      </Badge>
                     </div>
-                    <Badge variant="secondary" className="capitalize shrink-0">
-                      {project.status}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>

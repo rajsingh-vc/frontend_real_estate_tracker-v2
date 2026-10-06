@@ -24,7 +24,7 @@ import { NewTaskDialog } from "@/components/dialogs/NewTaskDialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   tasksApi, usersApi, projectsApi, towersApi, documentsApi, statusesApi,
-  type ApiTask, type ApiDocument, type ApiChatMessage, ApiError,
+  type ApiTask, type ApiDocument, type ApiChatMessage, ApiError, resolveImageUrl,
 } from "@/lib/api";
 
 const statusOrder: TaskStatus[] = ['not_started', 'ready', 'in_progress', 'blocked', 'review', 'completed', 'delayed'];
@@ -1135,7 +1135,7 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
   };
 
   return (
-    <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+    <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
       <DialogHeader>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
@@ -1177,8 +1177,15 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
         <div className="space-y-3">
           <div className="text-sm"><span className="text-muted-foreground">Project:</span> <span className="font-medium">{project?.name}</span></div>
           {(project?.organizationName || project?.companyName) && (
-            <div className="text-sm">
-              <span className="text-muted-foreground">Organization:</span>{" "}
+            <div className="text-sm flex items-center gap-2 flex-wrap">
+              <span className="text-muted-foreground">Organization:</span>
+              {resolveImageUrl(project?.organizationLogo) && (
+                <img
+                  src={resolveImageUrl(project?.organizationLogo)!}
+                  alt={project?.organizationName || "Organization"}
+                  className="h-5 w-5 rounded object-contain border bg-white p-0.5 shrink-0"
+                />
+              )}
               <span className="font-medium">
                 {[project?.organizationName, project?.companyName].filter(Boolean).join(" · ")}
               </span>
@@ -1280,12 +1287,20 @@ export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?:
   return (
     <Dialog defaultOpen={openOnMount}>
       <DialogTrigger asChild>
-        <div className="grid grid-cols-[auto,1fr,auto,auto,auto,auto] items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors">
-          {/* Status dot */}
-          <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${displayStatusDot(task.status)}`} />
+        <div className="flex flex-col sm:grid sm:grid-cols-[auto,1fr,auto,auto,auto] items-start sm:items-center gap-2.5 sm:gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors">
+          {/* Status dot + Mobile Title */}
+          <div className="flex items-center gap-2.5 w-full sm:w-auto min-w-0">
+            <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${displayStatusDot(task.status)}`} />
+            <div className="min-w-0 flex-1 sm:hidden">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium truncate">{task.title}</p>
+                {task.criticalPath && <Badge variant="destructive" className="text-[9px] px-1 py-0">CP</Badge>}
+              </div>
+            </div>
+          </div>
 
-          {/* Title + sub-info */}
-          <div className="min-w-0">
+          {/* Desktop Title + sub-info */}
+          <div className="hidden sm:block min-w-0">
             <div className="flex items-center gap-2">
               <p className="text-sm font-medium truncate">{task.title}</p>
               {task.criticalPath && <Badge variant="destructive" className="text-[9px] px-1 py-0">CP</Badge>}
@@ -1294,7 +1309,6 @@ export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?:
               <span>{task.department}</span>
               <span>·</span>
               <span>{task.phase}</span>
-              {/* ✅ NEW — created date */}
               {task.createdAt && (
                 <>
                   <span>·</span>
@@ -1304,24 +1318,34 @@ export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?:
             </div>
           </div>
 
-          {/* Priority badge */}
-          <Badge className={`${priorityColors[task.priority as Priority]} text-[10px] whitespace-nowrap`}>
-            {task.priority}
-          </Badge>
-
-          {/* Status badge */}
-          <Badge className={`${displayStatusColor(task.status)} text-[10px] whitespace-nowrap`}>
-            {displayStatusLabel(task.status)}
-          </Badge>
-
-          {/* Progress bar + percentage */}
-          <div className="flex items-center gap-2 w-24">
-            <Progress value={task.progress} className="h-1.5 flex-1" />
-            <span className="text-xs font-medium w-8 text-right">{task.progress}%</span>
+          {/* Mobile sub-info */}
+          <div className="sm:hidden flex flex-wrap items-center gap-2 text-xs text-muted-foreground w-full">
+            <span>{task.department}</span>
+            <span>·</span>
+            <span>{task.phase}</span>
+            {task.createdAt && (
+              <>
+                <span>·</span>
+                <span>Created {new Date(task.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span>
+              </>
+            )}
           </div>
 
-          {/* Empty spacer for future actions */}
-          <div className="w-6" />
+          {/* Priority & Status badges + Progress */}
+          <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto mt-1 sm:mt-0 flex-wrap">
+            <Badge className={`${priorityColors[task.priority as Priority]} text-[10px] whitespace-nowrap`}>
+              {task.priority}
+            </Badge>
+
+            <Badge className={`${displayStatusColor(task.status)} text-[10px] whitespace-nowrap`}>
+              {displayStatusLabel(task.status)}
+            </Badge>
+
+            <div className="flex items-center gap-2 w-28 ml-auto sm:ml-0">
+              <Progress value={task.progress} className="h-1.5 flex-1" />
+              <span className="text-xs font-medium w-8 text-right">{task.progress}%</span>
+            </div>
+          </div>
         </div>
       </DialogTrigger>
       <TaskDetailDialog task={task} />
@@ -1486,13 +1510,13 @@ const Tasks = () => {
         <NewTaskDialog onCreated={handleCreated} />
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+      <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+        <div className="relative flex-1 min-w-[180px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search tasks..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
             {taskStatuses.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
@@ -1504,11 +1528,11 @@ const Tasks = () => {
           placeholder="Filter by department..."
           value={deptFilter}
           onChange={(e) => setDeptFilter(e.target.value)}
-          className="w-[180px]"
+          className="w-full sm:w-[180px]"
         />
         {/* "Critical" removed — only High / Medium / Low remain. */}
         <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Priority" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Priority" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Priority</SelectItem>
             <SelectItem value="high">High</SelectItem>

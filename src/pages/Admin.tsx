@@ -33,9 +33,9 @@ import {
   type OrganizationCompanyPayload,
   type Entity,
   type EntityPayload,
-  type InvitationPayload,
   type Invitation,
   type statusesApi,
+  resolveImageUrl,
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -63,22 +63,22 @@ function Admin() {
 
   return (
     <div>
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div className="max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-8">
         {/* Page header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">
             {user?.is_superuser ? "Super Admin" : "Admin"}
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">System configuration and user management</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">System configuration and user management</p>
         </div>
 
         {/* Tab switcher */}
-        <div className="inline-flex items-center gap-1 bg-gray-100 dark:bg-secondary/80 border border-transparent dark:border-border rounded-xl p-1 mb-6">
+        <div className="flex flex-wrap sm:inline-flex items-center gap-1 bg-gray-100 dark:bg-secondary/80 border border-transparent dark:border-border rounded-xl p-1 mb-6">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                 activeTab === tab.key
                   ? "bg-white dark:bg-card text-gray-900 dark:text-gray-100 shadow-sm border border-transparent dark:border-border"
                   : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
@@ -90,7 +90,7 @@ function Admin() {
         </div>
 
         {/* Tab content */}
-        <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-sm dark:shadow-none p-6">
+        <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-sm dark:shadow-none p-4 sm:p-6">
           {activeTab === "users" && <UsersTab currentUser={user!} />}
           {activeTab === "escalation" && <EscalationMatrixTab />}
           {activeTab === "settings" && (
@@ -2107,9 +2107,9 @@ function RecordSection({
               <div className="flex items-center gap-3 text-left">
                 {item.logo ? (
                   <img
-                    src={item.logo}
+                    src={resolveImageUrl(item.logo) ?? item.logo}
                     alt=""
-                    className="w-9 h-9 rounded-lg object-cover border border-gray-200 dark:border-border"
+                    className="w-9 h-9 rounded-lg object-contain p-0.5 border border-gray-200 dark:border-border bg-white"
                   />
                 ) : (
                   <span className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-secondary flex items-center justify-center">

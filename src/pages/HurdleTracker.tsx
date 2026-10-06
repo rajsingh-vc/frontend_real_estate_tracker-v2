@@ -55,7 +55,7 @@ function HurdleDetailDialog({
   const affectedTask = tasks?.find(t => t.id === hurdle.affectedTaskId);
 
   return (
-    <DialogContent className="max-w-lg">
+    <DialogContent className="w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto p-4 sm:p-6">
       <DialogHeader>
         <div className="flex items-center gap-2">
           <Badge className={hurdleSeverityColors[hurdle.severity as HurdleSeverity]}>{hurdle.severity}</Badge>
@@ -240,7 +240,7 @@ const HurdleTracker = () => {
         <ReportHurdleDialog onCreated={handleCreated} />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 sm:gap-3">
         {[
           { label: 'Open', value: stats.open, icon: <AlertTriangle className="h-4 w-4 text-warning" /> },
           { label: 'In Progress', value: stats.inProgress, icon: <Clock className="h-4 w-4 text-info" /> },
@@ -260,9 +260,9 @@ const HurdleTracker = () => {
         ))}
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
         <Select value={severityFilter} onValueChange={setSeverityFilter}>
-          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Severity" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Severity" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Severity</SelectItem>
             <SelectItem value="critical">Critical</SelectItem>
@@ -276,7 +276,7 @@ const HurdleTracker = () => {
           placeholder="Filter by status..."
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="w-[180px]"
+          className="w-full sm:w-[180px]"
         />
       </div>
 

@@ -33,6 +33,7 @@ import {
   hurdlesApi,
   projectsApi,
   towersApi,
+  resolveImageUrl,
   type ApiTask,
   type ApiHurdle,
   type ApiProject,
@@ -743,7 +744,7 @@ const DelayPrediction = () => {
             {selectedProject ? ` for ${selectedProject.name}` : " across all active projects"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full md:w-auto">
           <Building2 className="h-4 w-4 text-muted-foreground shrink-0 hidden sm:block" />
           <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
             <SelectTrigger className="w-full md:w-64">
@@ -753,7 +754,16 @@ const DelayPrediction = () => {
               <SelectItem value={ALL_PROJECTS}>All Projects</SelectItem>
               {validProjects.map((p) => (
                 <SelectItem key={p.id} value={String(p.id)}>
-                  {p.name}
+                  <div className="flex items-center gap-2">
+                    {resolveImageUrl(p.organizationLogo) && (
+                      <img
+                        src={resolveImageUrl(p.organizationLogo)!}
+                        alt=""
+                        className="h-4 w-4 rounded object-contain border bg-white p-0.5 shrink-0"
+                      />
+                    )}
+                    <span className="truncate">{p.name}</span>
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>

@@ -7,7 +7,7 @@ import { useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Map, CalendarRange, Package, ClipboardList, ShieldCheck, HandshakeIcon,
-  Landmark, FileText, BarChart3, Bot, Settings
+  Landmark, FileText, BarChart3, Bot, Settings, Layers, TrendingUp
 } from "lucide-react";
 
 const mainTabs = [
@@ -22,6 +22,8 @@ const moreItems = [
   { title: "Timeline", url: "/timeline", icon: CalendarRange },
   { title: "Resources", url: "/resources", icon: Package },
   { title: "Checklists", url: "/checklists", icon: ClipboardList },
+  { title: "Category Management", url: "/category-management", icon: Layers },
+  { title: "Delay Prediction", url: "/delay-prediction", icon: TrendingUp },
   { title: "Compliance", url: "/compliance", icon: ShieldCheck },
   { title: "Handover", url: "/handover", icon: HandshakeIcon },
   { title: "Society", url: "/society", icon: Landmark },

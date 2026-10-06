@@ -276,7 +276,7 @@ function TopSearch() {
   const hasResults = results.length > 0;
 
   return (
-    <div ref={containerRef} className="relative hidden md:flex max-w-md flex-1">
+    <div ref={containerRef} className="relative flex max-w-md flex-1 min-w-0">
       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground z-10" />
       <Input
         ref={inputRef}
@@ -841,18 +841,18 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className="min-h-screen flex w-full">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b bg-card/80 backdrop-blur-sm px-4 md:px-6">
-            <SidebarTrigger className="hidden md:flex" />
-            <div className="flex-1 flex items-center gap-4">
+          <header className="sticky top-0 z-40 flex h-14 items-center gap-2 md:gap-4 border-b bg-card/80 backdrop-blur-sm px-3 md:px-6">
+            <SidebarTrigger className="flex shrink-0" />
+            <div className="flex-1 flex items-center min-w-0">
               <TopSearch />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <ThemeToggle />
               <NotificationBell />
               <ProfileMenu user={user} onLogout={handleLogout} />
             </div>
           </header>
-          <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6 overflow-auto">{children}</main>
+          <main className="flex-1 p-3 sm:p-4 md:p-6 pb-20 md:pb-6 overflow-auto">{children}</main>
         </div>
         <MobileNav />
       </div>

@@ -198,7 +198,7 @@ function TaskProgressDialog({ task, onClose }: { task: ApiTask | null; onClose: 
 
   return (
     <Dialog open={!!task} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl border-primary/20 shadow-2xl">
+      <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 border-primary/20 shadow-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${config.badgeBg}`}>

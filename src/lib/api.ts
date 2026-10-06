@@ -137,6 +137,24 @@ export interface Company {
   is_active: boolean;
 }
 
+export function resolveImageUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = String(url).trim();
+  if (!trimmed) return null;
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("blob:")
+  ) {
+    return trimmed;
+  }
+  const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+  const rootBase = apiBase.replace(/\/api\/?$/, "");
+  const cleanPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return rootBase ? `${rootBase}${cleanPath}` : cleanPath;
+}
+
 export interface ApiProject {
   id: number;
   name: string;
@@ -154,6 +172,7 @@ export interface ApiProject {
   companyId: number | null;
   entityId: number | null;
   organizationName?: string;
+  organizationLogo?: string | null;
   companyName?: string;
   entityName?: string | null;
   createdAt?: string;   // 👈 add this

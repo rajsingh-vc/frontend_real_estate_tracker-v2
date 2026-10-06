@@ -20,7 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   projectsApi, towersApi, floorsApi, unitsApi, checklistsApi, subTasksApi, tasksApi,
-  organizationApi, companyApi, entityApi,
+  organizationApi, companyApi, entityApi, resolveImageUrl,
   type ApiProject, type ApiTower, type ApiFloor, type ApiUnit,
   type ApiChecklist, type ApiSubTask, type ApiTask, type ProjectPayload, ApiError,
   type TowerPayload, type FloorPayload, type UnitPayload, type NewTaskPayload,
@@ -228,6 +228,10 @@ function ProjectDialog({
     setForm((prev) => ({ ...prev, organizationId: value, companyId: "", entityId: "" }));
   };
 
+  const selectedOrg = useMemo(() => {
+    return organizations.find((org: Organization) => String(org.id) === form.organizationId);
+  }, [organizations, form.organizationId]);
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.name.trim() || !form.location.trim()) return;
@@ -241,7 +245,7 @@ function ProjectDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{initialProject ? "Edit Project" : "New Project"}</DialogTitle>
         </DialogHeader>
@@ -255,11 +259,25 @@ function ProjectDialog({
                   <SelectValue placeholder={orgsLoading ? "Loading…" : "Select organization"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {organizations.map((org: Organization) => (
-                    <SelectItem key={org.id} value={String(org.id)}>
-                      {org.name}
-                    </SelectItem>
-                  ))}
+                  {organizations.map((org: Organization) => {
+                    const orgLogo = resolveImageUrl(org.logo);
+                    return (
+                      <SelectItem key={org.id} value={String(org.id)}>
+                        <div className="flex items-center gap-2">
+                          {orgLogo ? (
+                            <img
+                              src={orgLogo}
+                              alt=""
+                              className="w-4 h-4 rounded object-contain bg-white dark:bg-card shrink-0"
+                            />
+                          ) : (
+                            <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                          )}
+                          <span className="truncate">{org.name}</span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -320,6 +338,30 @@ function ProjectDialog({
               </Select>
             </div>
           </div>
+
+          {/* Organization preview badge */}
+          {selectedOrg && (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-primary/5 border border-primary/20">
+              {selectedOrg.logo ? (
+                <img
+                  src={resolveImageUrl(selectedOrg.logo) || ""}
+                  alt={selectedOrg.name}
+                  className="w-10 h-10 rounded-lg object-contain bg-white dark:bg-card p-1 border shadow-xs shrink-0"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <Building2 className="w-5 h-5 text-primary" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold text-foreground truncate">{selectedOrg.name}</p>
+                  <Badge variant="secondary" className="text-[10px] shrink-0 font-medium">Assigned Organization</Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground truncate">{selectedOrg.address || "Organization assigned to this project"}</p>
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-2">
             <Label htmlFor="project-name">Project Name</Label>
@@ -1192,53 +1234,93 @@ function ProjectList({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Projects</h1>
           <p className="text-muted-foreground mt-1">{projectList.length} projects in portfolio</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           {onSelectOrg && (
             <Select
               value={selectedOrgId || "all"}
               onValueChange={(value) => onSelectOrg(value === "all" ? "" : value)}
             >
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-full sm:w-[220px]">
                 <SelectValue placeholder="Filter by organization" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All organizations</SelectItem>
-                {organizations.map((org: Organization) => (
-                  <SelectItem key={org.id} value={String(org.id)}>
-                    {org.name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="all">🏢 All organizations</SelectItem>
+                {organizations.map((org: Organization) => {
+                  const orgLogo = resolveImageUrl(org.logo);
+                  return (
+                    <SelectItem key={org.id} value={String(org.id)}>
+                      <div className="flex items-center gap-2">
+                        {orgLogo ? (
+                          <img
+                            src={orgLogo}
+                            alt=""
+                            className="w-4 h-4 rounded object-contain bg-white dark:bg-card shrink-0"
+                          />
+                        ) : (
+                          <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                        )}
+                        <span className="truncate">{org.name}</span>
+                      </div>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           )}
-          <Button onClick={onCreate}>+ New Project</Button>
+          <Button onClick={onCreate} className="w-full sm:w-auto shadow-sm">+ New Project</Button>
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         {sortedProjectList.map((project) => {
           const pTowers = towers.filter((t) => t.projectId === project.id);
           const pTasks = tasks.filter((t) => t.projectId === project.id);
           const delayed = pTasks.filter((task) => task.status === "delayed" || task.delayDays > 0).length;
 
+          // Find the organization for this project
+          const matchedOrg = organizations.find(
+            (o: Organization) =>
+              o.id === project.organizationId ||
+              (project.organizationName && o.name.toLowerCase() === project.organizationName.toLowerCase())
+          );
+          const orgLogoUrl = resolveImageUrl(project.organizationLogo || matchedOrg?.logo);
+
           return (
             <Card
               key={project.id}
-              className="hover:shadow-md transition-shadow cursor-pointer h-full"
+              className="hover:shadow-lg transition-all duration-200 cursor-pointer h-full border-border/80 group overflow-hidden"
               onClick={() => navigate(`/projects/${project.id}`)}
             >
-              <CardContent className="p-5 space-y-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                    <Building2 className="h-6 w-6 text-primary" />
+              <CardContent className="p-4 sm:p-5 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="relative h-14 w-14 rounded-2xl overflow-hidden shrink-0 border border-border/80 shadow-xs flex items-center justify-center bg-white dark:bg-card p-1">
+                    {orgLogoUrl ? (
+                      <img
+                        src={orgLogoUrl}
+                        alt={project.organizationName || matchedOrg?.name || project.name}
+                        className="h-full w-full object-contain"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = "none";
+                          const fallback = e.currentTarget.parentElement?.querySelector(".fallback-icon");
+                          if (fallback) (fallback as HTMLElement).style.display = "flex";
+                        }}
+                      />
+                    ) : null}
+                    <div
+                      className={`fallback-icon h-full w-full rounded-xl bg-primary/10 flex items-center justify-center ${
+                        orgLogoUrl ? "hidden" : "flex"
+                      }`}
+                    >
+                      <Building2 className="h-7 w-7 text-primary" />
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
                     <Badge
                       variant={
                         project.status === "active"
@@ -1247,18 +1329,19 @@ function ProjectList({
                           ? "secondary"
                           : "outline"
                       }
-                      className="capitalize"
+                      className="capitalize font-semibold text-xs"
                     >
                       {project.status.replace("_", " ")}
                     </Badge>
-                    {/* ✅ Small structure indicator */}
                     {project.hierarchyMode === "direct_task" && (
-                      <Badge variant="outline" className="text-[10px]">Direct</Badge>
+                      <Badge variant="outline" className="text-[10px] font-semibold border-primary/40 text-primary">
+                        Direct
+                      </Badge>
                     )}
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       onClick={(event) => {
                         event.stopPropagation();
                         onEdit(project);
@@ -1269,7 +1352,7 @@ function ProjectList({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
                       onClick={(event) => {
                         event.stopPropagation();
                         onDelete(project);
@@ -1281,37 +1364,41 @@ function ProjectList({
                 </div>
 
                 <div>
-                  <h3 className="font-display font-bold text-lg">{project.name}</h3>
-                  <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {project.location}
+                  <h3 className="font-display font-bold text-lg group-hover:text-primary transition-colors truncate">
+                    {project.name}
+                  </h3>
+                  <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1 truncate">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span className="truncate">{project.location}</span>
                   </p>
-                  {(project.organizationName || project.companyName) && (
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {[project.organizationName, project.companyName].filter(Boolean).join(" · ")}
-                    </p>
+                  {(project.organizationName || matchedOrg?.name || project.companyName) && (
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 truncate max-w-full">
+                        🏢 {[project.organizationName || matchedOrg?.name, project.companyName].filter(Boolean).join(" · ")}
+                      </span>
+                    </div>
                   )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="rounded-lg bg-muted/50 p-2">
                     <p className="text-lg font-display font-bold">{pTowers.length}</p>
-                    <p className="text-[10px] text-muted-foreground uppercase">Towers</p>
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold">Towers</p>
                   </div>
                   <div className="rounded-lg bg-muted/50 p-2">
                     <p className="text-lg font-display font-bold">{project.totalUnits}</p>
-                    <p className="text-[10px] text-muted-foreground uppercase">Units</p>
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold">Units</p>
                   </div>
                   <div className="rounded-lg bg-muted/50 p-2">
                     <p className="text-lg font-display font-bold">{pTasks.length}</p>
-                    <p className="text-[10px] text-muted-foreground uppercase">Tasks</p>
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold">Tasks</p>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Progress</span>
-                    <span className="font-medium">{project.progress}%</span>
+                    <span className="font-bold">{project.progress}%</span>
                   </div>
                   <Progress value={project.progress} className="h-2" />
                 </div>
@@ -1319,13 +1406,13 @@ function ProjectList({
                 {delayed > 0 && <p className="text-xs text-destructive font-medium">{delayed} delayed tasks</p>}
 
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Calendar className="h-3 w-3" />
+                  <Calendar className="h-3 w-3 shrink-0" />
                   <span>
                     {project.startDate || "--"} — {project.endDate || "--"}
                   </span>
                 </div>
 
-                {/* ✅ NEW — created date & time */}
+                {/* ✅ Created date & time */}
                 {project.createdAt && (
                   <p className="text-[11px] text-muted-foreground">
                     Created {new Date(project.createdAt).toLocaleString(undefined, {
@@ -1347,6 +1434,7 @@ function ProjectDetail({
   project,
   towers,
   tasks,
+  organizations,
   onCreateTower,
   onEditTower,
   onDeleteTower,
@@ -1354,6 +1442,7 @@ function ProjectDetail({
   project: ApiProject | undefined;
   towers: ApiTower[];
   tasks: ApiTask[];
+  organizations?: Organization[];
   onCreateTower: () => void;
   onEditTower: (tower: ApiTower) => void;
   onDeleteTower: (tower: ApiTower) => void;
@@ -1367,6 +1456,13 @@ function ProjectDetail({
   const pTowers = towers.filter((t) => t.projectId === project.id);
   const pTasks = tasks.filter((t) => t.projectId === project.id);
 
+  const matchedOrg = organizations?.find(
+    (o: Organization) =>
+      o.id === project.organizationId ||
+      (project.organizationName && o.name.toLowerCase() === project.organizationName.toLowerCase())
+  );
+  const detailOrgLogo = resolveImageUrl(project.organizationLogo || matchedOrg?.logo);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1377,28 +1473,55 @@ function ProjectDetail({
         <span className="text-foreground font-medium">{project.name}</span>
       </div>
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl md:text-3xl font-bold">{project.name}</h1>
-          <p className="text-muted-foreground flex items-center gap-1 mt-1">
-            <MapPin className="h-4 w-4" />
-            {project.location} · RERA: {project.reraNumber || "NA"}
-          </p>
-          {/* ✅ NEW — created date & time */}
-          {project.createdAt && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Created {new Date(project.createdAt).toLocaleString(undefined, {
-                day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
-              })}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-4">
+          <div className="relative h-16 w-16 rounded-2xl overflow-hidden shrink-0 border border-border/80 shadow-xs flex items-center justify-center bg-white dark:bg-card p-1">
+            {detailOrgLogo ? (
+              <img
+                src={detailOrgLogo}
+                alt={project.organizationName || "Organization"}
+                className="h-full w-full object-contain"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = "none";
+                  const fallback = e.currentTarget.parentElement?.querySelector(".detail-fallback-icon");
+                  if (fallback) (fallback as HTMLElement).style.display = "flex";
+                }}
+              />
+            ) : null}
+            <div
+              className={`detail-fallback-icon h-full w-full rounded-xl bg-primary/10 flex items-center justify-center ${
+                detailOrgLogo ? "hidden" : "flex"
+              }`}
+            >
+              <Building2 className="h-8 w-8 text-primary" />
+            </div>
+          </div>
+          <div>
+            <h1 className="font-display text-2xl md:text-3xl font-bold">{project.name}</h1>
+            <p className="text-muted-foreground flex items-center gap-1 mt-1 text-sm">
+              <MapPin className="h-4 w-4 shrink-0 text-primary" />
+              <span>{project.location} · RERA: {project.reraNumber || "NA"}</span>
             </p>
-          )}
+            {(project.organizationName || matchedOrg?.name || project.companyName) && (
+              <p className="text-xs font-semibold text-primary mt-1">
+                {[project.organizationName || matchedOrg?.name, project.companyName].filter(Boolean).join(" · ")}
+              </p>
+            )}
+            {project.createdAt && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Created {new Date(project.createdAt).toLocaleString(undefined, {
+                  day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+                })}
+              </p>
+            )}
+          </div>
         </div>
-        <Badge variant={project.status === "active" ? "default" : "secondary"} className="capitalize self-start">
+        <Badge variant={project.status === "active" ? "default" : "secondary"} className="capitalize self-start sm:self-center">
           {project.status.replace("_", " ")}
         </Badge>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
         {[
           { label: "Total Units", value: project.totalUnits },
           { label: isDirect ? "Direct Mode" : "Towers", value: isDirect ? "—" : pTowers.length },
@@ -2954,6 +3077,7 @@ const Projects = () => {
           project={selectedProject}
           towers={towers}
           tasks={tasks}
+          organizations={projectListOrganizations}
           onCreateTower={() => {
             setEditingTower(null);
             setTowerDialogOpen(true);

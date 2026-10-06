@@ -24,6 +24,7 @@ import {
   hurdlesApi,
   towersApi,
   floorsApi,
+  resolveImageUrl,
   type ApiProject,
   type ApiTask,
   type ApiHurdle,
@@ -598,17 +599,28 @@ function ProjectDrillDown({ project, onBack, onDrillTower, onDrillTask, tasks, t
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-            <span>Reports</span><ChevronRight className="h-3 w-3" />
-            <span className="text-foreground font-medium">{project.name}</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
+          {resolveImageUrl(project.organizationLogo) && (
+            <img
+              src={resolveImageUrl(project.organizationLogo)!}
+              alt={project.organizationName || "Organization"}
+              className="h-10 w-10 rounded-xl object-contain border bg-white p-1 shrink-0 shadow-xs"
+            />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 text-sm text-muted-foreground truncate">
+              <span>Reports</span><ChevronRight className="h-3 w-3" />
+              <span className="text-foreground font-medium truncate">{project.name}</span>
+            </div>
+            <h1 className="font-display text-2xl font-bold mt-0.5 truncate">{project.name}</h1>
+            <p className="text-sm text-muted-foreground truncate">
+              {[project.organizationName, project.location].filter(Boolean).join(" · ")} · RERA: {project.reraNumber}
+            </p>
           </div>
-          <h1 className="font-display text-2xl font-bold mt-1">{project.name}</h1>
-          <p className="text-sm text-muted-foreground">{project.location} · RERA: {project.reraNumber}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export</Button>
+        <Button variant="outline" size="sm" onClick={handleExport} className="self-start sm:self-auto"><Download className="h-4 w-4 mr-2" />Export</Button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1154,7 +1166,18 @@ const Reports = () => {
           <SelectContent>
             <SelectItem value="all">All Projects</SelectItem>
             {validProjects.map(p => (
-              <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+              <SelectItem key={p.id} value={String(p.id)}>
+                <div className="flex items-center gap-2">
+                  {resolveImageUrl(p.organizationLogo) && (
+                    <img
+                      src={resolveImageUrl(p.organizationLogo)!}
+                      alt=""
+                      className="h-4 w-4 rounded object-contain border bg-white p-0.5 shrink-0"
+                    />
+                  )}
+                  <span className="truncate">{p.name}</span>
+                </div>
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>

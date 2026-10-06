@@ -10,7 +10,7 @@ import { Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   tasksApi, projectsApi, towersApi, floorsApi, unitsApi, checklistTemplatesApi,
-  organizationApi, companyApi, entityApi, statusesApi, usersApi,
+  organizationApi, companyApi, entityApi, statusesApi, usersApi, resolveImageUrl,
   type NewTaskPayload, type Organization, type OrganizationCompany, type Entity,
   ApiError,
 } from "@/lib/api";
@@ -275,7 +275,7 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
       <DialogTrigger asChild>
         {trigger || <Button><Plus className="h-4 w-4 mr-2" />New Task</Button>}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" aria-describedby="dialog-description">
+      <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6" aria-describedby="dialog-description">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">Create New Task</DialogTitle>
         </DialogHeader>
@@ -310,12 +310,20 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
                       <SelectValue placeholder={orgsLoading ? "Loading…" : "All Organizations"} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Organizations</SelectItem>
+                      <SelectItem value="all">🏢 All Organizations</SelectItem>
                       {organizations.map((org: Organization) => {
                         const count = projects.filter(p => p.organizationId === org.id).length;
+                        const orgLogo = resolveImageUrl(org.logo);
                         return (
                           <SelectItem key={org.id} value={String(org.id)}>
-                            {org.name} ({count} {count === 1 ? 'project' : 'projects'})
+                            <div className="flex items-center gap-2">
+                              {orgLogo ? (
+                                <img src={orgLogo} alt="" className="w-4 h-4 rounded object-contain bg-white dark:bg-card shrink-0" />
+                              ) : (
+                                <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                              )}
+                              <span className="truncate">{org.name} ({count} {count === 1 ? 'project' : 'projects'})</span>
+                            </div>
                           </SelectItem>
                         );
                       })}
