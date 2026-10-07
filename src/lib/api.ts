@@ -502,6 +502,8 @@ export interface Invitation {
   status: 'pending' | 'accepted' | 'expired' | 'revoked';
   created_at: string;
   expires_at: string;
+  token?: string;
+  accept_url?: string;
 }
 
 export interface InvitationPayload {
@@ -512,6 +514,7 @@ export interface InvitationPayload {
   company: number;
   role?: string;
   department?: string;
+  accept_base_url?: string;
 }
 
 // ---- Wire-shape normalizers ----
@@ -554,6 +557,9 @@ function normalizeDepartment(raw: any): Department {
 }
 
 function normalizeInvitation(raw: any): Invitation {
+  const token = raw.token ?? "";
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://rst.vibesandbox.live";
+  const acceptUrl = raw.accept_url ?? raw.acceptUrl ?? (token ? `${origin}/accept-invite?token=${token}` : "");
   return {
     id: raw.id,
     email: raw.email ?? "",
@@ -569,6 +575,8 @@ function normalizeInvitation(raw: any): Invitation {
     status: raw.status,
     created_at: raw.created_at ?? raw.createdAt,
     expires_at: raw.expires_at ?? raw.expiresAt,
+    token,
+    accept_url: acceptUrl,
   };
 }
 
@@ -1174,7 +1182,14 @@ function normalizeInvitationPreview(raw: any): InvitationPreview {
 
 export const invitationsApi = {
   list: async () => (await apiList<any>("/invitations/")).map(normalizeInvitation),
-  create: async (payload: InvitationPayload) => normalizeInvitation(await apiPost<any>("/invitations/", payload)),
+  create: async (payload: InvitationPayload) => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://rst.vibesandbox.live";
+    const body = {
+      accept_base_url: `${origin}/accept-invite`,
+      ...payload,
+    };
+    return normalizeInvitation(await apiPost<any>("/invitations/", body));
+  },
   update: async (id: number, payload: Partial<InvitationPayload>) =>
     normalizeInvitation(await apiPatch<any>(`/invitations/${id}/`, payload)),
   remove: (id: number) => apiDelete(`/invitations/${id}/`),

@@ -15,6 +15,9 @@ import {
   ArrowLeft,
   ToggleLeft,
   ToggleRight,
+  Copy,
+  Check,
+  CheckCircle2,
 } from "lucide-react";
 import {
   usersApi,
@@ -416,6 +419,8 @@ function AddInvitationDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [createdInvitation, setCreatedInvitation] = useState<Invitation | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -467,9 +472,9 @@ function AddInvitationDialog({
     };
     setSubmitting(true);
     try {
-      await invitationsApi.create(payload);
+      const created = await invitationsApi.create(payload);
+      setCreatedInvitation(created);
       setSuccess(true);
-      setTimeout(onInvited, 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send invitation");
     } finally {
@@ -488,9 +493,56 @@ function AddInvitationDialog({
         </div>
 
         {success ? (
-          <div className="text-center py-6 text-green-600 dark:text-green-400">
-            <p className="font-medium">Invitation sent!</p>
-            <p className="text-sm mt-1">An email has been sent to {form.email}.</p>
+          <div className="py-2 space-y-4">
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 mx-auto flex items-center justify-center mb-2">
+                <Check size={24} />
+              </div>
+              <h4 className="font-semibold text-base text-gray-900 dark:text-gray-100">Invitation Created!</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">An invitation email was sent to {form.email}.</p>
+            </div>
+
+            {createdInvitation?.accept_url && (
+              <div className="bg-gray-50 dark:bg-secondary/60 border border-gray-200 dark:border-border rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Direct Invite Link:</span>
+                  {copied && <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">Copied to clipboard!</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={createdInvitation.accept_url}
+                    className="w-full text-xs font-mono bg-white dark:bg-card border border-gray-200 dark:border-border rounded-lg px-2.5 py-1.5 text-gray-800 dark:text-gray-200 select-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdInvitation.accept_url!);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2500);
+                    }}
+                    className="shrink-0 flex items-center gap-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+                  >
+                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                    {copied ? "Copied" : "Copy Link"}
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                  Share this link directly with the user via WhatsApp, SMS, or Slack if email is delayed.
+                </p>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={onInvited}
+                className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
+              >
+                Done
+              </button>
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3">
@@ -1422,6 +1474,7 @@ function InvitationDetailDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resent, setResent] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const display = ACTIVITY_DISPLAY[activity];
 
   const canResend = invitation.status === "pending" || invitation.status === "expired";
@@ -1583,6 +1636,41 @@ function InvitationDetailDialog({
 
         {error && <p className="text-sm text-red-600 dark:text-red-400 mt-3">{error}</p>}
         {resent && !error && <p className="text-sm text-green-600 dark:text-green-400 mt-3">Invitation email resent.</p>}
+
+        {invitation.status === "pending" && (
+          <div className="bg-gray-50 dark:bg-secondary/60 border border-gray-200 dark:border-border rounded-xl p-3 mt-3 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Invite Link (Direct Share):</span>
+              {linkCopied && <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">Copied!</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                readOnly
+                value={invitation.accept_url || (invitation.token ? `${window.location.origin}/accept-invite?token=${invitation.token}` : '')}
+                className="w-full text-xs font-mono bg-white dark:bg-card border border-gray-200 dark:border-border rounded-lg px-2.5 py-1.5 text-gray-800 dark:text-gray-200 select-all"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const url = invitation.accept_url || (invitation.token ? `${window.location.origin}/accept-invite?token=${invitation.token}` : '');
+                  if (url) {
+                    navigator.clipboard.writeText(url);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2500);
+                  }
+                }}
+                className="shrink-0 flex items-center gap-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+              >
+                {linkCopied ? <Check size={14} /> : <Copy size={14} />}
+                {linkCopied ? "Copied" : "Copy Link"}
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500">
+              You can send this link directly to the invited user via WhatsApp, SMS, or chat.
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-col gap-3 pt-4 mt-2 border-t border-gray-100 dark:border-border">
           {/* Top row: invitation-level actions (unchanged) */}
