@@ -187,13 +187,13 @@ const Documents = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Documents</h1>
-          <p className="text-muted-foreground mt-1">{documents.length} documents</p>
+          <p className="text-muted-foreground mt-1 text-sm">{documents.length} documents</p>
         </div>
 
-        <Button onClick={() => setOpen(true)}>
+        <Button onClick={() => setOpen(true)} className="w-full sm:w-auto">
           <Upload className="h-4 w-4 mr-2" />
           Upload Document
         </Button>
@@ -305,8 +305,8 @@ const Documents = () => {
       <div className="space-y-2">
         {documents.map((doc) => (
           <Card key={doc.id} className="hover:shadow-sm transition-shadow">
-            <CardContent className="p-4 flex items-center gap-4">
-              {iconMap[doc.type] || <File className="h-5 w-5 text-muted-foreground" />}
+            <CardContent className="p-3 sm:p-4 flex items-center gap-2.5 sm:gap-4">
+              {iconMap[doc.type] || <File className="h-5 w-5 text-muted-foreground shrink-0" />}
               <a
                 href={doc.file}
                 target="_blank"

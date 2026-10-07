@@ -256,18 +256,20 @@ function TaskDrillDown({ task, project, tower, onBack }: {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-            <span>Dashboard</span><ChevronRight className="h-3 w-3" />
-            <span>{project?.name}</span><ChevronRight className="h-3 w-3" />
-            <span>{tower?.name}</span><ChevronRight className="h-3 w-3" />
-            <span className="text-foreground font-medium">{task.title}</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4 shrink-0" /></Button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
+              <span>Dashboard</span><ChevronRight className="h-3 w-3 shrink-0" />
+              <span>{project?.name}</span><ChevronRight className="h-3 w-3 shrink-0" />
+              <span>{tower?.name}</span><ChevronRight className="h-3 w-3 shrink-0" />
+              <span className="text-foreground font-medium truncate">{task.title}</span>
+            </div>
+            <h1 className="font-display text-2xl font-bold mt-1 truncate">Task Detail</h1>
           </div>
-          <h1 className="font-display text-2xl font-bold mt-1">Task Detail</h1>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export</Button>
+        <Button variant="outline" size="sm" onClick={handleExport} className="w-full sm:w-auto"><Download className="h-4 w-4 mr-2" />Export</Button>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -376,20 +378,22 @@ function FloorDrillDown({ tower, project, allFloors, allTasks, onBack, onDrillTa
     const floorTasks = allTasks.filter(t => t.floorId === selectedFloorId);
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setSelectedFloorId(null)}><ArrowLeft className="h-4 w-4" /></Button>
-          <div className="flex-1">
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-              <span>Dashboard</span><ChevronRight className="h-3 w-3" />
-              <span>{project.name}</span><ChevronRight className="h-3 w-3" />
-              <span>{tower.name}</span><ChevronRight className="h-3 w-3" />
-              <span className="text-foreground font-medium">{floor.name}</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => setSelectedFloorId(null)}><ArrowLeft className="h-4 w-4 shrink-0" /></Button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
+                <span>Dashboard</span><ChevronRight className="h-3 w-3 shrink-0" />
+                <span>{project.name}</span><ChevronRight className="h-3 w-3 shrink-0" />
+                <span>{tower.name}</span><ChevronRight className="h-3 w-3 shrink-0" />
+                <span className="text-foreground font-medium truncate">{floor.name}</span>
+              </div>
+              <h1 className="font-display text-2xl font-bold mt-1 truncate">{floor.name} — Activity Analytics</h1>
             </div>
-            <h1 className="font-display text-2xl font-bold mt-1">{floor.name} — Activity Analytics</h1>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           <StatCard label="Total Tasks" value={floorTasks.length} icon={<div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center"><Layers className="h-5 w-5 text-primary" /></div>} />
           <StatCard label="Completed" value={floorTasks.filter(t => t.status === 'completed').length} icon={<div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center"><CheckCircle2 className="h-5 w-5 text-success" /></div>} />
           <StatCard label="Delayed" value={floorTasks.filter(t => t.delayDays > 0).length} icon={<div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center"><AlertTriangle className="h-5 w-5 text-destructive" /></div>} />
@@ -443,20 +447,22 @@ function FloorDrillDown({ tower, project, allFloors, allTasks, onBack, onDrillTa
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-            <span>Dashboard</span><ChevronRight className="h-3 w-3" />
-            <span>{project.name}</span><ChevronRight className="h-3 w-3" />
-            <span className="text-foreground font-medium">{tower.name}</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4 shrink-0" /></Button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
+              <span>Dashboard</span><ChevronRight className="h-3 w-3 shrink-0" />
+              <span>{project.name}</span><ChevronRight className="h-3 w-3 shrink-0" />
+              <span className="text-foreground font-medium truncate">{tower.name}</span>
+            </div>
+            <h1 className="font-display text-2xl font-bold mt-1 truncate">{tower.name} — Floor Analytics</h1>
           </div>
-          <h1 className="font-display text-2xl font-bold mt-1">{tower.name} — Floor Analytics</h1>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExportTower}><Download className="h-4 w-4 mr-2" />Export All</Button>
+        <Button variant="outline" size="sm" onClick={handleExportTower} className="w-full sm:w-auto"><Download className="h-4 w-4 mr-2" />Export All</Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <StatCard label="Total Tasks" value={towerTasks.length} icon={<div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center"><Building2 className="h-5 w-5 text-primary" /></div>} />
         <StatCard label="Completed" value={towerTasks.filter(t => t.status === 'completed').length} icon={<div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center"><CheckCircle2 className="h-5 w-5 text-success" /></div>} />
         <StatCard label="Progress" value={`${towerTasks.length > 0 ? Math.round((towerTasks.filter(t => t.status === 'completed').length / towerTasks.length) * 100) : 0}%`} icon={<div className="h-10 w-10 rounded-xl bg-info/10 flex items-center justify-center"><TrendingUp className="h-5 w-5 text-info" /></div>} subtitle={<Progress value={towerTasks.length > 0 ? (towerTasks.filter(t => t.status === 'completed').length / towerTasks.length) * 100 : 0} className="h-1.5" />} />
@@ -560,20 +566,22 @@ function ProjectDrillDown({ project, allTowers, allTasks, allHurdles, onBack, on
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-            <span>Dashboard</span><ChevronRight className="h-3 w-3" />
-            <span className="text-foreground font-medium">{project.name}</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4 shrink-0" /></Button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
+              <span>Dashboard</span><ChevronRight className="h-3 w-3 shrink-0" />
+              <span className="text-foreground font-medium truncate">{project.name}</span>
+            </div>
+            <h1 className="font-display text-2xl font-bold mt-1 truncate">{project.name}</h1>
+            <p className="text-sm text-muted-foreground truncate">{project.location} · RERA: {project.reraNumber || 'NA'}</p>
           </div>
-          <h1 className="font-display text-2xl font-bold mt-1">{project.name}</h1>
-          <p className="text-sm text-muted-foreground">{project.location} · RERA: {project.reraNumber || 'NA'}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export</Button>
+        <Button variant="outline" size="sm" onClick={handleExport} className="w-full sm:w-auto"><Download className="h-4 w-4 mr-2" />Export</Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <StatCard label="Total Tasks" value={projectTasks.length} icon={<div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center"><Building2 className="h-5 w-5 text-primary" /></div>} />
         <StatCard label="Completion" value={`${project.progress}%`} icon={<div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center"><CheckCircle2 className="h-5 w-5 text-success" /></div>} subtitle={<Progress value={project.progress} className="h-1.5" />} />
         <StatCard label="Towers" value={projectTowers.length} icon={<div className="h-10 w-10 rounded-xl bg-info/10 flex items-center justify-center"><TrendingUp className="h-5 w-5 text-info" /></div>} />
@@ -725,20 +733,22 @@ function DepartmentDrillDown({ department, allTasks, allProjects, onBack, onDril
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-            <span>Dashboard</span><ChevronRight className="h-3 w-3" />
-            <span className="text-foreground font-medium">{department} Department</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4 shrink-0" /></Button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
+              <span>Dashboard</span><ChevronRight className="h-3 w-3 shrink-0" />
+              <span className="text-foreground font-medium truncate">{department} Department</span>
+            </div>
+            <h1 className="font-display text-2xl font-bold mt-1 truncate">{department} – Performance Analytics</h1>
+            <p className="text-sm text-muted-foreground truncate">{deptTasks.length} total tasks across all projects</p>
           </div>
-          <h1 className="font-display text-2xl font-bold mt-1">{department} – Performance Analytics</h1>
-          <p className="text-sm text-muted-foreground">{deptTasks.length} total tasks across all projects</p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
+        <Button variant="outline" size="sm" onClick={handleExport} className="w-full sm:w-auto"><Download className="h-4 w-4 mr-2" />Export CSV</Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <StatCard label="Total Tasks" value={deptTasks.length} icon={<div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center"><Layers className="h-5 w-5 text-primary" /></div>} />
         <StatCard label="Completed" value={completed} icon={<div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center"><CheckCircle2 className="h-5 w-5 text-success" /></div>} subtitle={<Progress value={deptTasks.length > 0 ? (completed / deptTasks.length) * 100 : 0} className="h-1.5" />} />
         <StatCard label="In Progress" value={inProgress} icon={<div className="h-10 w-10 rounded-xl bg-warning/10 flex items-center justify-center"><TrendingUp className="h-5 w-5 text-warning" /></div>} />
@@ -991,17 +1001,17 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">CEO Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Portfolio overview — Vibe Group · Click any project to drill down</p>
+          <p className="text-muted-foreground mt-1 text-sm">Portfolio overview — Vibe Group · Click any project to drill down</p>
         </div>
-        <Button variant="outline" size="sm" onClick={handlePortfolioExport}>
+        <Button variant="outline" size="sm" onClick={handlePortfolioExport} className="w-full sm:w-auto">
           <FileSpreadsheet className="h-4 w-4 mr-2" />Export Portfolio
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <StatCard label="Total Projects" value={projects.length}
           icon={<div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-primary/10 flex items-center justify-center"><Building2 className="h-5 w-5 md:h-6 md:w-6 text-primary" /></div>}
           subtitle={<p className="text-xs text-muted-foreground flex items-center gap-1"><ArrowUpRight className="h-3 w-3 text-success" />{projects.filter(p => p.status === 'active').length} active</p>}

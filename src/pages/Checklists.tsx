@@ -109,13 +109,13 @@ function ProjectChecklistsTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+        <div className="relative w-full sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search checklists..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-9 w-full"
           />
         </div>
       </div>
@@ -782,16 +782,16 @@ const Checklists = () => {
         </TabsList>
 
         <TabsContent value="templates" className="mt-4 space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
             <p className="text-sm text-muted-foreground">
               {allTemplates.length} templates across {categories.length} categories
             </p>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
               {/* ---- Import from PDF ---- */}
               <Dialog open={importOpen} onOpenChange={(open) => (open ? setImportOpen(true) : resetImportDialog())}>
                 <DialogTrigger asChild>
-                  <Button variant="outline"><Upload className="h-4 w-4 mr-2" />Import from PDF</Button>
+                  <Button variant="outline" className="w-full sm:w-auto"><Upload className="h-4 w-4 mr-2" />Import from PDF</Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                   <DialogHeader>
@@ -950,7 +950,7 @@ const Checklists = () => {
                 }}
               >
                 <DialogTrigger asChild>
-                  <Button><Plus className="h-4 w-4 mr-2" />New Template</Button>
+                  <Button className="w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Template</Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                   <DialogHeader>
@@ -983,14 +983,14 @@ const Checklists = () => {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <div className="relative w-full sm:max-w-sm">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search templates..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+              <Input placeholder="Search templates..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 w-full" />
             </div>
           </div>
 
           {/* Filters */}
-          <div className="flex flex-wrap gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
             <Select
               value={filterProjectId}
               onValueChange={(v) => {
@@ -999,7 +999,7 @@ const Checklists = () => {
                 setFilterSubCategoryId("");
               }}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="All Projects" />
               </SelectTrigger>
               <SelectContent>
@@ -1017,7 +1017,7 @@ const Checklists = () => {
               }}
               disabled={!filterProjectId}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
@@ -1032,7 +1032,7 @@ const Checklists = () => {
               onValueChange={(v) => setFilterSubCategoryId(v === "__all__" ? "" : v)}
               disabled={!filterCategoryId}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="All Sub Categories" />
               </SelectTrigger>
               <SelectContent>

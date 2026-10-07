@@ -18,12 +18,12 @@ import {
 import { projectsApi, tasksApi, ApiError, type ApiProject, type ApiTask } from "@/lib/api";
 
 // ============================================================================
-// Timeline — Live API driven with vibrant modern colors & executive UX.
+// Timeline — Live API driven with vibrant bright colors & responsive UX.
 // Features:
-//  1. Vibrant high-contrast gradient status bars with inner progress fills.
-//  2. Live "Today" line marker indicating exact position of current date.
+//  1. Vibrant high-contrast gradient status & department bars with inner progress fills.
+//  2. Responsive layout for all devices (sticky task column, fluid KPI cards, mobile hints).
 //  3. KPI summary cards at top for instant health & progress comprehension.
-//  4. Interactive color legend explaining all visual cues and critical paths.
+//  4. Interactive color legend explaining visual cues and critical paths.
 //  5. Enhanced Progress Overview dialog with rich Recharts metrics.
 //  6. Filtered strictly to active/existing projects.
 // ============================================================================
@@ -48,91 +48,206 @@ export const STATUS_CONFIG: Record<
 > = {
   completed: {
     label: "Completed",
-    gradient: "bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-500",
-    border: "border-emerald-300/50",
+    gradient: "bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500",
+    border: "border-emerald-300/70 dark:border-emerald-400/60",
     text: "text-white",
-    glow: "shadow-md shadow-emerald-500/25",
-    badgeBg: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+    glow: "shadow-md shadow-emerald-500/35 hover:shadow-emerald-400/50",
+    badgeBg: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40",
     chartColor: "#10b981",
-    dotColor: "bg-emerald-500",
+    dotColor: "bg-emerald-400",
   },
   in_progress: {
     label: "In Progress",
-    gradient: "bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500",
-    border: "border-amber-200/50",
+    gradient: "bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500",
+    border: "border-amber-300/70 dark:border-amber-400/60",
     text: "text-white",
-    glow: "shadow-md shadow-amber-500/25",
-    badgeBg: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
+    glow: "shadow-md shadow-amber-500/35 hover:shadow-amber-400/50",
+    badgeBg: "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40",
     chartColor: "#f59e0b",
-    dotColor: "bg-amber-500",
+    dotColor: "bg-amber-400",
   },
   delayed: {
     label: "Delayed",
-    gradient: "bg-gradient-to-r from-rose-500 via-red-500 to-pink-600",
-    border: "border-rose-300/50",
+    gradient: "bg-gradient-to-r from-rose-500 via-pink-500 to-red-500",
+    border: "border-rose-300/70 dark:border-rose-400/60",
     text: "text-white",
-    glow: "shadow-md shadow-rose-500/30",
-    badgeBg: "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30",
+    glow: "shadow-md shadow-rose-500/40 hover:shadow-rose-400/55",
+    badgeBg: "bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/40",
     chartColor: "#f43f5e",
     dotColor: "bg-rose-500",
   },
   blocked: {
     label: "Blocked",
-    gradient: "bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600",
-    border: "border-purple-300/40",
+    gradient: "bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500",
+    border: "border-fuchsia-300/70 dark:border-fuchsia-400/60",
     text: "text-white",
-    glow: "shadow-md shadow-purple-500/25",
-    badgeBg: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30",
-    chartColor: "#a855f7",
-    dotColor: "bg-purple-500",
+    glow: "shadow-md shadow-fuchsia-500/35 hover:shadow-fuchsia-400/50",
+    badgeBg: "bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/40",
+    chartColor: "#d946ef",
+    dotColor: "bg-fuchsia-400",
   },
   review: {
     label: "Review",
-    gradient: "bg-gradient-to-r from-indigo-500 via-blue-500 to-cyan-500",
-    border: "border-indigo-300/40",
+    gradient: "bg-gradient-to-r from-indigo-500 via-purple-500 to-blue-500",
+    border: "border-indigo-300/70 dark:border-indigo-400/60",
     text: "text-white",
-    glow: "shadow-md shadow-indigo-500/25",
-    badgeBg: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30",
+    glow: "shadow-md shadow-indigo-500/35 hover:shadow-indigo-400/50",
+    badgeBg: "bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border-indigo-500/40",
     chartColor: "#6366f1",
-    dotColor: "bg-indigo-500",
+    dotColor: "bg-indigo-400",
   },
   ready: {
     label: "Ready",
-    gradient: "bg-gradient-to-r from-sky-400 via-cyan-500 to-blue-500",
-    border: "border-cyan-200/40",
+    gradient: "bg-gradient-to-r from-cyan-400 via-teal-400 to-sky-500",
+    border: "border-cyan-300/70 dark:border-cyan-400/60",
     text: "text-white",
-    glow: "shadow-md shadow-cyan-500/25",
-    badgeBg: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30",
-    chartColor: "#0ea5e9",
-    dotColor: "bg-sky-500",
+    glow: "shadow-md shadow-cyan-500/35 hover:shadow-cyan-400/50",
+    badgeBg: "bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border-cyan-500/40",
+    chartColor: "#06b6d4",
+    dotColor: "bg-cyan-400",
   },
   not_started: {
     label: "Not Started",
-    gradient: "bg-gradient-to-r from-slate-400 to-slate-500",
-    border: "border-slate-300/30",
+    gradient: "bg-gradient-to-r from-blue-500 via-indigo-500 to-sky-400",
+    border: "border-blue-300/70 dark:border-blue-400/60",
     text: "text-white",
-    glow: "shadow-sm shadow-slate-500/20",
-    badgeBg: "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30",
-    chartColor: "#94a3b8",
-    dotColor: "bg-slate-400",
+    glow: "shadow-md shadow-blue-500/35 hover:shadow-blue-400/50",
+    badgeBg: "bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40",
+    chartColor: "#3b82f6",
+    dotColor: "bg-blue-400",
+  },
+};
+
+// Bright palette for departments
+export const DEPARTMENT_CONFIG: Record<
+  string,
+  {
+    label: string;
+    gradient: string;
+    border: string;
+    glow: string;
+    badgeBg: string;
+    chartColor: string;
+    dotColor: string;
+  }
+> = {
+  Civil: {
+    label: "Civil",
+    gradient: "bg-gradient-to-r from-amber-400 via-orange-500 to-yellow-400",
+    border: "border-amber-300/70",
+    glow: "shadow-md shadow-amber-500/35",
+    badgeBg: "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40",
+    chartColor: "#f59e0b",
+    dotColor: "bg-amber-400",
+  },
+  Structure: {
+    label: "Structure",
+    gradient: "bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400",
+    border: "border-blue-300/70",
+    glow: "shadow-md shadow-blue-500/35",
+    badgeBg: "bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40",
+    chartColor: "#3b82f6",
+    dotColor: "bg-blue-400",
+  },
+  Structural: {
+    label: "Structural",
+    gradient: "bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400",
+    border: "border-blue-300/70",
+    glow: "shadow-md shadow-blue-500/35",
+    badgeBg: "bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40",
+    chartColor: "#3b82f6",
+    dotColor: "bg-blue-400",
+  },
+  Electrical: {
+    label: "Electrical",
+    gradient: "bg-gradient-to-r from-yellow-400 via-amber-500 to-orange-400",
+    border: "border-yellow-300/70",
+    glow: "shadow-md shadow-yellow-500/35",
+    badgeBg: "bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/40",
+    chartColor: "#eab308",
+    dotColor: "bg-yellow-400",
+  },
+  Plumbing: {
+    label: "Plumbing",
+    gradient: "bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-500",
+    border: "border-cyan-300/70",
+    glow: "shadow-md shadow-cyan-500/35",
+    badgeBg: "bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border-cyan-500/40",
+    chartColor: "#06b6d4",
+    dotColor: "bg-cyan-400",
+  },
+  MEP: {
+    label: "MEP",
+    gradient: "bg-gradient-to-r from-teal-400 via-emerald-500 to-cyan-500",
+    border: "border-teal-300/70",
+    glow: "shadow-md shadow-teal-500/35",
+    badgeBg: "bg-teal-500/20 text-teal-700 dark:text-teal-300 border-teal-500/40",
+    chartColor: "#14b8a6",
+    dotColor: "bg-teal-400",
+  },
+  Finishing: {
+    label: "Finishing",
+    gradient: "bg-gradient-to-r from-emerald-400 via-teal-400 to-green-500",
+    border: "border-emerald-300/70",
+    glow: "shadow-md shadow-emerald-500/35",
+    badgeBg: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40",
+    chartColor: "#10b981",
+    dotColor: "bg-emerald-400",
+  },
+  "Fire Safety": {
+    label: "Fire Safety",
+    gradient: "bg-gradient-to-r from-rose-500 via-red-500 to-orange-500",
+    border: "border-rose-300/70",
+    glow: "shadow-md shadow-rose-500/35",
+    badgeBg: "bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/40",
+    chartColor: "#f43f5e",
+    dotColor: "bg-rose-400",
+  },
+  Legal: {
+    label: "Legal",
+    gradient: "bg-gradient-to-r from-purple-500 via-fuchsia-600 to-violet-500",
+    border: "border-purple-300/70",
+    glow: "shadow-md shadow-purple-500/35",
+    badgeBg: "bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/40",
+    chartColor: "#a855f7",
+    dotColor: "bg-purple-400",
+  },
+  Admin: {
+    label: "Admin",
+    gradient: "bg-gradient-to-r from-indigo-500 via-violet-600 to-purple-500",
+    border: "border-indigo-300/70",
+    glow: "shadow-md shadow-indigo-500/35",
+    badgeBg: "bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border-indigo-500/40",
+    chartColor: "#6366f1",
+    dotColor: "bg-indigo-400",
   },
 };
 
 const DEPARTMENT_BADGES: Record<string, string> = {
-  Civil: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
-  Structure: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
-  Structural: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
-  Electrical: "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950/40 dark:text-yellow-300 dark:border-yellow-800",
-  Plumbing: "bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-800",
-  MEP: "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800",
-  Finishing: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
-  "Fire Safety": "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800",
-  Legal: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800",
-  Admin: "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800",
+  Civil: "bg-amber-100/80 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-700 font-semibold",
+  Structure: "bg-blue-100/80 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-200 dark:border-blue-700 font-semibold",
+  Structural: "bg-blue-100/80 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-200 dark:border-blue-700 font-semibold",
+  Electrical: "bg-yellow-100/80 text-yellow-800 border-yellow-300 dark:bg-yellow-950/60 dark:text-yellow-200 dark:border-yellow-700 font-semibold",
+  Plumbing: "bg-cyan-100/80 text-cyan-800 border-cyan-300 dark:bg-cyan-950/60 dark:text-cyan-200 dark:border-cyan-700 font-semibold",
+  MEP: "bg-teal-100/80 text-teal-800 border-teal-300 dark:bg-teal-950/60 dark:text-teal-200 dark:border-teal-700 font-semibold",
+  Finishing: "bg-emerald-100/80 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-700 font-semibold",
+  "Fire Safety": "bg-rose-100/80 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-200 dark:border-rose-700 font-semibold",
+  Legal: "bg-purple-100/80 text-purple-800 border-purple-300 dark:bg-purple-950/60 dark:text-purple-200 dark:border-purple-700 font-semibold",
+  Admin: "bg-indigo-100/80 text-indigo-800 border-indigo-300 dark:bg-indigo-950/60 dark:text-indigo-200 dark:border-indigo-700 font-semibold",
 };
 
 function getStatusConfig(status: string) {
   return STATUS_CONFIG[status] || STATUS_CONFIG.not_started;
+}
+
+function getBarColorConfig(task: ApiTask, colorBy: "status" | "department") {
+  if (colorBy === "department" && task.department && DEPARTMENT_CONFIG[task.department]) {
+    return {
+      ...DEPARTMENT_CONFIG[task.department],
+      text: "text-white",
+    };
+  }
+  return getStatusConfig(task.status);
 }
 
 function getMonthIndex(dateStr: string) {
@@ -215,9 +330,9 @@ function TaskProgressDialog({ task, onClose }: { task: ApiTask | null; onClose: 
               {task.department || "General"}
             </Badge>
           </div>
-          <DialogTitle className="font-display text-2xl font-bold text-foreground">{task.title}</DialogTitle>
-          <p className="text-sm text-muted-foreground flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-primary" />
+          <DialogTitle className="font-display text-xl sm:text-2xl font-bold text-foreground">{task.title}</DialogTitle>
+          <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-primary shrink-0" />
             {task.startDate && task.endDate ? (
               <span>
                 <strong className="text-foreground">{task.startDate}</strong> to <strong className="text-foreground">{task.endDate}</strong>
@@ -228,7 +343,7 @@ function TaskProgressDialog({ task, onClose }: { task: ApiTask | null; onClose: 
           </p>
         </DialogHeader>
 
-        <div className="grid md:grid-cols-2 gap-6 mt-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mt-3">
           {/* Donut: overall completion */}
           <div className="p-4 rounded-xl bg-card border shadow-sm flex flex-col items-center">
             <h4 className="text-sm font-semibold mb-1 text-center flex items-center gap-1.5">
@@ -287,7 +402,7 @@ function TaskProgressDialog({ task, onClose }: { task: ApiTask | null; onClose: 
         </div>
 
         {/* Quick stats row */}
-        <div className="grid grid-cols-3 gap-3 mt-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 mt-3">
           <div className="text-center p-3 rounded-xl border bg-gradient-to-b from-muted/40 to-muted/10">
             <p className="text-xs text-muted-foreground font-medium">Scheduled Duration</p>
             <p className="font-bold text-base text-foreground mt-0.5">{totalDays === null ? "—" : `${totalDays} Days`}</p>
@@ -309,6 +424,7 @@ function TaskProgressDialog({ task, onClose }: { task: ApiTask | null; onClose: 
 const Timeline = () => {
   const [projectFilter, setProjectFilter] = useState("all");
   const [zoom, setZoom] = useState<"month" | "quarter">("month");
+  const [colorBy, setColorBy] = useState<"status" | "department">("status");
   const [selectedTask, setSelectedTask] = useState<ApiTask | null>(null);
 
   const {
@@ -364,7 +480,7 @@ const Timeline = () => {
     return { total, completed, inProgress, delayed, critical, avgProgress };
   }, [filtered]);
 
-  const colWidth = zoom === "month" ? 85 : 250;
+  const colWidth = zoom === "month" ? 85 : 240;
 
   const headerCols =
     zoom === "month"
@@ -378,30 +494,6 @@ const Timeline = () => {
           const y = startYear + Math.floor(i / 4);
           return { label: `Q${q}`, sub: y.toString(), key: `${y}-Q${q}` };
         });
-
-  // Calculate "Today" indicator position (supports current date in 2026/2027)
-  const todayPosition = useMemo(() => {
-    const now = new Date();
-    const curYear = now.getFullYear();
-    const curMonth = now.getMonth();
-    const curDate = now.getDate();
-    const monthDiff = (curYear - startYear) * 12 + curMonth;
-
-    if (monthDiff < 0 || monthDiff >= totalMonths) {
-      return null;
-    }
-
-    const daysInMonth = new Date(curYear, curMonth + 1, 0).getDate();
-    const fraction = curDate / daysInMonth;
-    const px = zoom === "month"
-      ? (monthDiff + fraction) * colWidth
-      : ((monthDiff + fraction) / 3) * colWidth;
-
-    return {
-      leftPx: px,
-      dateLabel: `${months[curMonth]} ${curDate}, ${curYear}`,
-    };
-  }, [zoom, colWidth]);
 
   if (isLoading) {
     return (
@@ -425,80 +517,84 @@ const Timeline = () => {
   }
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-4 sm:space-y-6 pb-12">
       {/* Page Title & Main Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-primary/10 text-primary">
-              <Calendar className="w-6 h-6 text-primary" />
-            </span>
-            <div>
-              <h1 className="font-display text-2xl md:text-3xl font-extrabold tracking-tight">Project Timeline</h1>
-              <p className="text-sm text-muted-foreground">Interactive Gantt roadmap with real-time progress & variance tracking</p>
-            </div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-2.5">
+          <span className="p-2 sm:p-2.5 rounded-xl bg-primary/10 text-primary shrink-0">
+            <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+          </span>
+          <div>
+            <h1 className="font-display text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight">Project Timeline</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">Interactive Gantt roadmap with real-time progress & variance tracking</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        {/* Filter & View Controls (In one line, no emojis) */}
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-nowrap overflow-x-auto pb-1 sm:pb-0 shrink-0">
           {/* Project selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:inline">Project:</span>
-            <Select value={projectFilter} onValueChange={setProjectFilter}>
-              <SelectTrigger className="w-[190px] h-10 bg-card border-border/80 shadow-sm font-medium">
-                <SelectValue placeholder="All Projects" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">🌐 All Projects</SelectItem>
-                {activeProjects.map((p: ApiProject) => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    🏢 {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={projectFilter} onValueChange={setProjectFilter}>
+            <SelectTrigger className="w-[140px] sm:w-[170px] h-9 sm:h-10 bg-card border-border/80 shadow-sm font-medium text-xs sm:text-sm shrink-0">
+              <SelectValue placeholder="All Projects" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Projects</SelectItem>
+              {activeProjects.map((p: ApiProject) => (
+                <SelectItem key={p.id} value={String(p.id)}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Color mode selector */}
+          <Select value={colorBy} onValueChange={(v: "status" | "department") => setColorBy(v)}>
+            <SelectTrigger className="w-[140px] sm:w-[155px] h-9 sm:h-10 bg-card border-border/80 shadow-sm font-medium text-xs sm:text-sm shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="status">By Status</SelectItem>
+              <SelectItem value="department">By Department</SelectItem>
+            </SelectContent>
+          </Select>
 
           {/* Zoom view toggle */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:inline">Zoom:</span>
-            <Select value={zoom} onValueChange={(v: "month" | "quarter") => setZoom(v)}>
-              <SelectTrigger className="w-[125px] h-10 bg-card border-border/80 shadow-sm font-medium">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="month">📅 Monthly</SelectItem>
-                <SelectItem value="quarter">📊 Quarterly</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={zoom} onValueChange={(v: "month" | "quarter") => setZoom(v)}>
+            <SelectTrigger className="w-[105px] sm:w-[120px] h-9 sm:h-10 bg-card border-border/80 shadow-sm font-medium text-xs sm:text-sm shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="month">Monthly</SelectItem>
+              <SelectItem value="quarter">Quarterly</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
       {/* KPI Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3.5">
         <Card className="border-border/60 bg-gradient-to-br from-card to-blue-500/5 shadow-sm hover:shadow transition-shadow">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Tasks</span>
+              <span className="text-[11px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Tasks</span>
               <Layers className="w-4 h-4 text-blue-500" />
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-foreground">{metrics.total}</span>
-              <span className="text-xs font-semibold text-primary">{metrics.avgProgress}% avg</span>
+            <div className="mt-2 flex items-baseline gap-1.5 sm:gap-2">
+              <span className="text-xl sm:text-2xl font-black text-foreground">{metrics.total}</span>
+              <span className="text-[11px] sm:text-xs font-semibold text-primary">{metrics.avgProgress}% avg</span>
             </div>
           </CardContent>
         </Card>
 
         <Card className="border-emerald-500/30 bg-gradient-to-br from-card via-card to-emerald-500/10 shadow-sm hover:shadow transition-shadow">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Completed</span>
+              <span className="text-[11px] sm:text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Completed</span>
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{metrics.completed}</span>
-              <span className="text-xs text-muted-foreground font-medium">
+            <div className="mt-2 flex items-baseline gap-1.5 sm:gap-2">
+              <span className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400">{metrics.completed}</span>
+              <span className="text-[11px] sm:text-xs text-muted-foreground font-medium">
                 {metrics.total > 0 ? Math.round((metrics.completed / metrics.total) * 100) : 0}%
               </span>
             </div>
@@ -506,82 +602,94 @@ const Timeline = () => {
         </Card>
 
         <Card className="border-amber-500/30 bg-gradient-to-br from-card via-card to-amber-500/10 shadow-sm hover:shadow transition-shadow">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">In Progress</span>
+              <span className="text-[11px] sm:text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">In Progress</span>
               <TrendingUp className="w-4 h-4 text-amber-500" />
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-amber-600 dark:text-amber-400">{metrics.inProgress}</span>
-              <span className="text-xs text-muted-foreground font-medium">Active</span>
+            <div className="mt-2 flex items-baseline gap-1.5 sm:gap-2">
+              <span className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400">{metrics.inProgress}</span>
+              <span className="text-[11px] sm:text-xs text-muted-foreground font-medium">Active</span>
             </div>
           </CardContent>
         </Card>
 
         <Card className="border-rose-500/30 bg-gradient-to-br from-card via-card to-rose-500/10 shadow-sm hover:shadow transition-shadow">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-rose-700 dark:text-rose-400 uppercase tracking-wider">Delayed / At Risk</span>
+              <span className="text-[11px] sm:text-xs font-semibold text-rose-700 dark:text-rose-400 uppercase tracking-wider">Delayed / Risk</span>
               <AlertTriangle className="w-4 h-4 text-rose-500" />
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-rose-600 dark:text-rose-400">{metrics.delayed}</span>
-              <span className="text-xs text-rose-500 font-semibold">Needs Action</span>
+            <div className="mt-2 flex items-baseline gap-1.5 sm:gap-2">
+              <span className="text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400">{metrics.delayed}</span>
+              <span className="text-[11px] sm:text-xs text-rose-500 font-semibold">Needs Action</span>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-purple-500/30 bg-gradient-to-br from-card via-card to-purple-500/10 shadow-sm hover:shadow transition-shadow col-span-2 md:col-span-1">
-          <CardContent className="p-4">
+        <Card className="border-purple-500/30 bg-gradient-to-br from-card via-card to-purple-500/10 shadow-sm hover:shadow transition-shadow col-span-2 sm:col-span-1 lg:col-span-1">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-purple-700 dark:text-purple-400 uppercase tracking-wider">Critical Path</span>
+              <span className="text-[11px] sm:text-xs font-semibold text-purple-700 dark:text-purple-400 uppercase tracking-wider">Critical Path</span>
               <Flame className="w-4 h-4 text-rose-500 animate-pulse" />
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-purple-600 dark:text-purple-400">{metrics.critical}</span>
-              <span className="text-xs text-muted-foreground font-medium">Dependencies</span>
+            <div className="mt-2 flex items-baseline gap-1.5 sm:gap-2">
+              <span className="text-xl sm:text-2xl font-black text-purple-600 dark:text-purple-400">{metrics.critical}</span>
+              <span className="text-[11px] sm:text-xs text-muted-foreground font-medium">Dependencies</span>
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Bright, User-Friendly Color Legend Bar */}
-      <div className="bg-card border border-border/80 rounded-xl p-3 px-4 shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-1.5 font-bold text-foreground">
-          <Sparkles className="w-4 h-4 text-amber-500" />
-          <span>Status Legend:</span>
-        </div>
-
-        <div className="flex items-center gap-3.5 flex-wrap">
-          {Object.entries(STATUS_CONFIG).map(([key, item]) => (
-            <div key={key} className="flex items-center gap-1.5">
-              <span className={`w-3.5 h-3.5 rounded-full ${item.dotColor} shadow-sm`} />
-              <span className="font-semibold text-foreground/85">{item.label}</span>
-            </div>
-          ))}
-          <div className="flex items-center gap-1.5 pl-2 border-l border-border">
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-500 text-white shadow-xs">
-              ⚡ CP
-            </span>
-            <span className="font-semibold text-foreground/85">Critical Path</span>
+      <div className="bg-card border border-border/80 rounded-xl p-3 px-3.5 sm:px-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 sm:gap-3 text-xs">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 font-bold text-foreground shrink-0">
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span>{colorBy === "department" ? "Department Legend:" : "Status Legend:"}</span>
           </div>
-          {todayPosition && (
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping inline-block" />
-              <span className="font-bold text-rose-600 dark:text-rose-400">Today Marker</span>
+
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            {colorBy === "department" ? (
+              Object.entries(DEPARTMENT_CONFIG).map(([key, item]) => (
+                <div key={key} className="flex items-center gap-1.5 bg-muted/40 px-2 py-0.5 rounded-full border border-border/50">
+                  <span className={`w-2.5 h-2.5 rounded-full ${item.dotColor} shadow-sm shrink-0`} />
+                  <span className="font-semibold text-foreground/90 text-[11px] sm:text-xs">{item.label}</span>
+                </div>
+              ))
+            ) : (
+              Object.entries(STATUS_CONFIG).map(([key, item]) => (
+                <div key={key} className="flex items-center gap-1.5 bg-muted/40 px-2 py-0.5 rounded-full border border-border/50">
+                  <span className={`w-2.5 h-2.5 rounded-full ${item.dotColor} shadow-sm shrink-0`} />
+                  <span className="font-semibold text-foreground/90 text-[11px] sm:text-xs">{item.label}</span>
+                </div>
+              ))
+            )}
+
+            <div className="flex items-center gap-1.5 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">
+              <span className="px-1 py-0.2 rounded text-[9px] font-black bg-rose-500 text-white shadow-xs">
+                ⚡ CP
+              </span>
+              <span className="font-semibold text-rose-600 dark:text-rose-400 text-[11px] sm:text-xs">Critical Path</span>
             </div>
-          )}
+          </div>
         </div>
 
-        <div className="text-[11px] text-muted-foreground flex items-center gap-1 italic">
-          <Info className="w-3.5 h-3.5 text-primary" />
-          <span>Click any bar to view progress & schedule comparison</span>
+        <div className="text-[11px] text-muted-foreground flex items-center gap-1 italic self-end md:self-auto shrink-0">
+          <Info className="w-3.5 h-3.5 text-primary shrink-0" />
+          <span>Click any bar to view progress & variance</span>
         </div>
       </div>
 
       {/* Main Gantt Timeline View */}
       <Card className="border-border/80 shadow-md overflow-hidden bg-card">
-        <CardContent className="p-0 overflow-x-auto">
+        {/* Mobile Horizontal Scroll Helper Banner */}
+        <div className="md:hidden flex items-center justify-between px-3 py-1.5 bg-primary/5 text-primary text-[11px] font-medium border-b border-border/50">
+          <span>↔ Swipe horizontally to browse roadmap</span>
+          <span className="text-[10px] text-muted-foreground">{zoom === "month" ? "Monthly" : "Quarterly"}</span>
+        </div>
+
+        <CardContent className="p-0 overflow-x-auto scroll-smooth">
           {filtered.length === 0 ? (
             <div className="text-center py-20 px-4">
               <Calendar className="w-12 h-12 text-muted-foreground/40 mx-auto mb-3" />
@@ -591,10 +699,11 @@ const Timeline = () => {
               </p>
             </div>
           ) : (
-            <div className="min-w-[900px] select-none">
+            <div className="min-w-[850px] select-none">
               {/* Header */}
               <div className="flex border-b border-border/80 sticky top-0 bg-card/95 backdrop-blur z-20 shadow-xs">
-                <div className="w-[280px] shrink-0 p-3.5 font-bold text-xs uppercase tracking-wider text-muted-foreground border-r bg-muted/20">
+                {/* Sticky Left Column for Task Details */}
+                <div className="w-[180px] sm:w-[230px] md:w-[280px] shrink-0 p-2.5 sm:p-3.5 font-bold text-xs uppercase tracking-wider text-muted-foreground border-r border-border/70 bg-muted/30 sticky left-0 z-30 shadow-[2px_0_6px_rgba(0,0,0,0.06)] backdrop-blur">
                   Task & Details
                 </div>
                 <div className="flex relative">
@@ -608,36 +717,14 @@ const Timeline = () => {
                       <p className="text-[10px] font-semibold text-muted-foreground">{col.sub}</p>
                     </div>
                   ))}
-
-                  {/* "Today" Pin in Header */}
-                  {todayPosition && (
-                    <div
-                      className="absolute top-1 -translate-x-1/2 z-30 pointer-events-none"
-                      style={{ left: todayPosition.leftPx }}
-                    >
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-md shadow-rose-500/40 uppercase tracking-wider">
-                        <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                        Today
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
 
               {/* Rows */}
               <div className="relative">
-                {/* Full-height "Today" line marker through all rows */}
-                {todayPosition && (
-                  <div
-                    className="absolute top-0 bottom-0 pointer-events-none z-10"
-                    style={{ left: 280 + todayPosition.leftPx }}
-                  >
-                    <div className="w-0.5 h-full bg-rose-500 border-l-2 border-dashed border-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]" />
-                  </div>
-                )}
-
                 {filtered.map((task: ApiTask, index: number) => {
-                  const config = getStatusConfig(task.status);
+                  const barConfig = getBarColorConfig(task, colorBy);
+                  const statusConf = getStatusConfig(task.status);
                   const deptBadge = DEPARTMENT_BADGES[task.department] || "bg-muted/50 text-foreground border-border";
 
                   // Handle tasks without start and end dates
@@ -649,14 +736,20 @@ const Timeline = () => {
                           index % 2 === 0 ? "bg-card" : "bg-muted/5"
                         }`}
                       >
-                        <div className="w-[280px] shrink-0 p-3 border-r border-border/60">
-                          <p className="text-sm font-semibold truncate text-foreground">{task.title}</p>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md border ${deptBadge}`}>
+                        <div
+                          className={`w-[180px] sm:w-[230px] md:w-[280px] shrink-0 p-2.5 sm:p-3 border-r border-border/70 sticky left-0 z-20 ${
+                            index % 2 === 0 ? "bg-card" : "bg-muted/15"
+                          } shadow-[2px_0_6px_rgba(0,0,0,0.06)] flex flex-col justify-center`}
+                        >
+                          <p className="text-xs sm:text-sm font-semibold truncate text-foreground" title={task.title}>
+                            {task.title}
+                          </p>
+                          <div className="flex items-center gap-1 sm:gap-1.5 mt-1 flex-wrap">
+                            <span className={`text-[9px] sm:text-[10px] font-semibold px-1.5 sm:px-2 py-0.5 rounded-md border ${deptBadge}`}>
                               {task.department || "General"}
                             </span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${config.badgeBg}`}>
-                              {config.label}
+                            <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full border ${statusConf.badgeBg}`}>
+                              {statusConf.label}
                             </span>
                           </div>
                         </div>
@@ -690,10 +783,14 @@ const Timeline = () => {
                         index % 2 === 0 ? "bg-card" : "bg-muted/5"
                       }`}
                     >
-                      {/* Left Task Column */}
-                      <div className="w-[280px] shrink-0 p-3 border-r border-border/60 flex flex-col justify-center">
+                      {/* Left Task Column (Sticky on scroll for all devices) */}
+                      <div
+                        className={`w-[180px] sm:w-[230px] md:w-[280px] shrink-0 p-2.5 sm:p-3 border-r border-border/70 flex flex-col justify-center sticky left-0 z-20 ${
+                          index % 2 === 0 ? "bg-card" : "bg-muted/15"
+                        } shadow-[2px_0_6px_rgba(0,0,0,0.06)]`}
+                      >
                         <div className="flex items-center justify-between gap-1">
-                          <p className="text-sm font-semibold truncate text-foreground" title={task.title}>
+                          <p className="text-xs sm:text-sm font-semibold truncate text-foreground" title={task.title}>
                             {task.title}
                           </p>
                           {isCritical && (
@@ -702,14 +799,14 @@ const Timeline = () => {
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md border ${deptBadge}`}>
+                        <div className="flex items-center gap-1 sm:gap-1.5 mt-1 sm:mt-1.5 flex-wrap">
+                          <span className={`text-[9px] sm:text-[10px] font-semibold px-1.5 sm:px-2 py-0.5 rounded-md border ${deptBadge}`}>
                             {task.department || "General"}
                           </span>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${config.badgeBg}`}>
-                            {config.label}
+                          <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full border ${barConfig.badgeBg}`}>
+                            {colorBy === "department" ? task.department || "General" : statusConf.label}
                           </span>
-                          <span className="text-[10px] font-bold text-muted-foreground ml-auto">
+                          <span className="text-[10px] sm:text-xs font-bold text-foreground/80 ml-auto">
                             {progressValue}%
                           </span>
                         </div>
@@ -728,11 +825,11 @@ const Timeline = () => {
                           ))}
                         </div>
 
-                        {/* Interactive Gantt Bar with bright modern styling */}
+                        {/* Interactive Gantt Bar with bright modern vibrant styling */}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <div
-                              className={`absolute top-3 h-8 rounded-lg cursor-pointer ${config.gradient} ${config.border} ${config.glow} transition-all duration-200 hover:scale-[1.01] hover:brightness-110 flex items-center overflow-hidden px-2 z-10 ${
+                              className={`absolute top-3 h-8 rounded-lg cursor-pointer ${barConfig.gradient} ${barConfig.border} ${barConfig.glow} transition-all duration-200 hover:scale-[1.01] hover:brightness-110 flex items-center overflow-hidden px-2 z-10 ${
                                 isCritical ? "ring-2 ring-rose-500/80 ring-offset-1" : ""
                               }`}
                               style={{
@@ -742,25 +839,31 @@ const Timeline = () => {
                               onClick={() => setSelectedTask(task)}
                             >
                               {/* Inner progress fill overlay */}
-                              <div
-                                className="absolute left-0 top-0 bottom-0 bg-white/20 pointer-events-none transition-all duration-500"
-                                style={{ width: `${progressValue}%` }}
-                              />
+                              {progressValue > 0 && (
+                                <div
+                                  className="absolute left-0 top-0 bottom-0 bg-white/25 pointer-events-none transition-all duration-500 border-r border-white/40 shadow-xs"
+                                  style={{ width: `${progressValue}%` }}
+                                />
+                              )}
 
                               {/* Subtle glass reflection highlight */}
-                              <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/30 to-transparent pointer-events-none" />
+                              <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/35 to-transparent pointer-events-none" />
 
                               {/* Content inside bar */}
                               <div className="relative z-10 flex items-center justify-between w-full text-white drop-shadow-sm font-semibold text-xs truncate">
                                 {widthPx >= 90 ? (
                                   <>
-                                    <span className="truncate pr-1 text-[11px] font-bold">{task.title}</span>
-                                    <span className="text-[10px] font-extrabold bg-black/25 px-1.5 py-0.5 rounded-md shrink-0">
+                                    <span className="truncate pr-1 text-[11px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]">
+                                      {task.title}
+                                    </span>
+                                    <span className="text-[10px] font-black bg-black/30 backdrop-blur-xs text-white px-1.5 py-0.5 rounded-md shrink-0 shadow-xs">
                                       {progressValue}%
                                     </span>
                                   </>
                                 ) : widthPx >= 45 ? (
-                                  <span className="text-[10px] font-extrabold mx-auto">{progressValue}%</span>
+                                  <span className="text-[10px] font-black mx-auto text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]">
+                                    {progressValue}%
+                                  </span>
                                 ) : null}
                               </div>
                             </div>
@@ -768,7 +871,7 @@ const Timeline = () => {
                           <TooltipContent className="p-3 max-w-xs shadow-xl border-border/80">
                             <div className="space-y-1.5">
                               <div className="flex items-center gap-1.5">
-                                <span className={`w-2.5 h-2.5 rounded-full ${config.dotColor}`} />
+                                <span className={`w-2.5 h-2.5 rounded-full ${barConfig.dotColor}`} />
                                 <p className="font-bold text-sm text-foreground">{task.title}</p>
                               </div>
                               <p className="text-xs text-muted-foreground flex items-center gap-1">
@@ -776,7 +879,7 @@ const Timeline = () => {
                                 <span>{task.startDate} → {task.endDate}</span>
                               </p>
                               <div className="flex items-center justify-between text-xs pt-1 border-t border-border/60">
-                                <span className="font-semibold text-foreground">{config.label}</span>
+                                <span className="font-semibold text-foreground">{statusConf.label}</span>
                                 <span className="font-extrabold text-primary">{progressValue}% Done</span>
                               </div>
                               {task.criticalPath && (

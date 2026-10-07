@@ -1465,11 +1465,11 @@ function ProjectDetail({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
         <Link to="/projects" className="hover:text-foreground">
           Projects
         </Link>
-        <ArrowRight className="h-3 w-3" />
+        <ArrowRight className="h-3 w-3 shrink-0" />
         <span className="text-foreground font-medium">{project.name}</span>
       </div>
 
@@ -1706,25 +1706,25 @@ function TowerDetail({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
         <Link to="/projects" className="hover:text-foreground">Projects</Link>
-        <ArrowRight className="h-3 w-3" />
+        <ArrowRight className="h-3 w-3 shrink-0" />
         <Link to={`/projects/${projectId}`} className="hover:text-foreground">Project</Link>
-        <ArrowRight className="h-3 w-3" />
+        <ArrowRight className="h-3 w-3 shrink-0" />
         <span className="text-foreground font-medium">{tower.name}</span>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">{tower.name}</h1>
-          <p className="text-muted-foreground mt-1">{tower.totalFloors} Floors</p>
+          <p className="text-muted-foreground mt-1 text-sm">{tower.totalFloors} Floors</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onBack}>
+        <div className="flex flex-wrap sm:flex-nowrap gap-2 w-full sm:w-auto">
+          <Button variant="outline" onClick={onBack} className="flex-1 sm:flex-initial">
             <ChevronLeft className="h-4 w-4 mr-1" />
             Back to Project
           </Button>
-          <Button onClick={onCreateFloor}>+ New Floor</Button>
+          <Button onClick={onCreateFloor} className="flex-1 sm:flex-initial">+ New Floor</Button>
         </div>
       </div>
 
@@ -1835,27 +1835,27 @@ function FloorDetail({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
         <Link to="/projects" className="hover:text-foreground">Projects</Link>
-        <ArrowRight className="h-3 w-3" />
+        <ArrowRight className="h-3 w-3 shrink-0" />
         <Link to={`/projects/${projectId}`} className="hover:text-foreground">Project</Link>
-        <ArrowRight className="h-3 w-3" />
+        <ArrowRight className="h-3 w-3 shrink-0" />
         <Link to={`/projects/${projectId}/towers/${towerId}`} className="hover:text-foreground">Tower</Link>
-        <ArrowRight className="h-3 w-3" />
+        <ArrowRight className="h-3 w-3 shrink-0" />
         <span className="text-foreground font-medium">Floor {floor.number}</span>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">{floor.name}</h1>
-          <p className="text-muted-foreground mt-1">Floor {floor.number}</p>
+          <p className="text-muted-foreground mt-1 text-sm">Floor {floor.number}</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onBack}>
+        <div className="flex flex-wrap sm:flex-nowrap gap-2 w-full sm:w-auto">
+          <Button variant="outline" onClick={onBack} className="flex-1 sm:flex-initial">
             <ChevronLeft className="h-4 w-4 mr-1" />
             Back to Tower
           </Button>
-          <Button onClick={onCreateUnit}>+ New Unit</Button>
+          <Button onClick={onCreateUnit} className="flex-1 sm:flex-initial">+ New Unit</Button>
         </div>
       </div>
 
@@ -1960,29 +1960,29 @@ function UnitDetail({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
         <Link to="/projects" className="hover:text-foreground">Projects</Link>
-        <ArrowRight className="h-3 w-3" />
+        <ArrowRight className="h-3 w-3 shrink-0" />
         <Link to={`/projects/${projectId}`} className="hover:text-foreground">Project</Link>
-        <ArrowRight className="h-3 w-3" />
+        <ArrowRight className="h-3 w-3 shrink-0" />
         <Link to={`/projects/${projectId}/towers/${towerId}`} className="hover:text-foreground">Tower</Link>
-        <ArrowRight className="h-3 w-3" />
+        <ArrowRight className="h-3 w-3 shrink-0" />
         <Link to={`/projects/${projectId}/towers/${towerId}/floors/${floorId}`} className="hover:text-foreground">Floor</Link>
-        <ArrowRight className="h-3 w-3" />
+        <ArrowRight className="h-3 w-3 shrink-0" />
         <span className="text-foreground font-medium">{unit.unitNumber}</span>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">{unit.unitNumber}</h1>
-          <p className="text-muted-foreground mt-1">{unit.type || "Standard"} · {unit.areaSqFt || 0} sq ft</p>
+          <p className="text-muted-foreground mt-1 text-sm">{unit.type || "Standard"} · {unit.areaSqFt || 0} sq ft</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onBack}>
+        <div className="flex flex-wrap sm:flex-nowrap gap-2 w-full sm:w-auto">
+          <Button variant="outline" onClick={onBack} className="flex-1 sm:flex-initial">
             <ChevronLeft className="h-4 w-4 mr-1" />
             Back to Floor
           </Button>
-          <Button onClick={onCreateTask}>+ New Task</Button>
+          <Button onClick={onCreateTask} className="flex-1 sm:flex-initial">+ New Task</Button>
         </div>
       </div>
 

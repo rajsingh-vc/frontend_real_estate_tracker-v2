@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus } from "lucide-react";
+import { Plus, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   tasksApi, projectsApi, towersApi, floorsApi, unitsApi, checklistTemplatesApi,
@@ -273,14 +273,14 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        {trigger || <Button><Plus className="h-4 w-4 mr-2" />New Task</Button>}
+        {trigger || <Button className="w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Task</Button>}
       </DialogTrigger>
       <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6" aria-describedby="dialog-description">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">Create New Task</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 mt-4">
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Task Name *</Label>
               <Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="e.g., Slab Casting - Floor 5" />
@@ -302,7 +302,7 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
           {/* Org/Company/Entity/Project pickers hidden entirely when locked to a project */}
           {!lockedProjectId && (
             <>
-              <div className="grid md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Organization</Label>
                   <Select value={form.organizationId || "all"} onValueChange={handleOrgChange}>
@@ -431,7 +431,7 @@ export function NewTaskDialog({ onCreated, trigger, lockedProjectId }: NewTaskDi
 
           {/* Tower/Floor/Unit hidden when locked project (or picked project) is direct_task. */}
           {!isDirectMode && (
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Tower</Label>
                 <Select

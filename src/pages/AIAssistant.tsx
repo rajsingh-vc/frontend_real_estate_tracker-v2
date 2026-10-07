@@ -1024,20 +1024,20 @@ const AIAssistant = () => {
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">AI Assistant</h1>
           <p className="text-muted-foreground mt-1">
             Real-time project intelligence grounded in your active projects
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={refreshAll} title="Refresh live data">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+          <Button variant="ghost" size="icon" onClick={refreshAll} title="Refresh live data" className="shrink-0">
             <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
           </Button>
           {drillStack.length > 0 && !drillOpen && (
-            <Button variant="outline" size="sm" onClick={() => setDrillOpen(true)}>
-              <History className="h-4 w-4 mr-1" />
+            <Button variant="outline" size="sm" onClick={() => setDrillOpen(true)} className="flex-1 sm:flex-initial">
+              <History className="h-4 w-4 mr-1 shrink-0" />
               Resume drill-down ({drillStack.length})
             </Button>
           )}
@@ -1045,9 +1045,9 @@ const AIAssistant = () => {
             variant="outline"
             size="sm"
             onClick={clearChat}
-            className="text-muted-foreground hover:text-destructive"
+            className="flex-1 sm:flex-initial text-muted-foreground hover:text-destructive"
           >
-            <Trash2 className="h-4 w-4 mr-1" />
+            <Trash2 className="h-4 w-4 mr-1 shrink-0" />
             Clear Chat
           </Button>
         </div>

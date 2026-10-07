@@ -1502,18 +1502,18 @@ const Tasks = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Execution Tasks</h1>
-          <p className="text-muted-foreground mt-1">{tasks.length} tasks across all projects</p>
+          <p className="text-muted-foreground mt-1 text-sm">{tasks.length} tasks across all projects</p>
         </div>
         <NewTaskDialog onCreated={handleCreated} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-        <div className="relative flex-1 min-w-[180px] max-w-sm">
+        <div className="relative w-full sm:flex-1 sm:min-w-[180px] sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search tasks..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <Input placeholder="Search tasks..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 w-full" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>

@@ -226,12 +226,12 @@ function UsersTab({ currentUser }: { currentUser: User }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">User Management</h2>
         {canInvite && (
           <button
             onClick={() => setShowInviteUser(true)}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
           >
             <Plus size={16} />
             Invite New User
@@ -816,14 +816,14 @@ function EscalationMatrixTab() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-2">
-          <Shield size={20} className="text-blue-600 dark:text-blue-400" />
+          <Shield size={20} className="text-blue-600 dark:text-blue-400 shrink-0" />
           <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Escalation Matrix</h2>
         </div>
         <button
           onClick={() => setShowAddRule(true)}
-          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+          className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
         >
           <Plus size={16} />
           Add Rule
@@ -1228,23 +1228,23 @@ function RolesPermissionsApp({ onExit }: { onExit: () => void }) {
           Back to Settings
         </button>
 
-        <div className="mb-8 flex items-end justify-between gap-4">
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Roles & Permissions</h1>
             <p className="text-gray-500 dark:text-gray-400 mt-1">Everyone who's been invited, and where they stand</p>
           </div>
           {!loading && !error && invitations.length > 0 && (
-            <div className="flex items-center gap-3 text-sm shrink-0">
+            <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">
               <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
-                <span className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                 {activeCount} active
               </span>
               <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
-                <span className="w-2 h-2 rounded-full bg-amber-400" />
+                <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
                 {pendingCount} pending
               </span>
               <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
-                <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" />
+                <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600 shrink-0" />
                 {inactiveCount} inactive
               </span>
             </div>
@@ -2149,14 +2149,14 @@ function FormScreenShell({
 }) {
   return (
     <form onSubmit={onSubmit}>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{title}</h1>
         {onDelete && (
           <button
             type="button"
             onClick={onDelete}
             disabled={submitting}
-            className="flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 transition-colors"
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 transition-colors"
           >
             <Trash2 size={16} />
             Delete

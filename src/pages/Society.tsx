@@ -114,36 +114,36 @@ const Society = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Society Formation</h1>
-          <p className="text-muted-foreground mt-1">Post-handover society setup tracking</p>
+          <p className="text-muted-foreground mt-1 text-sm">Post-handover society setup tracking</p>
         </div>
-        <Button onClick={() => setOpen(true)}>
+        <Button onClick={() => setOpen(true)} className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />Add Society
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <Card><CardContent className="p-4 flex items-center gap-3"><Landmark className="h-5 w-5 text-primary" /><div><p className="text-xl font-display font-bold">{allSocieties.length}</p><p className="text-xs text-muted-foreground">Societies</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><Users className="h-5 w-5 text-info" /><div><p className="text-xl font-display font-bold">{committeesFormed}</p><p className="text-xs text-muted-foreground">Committees Formed</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><FileText className="h-5 w-5 text-warning" /><div><p className="text-xl font-display font-bold">{allSocieties.filter((society) => society.status === "in_formation").length}</p><p className="text-xs text-muted-foreground">In Formation</p></div></CardContent></Card>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
+        <Card><CardContent className="p-3 sm:p-4 flex items-center gap-3"><Landmark className="h-5 w-5 text-primary shrink-0" /><div><p className="text-xl font-display font-bold">{allSocieties.length}</p><p className="text-xs text-muted-foreground">Societies</p></div></CardContent></Card>
+        <Card><CardContent className="p-3 sm:p-4 flex items-center gap-3"><Users className="h-5 w-5 text-info shrink-0" /><div><p className="text-xl font-display font-bold">{committeesFormed}</p><p className="text-xs text-muted-foreground">Committees Formed</p></div></CardContent></Card>
+        <Card><CardContent className="p-3 sm:p-4 flex items-center gap-3"><FileText className="h-5 w-5 text-warning shrink-0" /><div><p className="text-xl font-display font-bold">{allSocieties.filter((society) => society.status === "in_formation").length}</p><p className="text-xs text-muted-foreground">In Formation</p></div></CardContent></Card>
       </div>
 
       {allSocieties.map((society) => (
         <Card key={society.id}>
           <CardHeader>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <CardTitle className="font-display">{society.name}</CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">{society.projectName}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <Select
                   value={society.status}
                   onValueChange={(value: SocietyStatus) => updateMutation.mutate({ id: society.id, status: value })}
                 >
-                  <SelectTrigger className="w-[160px]">
+                  <SelectTrigger className="w-full sm:w-[160px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -155,7 +155,7 @@ const Society = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-8 w-8 shrink-0"
                   onClick={() => deleteMutation.mutate(society.id)}
                   disabled={deleteMutation.isPending}
                 >

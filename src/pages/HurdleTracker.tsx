@@ -232,24 +232,26 @@ const HurdleTracker = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Hurdle Tracker</h1>
           <p className="text-muted-foreground mt-1">{hurdles.length} hurdles tracked</p>
         </div>
-        <ReportHurdleDialog onCreated={handleCreated} />
+        <div className="w-full sm:w-auto">
+          <ReportHurdleDialog onCreated={handleCreated} />
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
         {[
           { label: 'Open', value: stats.open, icon: <AlertTriangle className="h-4 w-4 text-warning" /> },
           { label: 'In Progress', value: stats.inProgress, icon: <Clock className="h-4 w-4 text-info" /> },
           { label: 'Escalated', value: stats.escalated, icon: <ArrowUpCircle className="h-4 w-4 text-destructive" /> },
           { label: 'Resolved', value: stats.resolved, icon: <CheckCircle2 className="h-4 w-4 text-success" /> },
           { label: 'Impact Days', value: stats.totalImpact, icon: <Calendar className="h-4 w-4 text-muted-foreground" /> },
-        ].map((stat) => (
-          <Card key={stat.label}>
-            <CardContent className="p-4 flex items-center gap-3">
+        ].map((stat, idx) => (
+          <Card key={stat.label} className={idx === 4 ? "col-span-2 sm:col-span-1 lg:col-span-1" : ""}>
+            <CardContent className="p-3.5 sm:p-4 flex items-center gap-3">
               {stat.icon}
               <div>
                 <p className="text-lg font-display font-bold">{stat.value}</p>

@@ -322,17 +322,17 @@ const Compliance = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Compliance Tracking</h1>
           <p className="text-muted-foreground mt-1">{completed}/{allItems.length} compliances cleared</p>
         </div>
-        <Button onClick={() => setOpen(true)}>
+        <Button onClick={() => setOpen(true)} className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />Add Compliance
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
         <Card><CardContent className="p-4 flex items-center gap-3"><CheckCircle2 className="h-5 w-5 text-success" /><div><p className="text-xl font-display font-bold">{completed}</p><p className="text-xs text-muted-foreground">Completed</p></div></CardContent></Card>
         <Card><CardContent className="p-4 flex items-center gap-3"><Clock className="h-5 w-5 text-warning" /><div><p className="text-xl font-display font-bold">{allItems.filter((item) => item.status === "in_progress" || item.status === "pending").length}</p><p className="text-xs text-muted-foreground">In Progress</p></div></CardContent></Card>
         <Card><CardContent className="p-4 flex items-center gap-3"><AlertTriangle className="h-5 w-5 text-destructive" /><div><p className="text-xl font-display font-bold">{allItems.filter((item) => item.status === "pending").length}</p><p className="text-xs text-muted-foreground">Pending</p></div></CardContent></Card>

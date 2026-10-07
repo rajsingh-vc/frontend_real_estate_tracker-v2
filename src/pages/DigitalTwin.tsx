@@ -336,10 +336,10 @@ const DigitalTwin = () => {
           </Button>
         )}
         <div>
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
             {breadcrumb().map((part, i) => (
               <span key={i} className="flex items-center gap-1">
-                {i > 0 && <ChevronRight className="h-3 w-3" />}
+                {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
                 <span className={i === breadcrumb().length - 1 ? "text-foreground font-medium" : ""}>
                   {part}
                 </span>

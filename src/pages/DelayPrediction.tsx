@@ -734,20 +734,20 @@ const DelayPrediction = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">
             Delay Prediction Engine
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-muted-foreground mt-1 text-sm">
             Real-time construction delay forecasting
             {selectedProject ? ` for ${selectedProject.name}` : " across all active projects"}
           </p>
         </div>
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <Building2 className="h-4 w-4 text-muted-foreground shrink-0 hidden sm:block" />
           <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-            <SelectTrigger className="w-full md:w-64">
+            <SelectTrigger className="w-full sm:w-64">
               <SelectValue placeholder="All Projects" />
             </SelectTrigger>
             <SelectContent>
@@ -772,11 +772,11 @@ const DelayPrediction = () => {
       </div>
 
       {/* KPI Cards: On Track, At Risk, Delayed, Predicted Delay */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <Card>
-          <CardContent className="p-4 md:p-6">
+          <CardContent className="p-3 sm:p-5">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center">
+              <div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center shrink-0">
                 <Shield className="h-5 w-5 text-success" />
               </div>
               <div>
@@ -787,9 +787,9 @@ const DelayPrediction = () => {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4 md:p-6">
+          <CardContent className="p-3 sm:p-5">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-warning/10 flex items-center justify-center">
+              <div className="h-10 w-10 rounded-xl bg-warning/10 flex items-center justify-center shrink-0">
                 <AlertTriangle className="h-5 w-5 text-warning" />
               </div>
               <div>
@@ -800,9 +800,9 @@ const DelayPrediction = () => {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4 md:p-6">
+          <CardContent className="p-3 sm:p-5">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center">
+              <div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center shrink-0">
                 <Clock className="h-5 w-5 text-destructive" />
               </div>
               <div>
@@ -813,9 +813,9 @@ const DelayPrediction = () => {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4 md:p-6">
+          <CardContent className="p-3 sm:p-5">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                 <TrendingUp className="h-5 w-5 text-primary" />
               </div>
               <div>
@@ -831,8 +831,8 @@ const DelayPrediction = () => {
 
       {/* Project Status Banner: Completion Progress, Expected Completion, Delay Risk */}
       <Card className="bg-card/50 border">
-        <CardContent className="p-4 md:p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <CardContent className="p-4 sm:p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
             <div className="space-y-2">
               <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground">Completion Progress</span>

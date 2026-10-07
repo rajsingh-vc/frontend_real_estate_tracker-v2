@@ -498,7 +498,7 @@ function CategoryManagement() {
             <FolderTree className="h-4 w-4 text-primary" />
             <h2 className="font-display font-bold text-base">Category Filters</h2>
           </div>
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             <div className="grid gap-2">
               <Label className="flex items-center gap-1.5">
                 <Building2 className="h-3.5 w-3.5" /> Organization
@@ -643,10 +643,10 @@ function CategoryManagement() {
       {/* ---- Categories (Towers) ---- */}
       {selectedProject && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
               <span>{selectedProject.name}</span>
-              <ChevronRight className="h-3.5 w-3.5" />
+              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
               <span className="font-display font-bold text-base text-foreground flex items-center gap-2">
                 <Layers className="h-4 w-4 text-primary" />
                 Categories
@@ -655,6 +655,7 @@ function CategoryManagement() {
             </div>
             <Button
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => {
                 setEditingCategory(null);
                 setCategoryDialogOpen(true);
@@ -744,17 +745,18 @@ function CategoryManagement() {
       {/* ---- Sub Categories (Floors) ---- */}
       {selectedCategory && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
               <span>{selectedProject?.name}</span>
-              <ChevronRight className="h-3.5 w-3.5" />
+              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
               <span>{selectedCategory.name}</span>
-              <ChevronRight className="h-3.5 w-3.5" />
+              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
               <span className="font-display font-bold text-base text-foreground">Sub Categories</span>
               <span className="text-xs">({categorySubCategories.length})</span>
             </div>
             <Button
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => {
                 setEditingSubCategory(null);
                 setSubCategoryDialogOpen(true);

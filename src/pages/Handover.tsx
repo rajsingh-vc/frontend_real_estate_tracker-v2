@@ -104,12 +104,12 @@ function HandoverAttachments({ unit }: { unit: ApiHandoverUnit }) {
 
   return (
     <div className="pt-2 border-t">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <h5 className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
           <Paperclip className="h-3.5 w-3.5" />
           Attachments ({attachments.length})
         </h5>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {uploadMutation.isPending && (
             <span className="inline-flex items-center text-[11px] text-muted-foreground gap-1">
               <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
@@ -126,7 +126,7 @@ function HandoverAttachments({ unit }: { unit: ApiHandoverUnit }) {
             type="button"
             variant="outline"
             size="sm"
-            className="h-7 text-xs"
+            className="h-7 text-xs w-full sm:w-auto"
             onClick={() => browseInputRef.current?.click()}
             disabled={uploadMutation.isPending}
           >
@@ -259,21 +259,21 @@ const Handover = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Handover Management</h1>
-          <p className="text-muted-foreground mt-1">Unit handover tracking and status</p>
+          <p className="text-muted-foreground mt-1 text-sm">Unit handover tracking and status</p>
         </div>
-        <Button onClick={() => setOpen(true)}>
+        <Button onClick={() => setOpen(true)} className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />Add Unit
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card><CardContent className="p-4 flex items-center gap-3"><KeyRound className="h-5 w-5 text-success" /><div><p className="text-xl font-display font-bold">{count("handed_over")}</p><p className="text-xs text-muted-foreground">Handed Over</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><ClipboardList className="h-5 w-5 text-warning" /><div><p className="text-xl font-display font-bold">{count("snagging")}</p><p className="text-xs text-muted-foreground">Snagging</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><CheckCircle2 className="h-5 w-5 text-info" /><div><p className="text-xl font-display font-bold">{count("inspection")}</p><p className="text-xs text-muted-foreground">Inspection</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><div className="h-5 w-5 rounded-full bg-muted-foreground/30" /><div><p className="text-xl font-display font-bold">{count("not_ready")}</p><p className="text-xs text-muted-foreground">Not Ready</p></div></CardContent></Card>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        <Card><CardContent className="p-3 sm:p-4 flex items-center gap-3"><KeyRound className="h-5 w-5 text-success shrink-0" /><div><p className="text-xl font-display font-bold">{count("handed_over")}</p><p className="text-xs text-muted-foreground">Handed Over</p></div></CardContent></Card>
+        <Card><CardContent className="p-3 sm:p-4 flex items-center gap-3"><ClipboardList className="h-5 w-5 text-warning shrink-0" /><div><p className="text-xl font-display font-bold">{count("snagging")}</p><p className="text-xs text-muted-foreground">Snagging</p></div></CardContent></Card>
+        <Card><CardContent className="p-3 sm:p-4 flex items-center gap-3"><CheckCircle2 className="h-5 w-5 text-info shrink-0" /><div><p className="text-xl font-display font-bold">{count("inspection")}</p><p className="text-xs text-muted-foreground">Inspection</p></div></CardContent></Card>
+        <Card><CardContent className="p-3 sm:p-4 flex items-center gap-3"><div className="h-5 w-5 rounded-full bg-muted-foreground/30 shrink-0" /><div><p className="text-xl font-display font-bold">{count("not_ready")}</p><p className="text-xs text-muted-foreground">Not Ready</p></div></CardContent></Card>
       </div>
 
       <div className="space-y-3">
