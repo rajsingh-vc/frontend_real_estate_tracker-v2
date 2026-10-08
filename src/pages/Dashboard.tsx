@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import {
   Building2, AlertTriangle, CheckCircle2, Clock, TrendingUp, ArrowUpRight,
-  ArrowLeft, ChevronRight, Download, Layers, FileSpreadsheet,
+  ArrowLeft, ChevronRight, Download, Layers, FileSpreadsheet, Bot, Sparkles,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
@@ -15,9 +15,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  projectsApi, towersApi, floorsApi, tasksApi, hurdlesApi, resolveImageUrl,
-  type ApiProject, type ApiTower, type ApiFloor, type ApiTask, type ApiHurdle,
+  projectsApi, towersApi, floorsApi, tasksApi, hurdlesApi, organizationApi, resolveImageUrl,
+  type ApiProject, type ApiTower, type ApiFloor, type ApiTask, type ApiHurdle, type Organization,
 } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { AIAssistantWidget } from "@/components/ai/AIAssistantWidget";
 
 // ===== STATUS LABEL / COLOR HELPERS =====
 // These used to live in a static demo-data file. Real task statuses can
@@ -873,6 +875,8 @@ const Dashboard = () => {
   const [selectedTower, setSelectedTower] = useState<ApiTower | null>(null);
   const [selectedTask, setSelectedTask] = useState<ApiTask | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
+  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
+  const { user } = useAuth();
 
   // Same query keys as Projects.tsx, so React Query shares one cache: the
   // moment a tower/project/task is created, edited, or deleted there, this
@@ -897,6 +901,10 @@ const Dashboard = () => {
     queryKey: ["hurdles"],
     queryFn: hurdlesApi.list,
   });
+  const { data: organizations = [] } = useQuery({
+    queryKey: ["organizations"],
+    queryFn: organizationApi.list,
+  });
 
   const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
   const towerById = useMemo(() => new Map(towers.map(t => [t.id, t])), [towers]);
@@ -912,6 +920,65 @@ const Dashboard = () => {
   const departmentStats = useMemo(() => getDeptBreakdown(tasks), [tasks]);
   const delayedTasks = useMemo(() => tasks.filter(t => t.delayDays > 0), [tasks]);
 
+  // Dynamically resolve organization assigned to the project(s)
+  const organizationName = useMemo(() => {
+    // 1. If currently drilled down into a specific project, show its assigned organization
+    if (selectedProject) {
+      const org =
+        selectedProject.organizationName ||
+        (selectedProject as any).organization_name ||
+        organizations.find(
+          (o: Organization) =>
+            o.id === selectedProject.organizationId ||
+            o.id === (selectedProject as any).organization_id ||
+            (selectedProject.organizationName &&
+              o.name.toLowerCase() === selectedProject.organizationName.toLowerCase())
+        )?.name;
+      if (org && org.trim()) return org.trim();
+    }
+
+    // 2. Scan projects in the portfolio to find assigned organizations
+    const uniqueOrgNames: string[] = [];
+    for (const p of projects) {
+      const org =
+        p.organizationName ||
+        (p as any).organization_name ||
+        organizations.find(
+          (o: Organization) =>
+            o.id === p.organizationId ||
+            o.id === (p as any).organization_id ||
+            (p.organizationName &&
+              o.name.toLowerCase() === p.organizationName.toLowerCase())
+        )?.name;
+      if (org && org.trim() && !uniqueOrgNames.includes(org.trim())) {
+        uniqueOrgNames.push(org.trim());
+      }
+    }
+
+    if (uniqueOrgNames.length === 1) {
+      return uniqueOrgNames[0];
+    }
+    if (uniqueOrgNames.length === 2) {
+      return `${uniqueOrgNames[0]} & ${uniqueOrgNames[1]}`;
+    }
+    if (uniqueOrgNames.length > 2) {
+      return `${uniqueOrgNames[0]} & others`;
+    }
+
+    // 3. Fallback to registered organizations if projects have no explicit organization yet
+    if (organizations.length > 0 && organizations[0].name?.trim()) {
+      return organizations[0].name.trim();
+    }
+
+    // 4. Fallback to user organization or company if distinct from default
+    if ((user as any)?.organization_name?.trim()) return (user as any).organization_name.trim();
+    if ((user as any)?.organizationName?.trim()) return (user as any).organizationName.trim();
+    if (user?.company_name && user.company_name !== "Vibe Group") return user.company_name;
+
+    // 5. Default fallback
+    return "Vibe Group";
+  }, [selectedProject, projects, organizations, user]);
+
   const isLoading = projectsLoading || towersLoading || floorsLoading || tasksLoading || hurdlesLoading;
 
   if (isLoading) {
@@ -925,55 +992,67 @@ const Dashboard = () => {
   // Handle drill-down navigation
   if (drillLevel === 'task' && selectedTask) {
     return (
-      <TaskDrillDown
-        task={selectedTask}
-        project={getProjectById(selectedTask.projectId)}
-        tower={getTowerById(selectedTask.towerId)}
-        onBack={() => { setDrillLevel(selectedTower ? 'tower' : (selectedProject ? 'project' : 'portfolio')); setSelectedTask(null); }}
-      />
+      <>
+        <TaskDrillDown
+          task={selectedTask}
+          project={getProjectById(selectedTask.projectId)}
+          tower={getTowerById(selectedTask.towerId)}
+          onBack={() => { setDrillLevel(selectedTower ? 'tower' : (selectedProject ? 'project' : 'portfolio')); setSelectedTask(null); }}
+        />
+        <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
+      </>
     );
   }
 
   if (drillLevel === 'tower' && selectedTower && selectedProject) {
     return (
-      <FloorDrillDown
-        tower={selectedTower}
-        project={selectedProject}
-        allFloors={floors}
-        allTasks={tasks}
-        onBack={() => { setDrillLevel('project'); setSelectedTower(null); }}
-        onDrillTask={(task) => { setSelectedTask(task); setDrillLevel('task'); }}
-      />
+      <>
+        <FloorDrillDown
+          tower={selectedTower}
+          project={selectedProject}
+          allFloors={floors}
+          allTasks={tasks}
+          onBack={() => { setDrillLevel('project'); setSelectedTower(null); }}
+          onDrillTask={(task) => { setSelectedTask(task); setDrillLevel('task'); }}
+        />
+        <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
+      </>
     );
   }
 
   if (drillLevel === 'project' && selectedProject) {
     return (
-      <ProjectDrillDown
-        project={selectedProject}
-        allTowers={towers}
-        allTasks={tasks}
-        allHurdles={hurdles}
-        onBack={() => { setDrillLevel('portfolio'); setSelectedProject(null); }}
-        onDrillTower={(tower) => { setSelectedTower(tower); setDrillLevel('tower'); }}
-        onDrillTask={(task) => {
-          setSelectedTower(getTowerById(task.towerId) || null);
-          setSelectedTask(task);
-          setDrillLevel('task');
-        }}
-      />
+      <>
+        <ProjectDrillDown
+          project={selectedProject}
+          allTowers={towers}
+          allTasks={tasks}
+          allHurdles={hurdles}
+          onBack={() => { setDrillLevel('portfolio'); setSelectedProject(null); }}
+          onDrillTower={(tower) => { setSelectedTower(tower); setDrillLevel('tower'); }}
+          onDrillTask={(task) => {
+            setSelectedTower(getTowerById(task.towerId) || null);
+            setSelectedTask(task);
+            setDrillLevel('task');
+          }}
+        />
+        <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
+      </>
     );
   }
 
   if (drillLevel === 'department' && selectedDepartment) {
     return (
-      <DepartmentDrillDown
-        department={selectedDepartment}
-        allTasks={tasks}
-        allProjects={projects}
-        onBack={() => { setDrillLevel('portfolio'); setSelectedDepartment(null); }}
-        onDrillTask={(task) => { setSelectedTask(task); setDrillLevel('task'); }}
-      />
+      <>
+        <DepartmentDrillDown
+          department={selectedDepartment}
+          allTasks={tasks}
+          allProjects={projects}
+          onBack={() => { setDrillLevel('portfolio'); setSelectedDepartment(null); }}
+          onDrillTask={(task) => { setSelectedTask(task); setDrillLevel('task'); }}
+        />
+        <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
+      </>
     );
   }
 
@@ -1004,11 +1083,15 @@ const Dashboard = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">CEO Dashboard</h1>
-          <p className="text-muted-foreground mt-1 text-sm">Portfolio overview — Vibe Group · Click any project to drill down</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Portfolio overview — {organizationName} · Click any project to drill down
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={handlePortfolioExport} className="w-full sm:w-auto">
-          <FileSpreadsheet className="h-4 w-4 mr-2" />Export Portfolio
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <Button variant="outline" size="sm" onClick={handlePortfolioExport} className="w-full sm:w-auto">
+            <FileSpreadsheet className="h-4 w-4 mr-2" />Export Portfolio
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
@@ -1174,6 +1257,9 @@ const Dashboard = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Floating AI Assistant Widget with toggle support */}
+      <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
     </div>
   );
 };

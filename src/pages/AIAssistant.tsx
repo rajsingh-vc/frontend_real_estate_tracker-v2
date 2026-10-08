@@ -31,13 +31,13 @@ import {
 /* =========================================================================
  * 1. CHART SPEC & TYPES
  * ===================================================================== */
-type ChartBarSeries = { key: string; name: string; color: string; drillTemplate?: string };
-type ChartSpec =
+export type ChartBarSeries = { key: string; name: string; color: string; drillTemplate?: string };
+export type ChartSpec =
   | { kind: "bar"; title: string; data: any[]; bars: ChartBarSeries[]; layout?: "horizontal" | "vertical"; stacked?: boolean }
   | { kind: "pie"; title: string; data: { name: string; value: number; color: string; drillQuery?: string }[] }
   | { kind: "line"; title: string; data: any[]; lines: { key: string; name: string; color: string }[] };
 
-type ChatMessage = {
+export type ChatMessage = {
   role: "user" | "assistant";
   text: string;
   chart?: ChartSpec;
@@ -45,7 +45,7 @@ type ChatMessage = {
   grounded?: boolean;
 };
 
-interface LiveContext {
+export interface LiveContext {
   projects: ApiProject[];
   tasks: ApiTask[];
   towers: ApiTower[];
@@ -190,7 +190,7 @@ function ChatChart({ chart, onDrillQuery }: { chart: ChartSpec; onDrillQuery?: (
   );
 }
 
-function AnswerBody({
+export function AnswerBody({
   text,
   chart,
   charts,
@@ -338,7 +338,7 @@ function tasksByStatusWord(list: ApiTask[], statusWord: string) {
   return list.filter((t) => t.status === statusWord.replace(" ", "_"));
 }
 
-type LocalAnswer = { text: string; chart?: ChartSpec; charts?: ChartSpec[] };
+export type LocalAnswer = { text: string; chart?: ChartSpec; charts?: ChartSpec[] };
 type Matcher = (q: string, ctx: LiveContext) => LocalAnswer | null;
 
 /* -------------------------------------------------------------------------
@@ -774,7 +774,7 @@ const matchers: Matcher[] = [
   matchTowerSummary,
 ];
 
-function resolveLocalAnswer(rawQuery: string, ctx: LiveContext): LocalAnswer | null {
+export function resolveLocalAnswer(rawQuery: string, ctx: LiveContext): LocalAnswer | null {
   const q = rawQuery.toLowerCase().trim();
   for (const matcher of matchers) {
     const result = matcher(q, ctx);
@@ -799,7 +799,7 @@ function resolveLocalAnswer(rawQuery: string, ctx: LiveContext): LocalAnswer | n
   return null;
 }
 
-function buildGroundingContext(ctx: LiveContext): string {
+export function buildGroundingContext(ctx: LiveContext): string {
   const total = ctx.tasks.length;
   const completed = ctx.tasks.filter((t) => t.status === "completed").length;
   const delayed = ctx.tasks.filter((t) => (t.delayDays || 0) > 0).length;
@@ -818,7 +818,7 @@ function buildGroundingContext(ctx: LiveContext): string {
 /* =========================================================================
  * 4. MAIN COMPONENT
  * ===================================================================== */
-const navTopics: { label: string; icon: LucideIcon; query: string }[] = [
+export const navTopics: { label: string; icon: LucideIcon; query: string }[] = [
   { label: "Projects", icon: Building2, query: "Give me a progress summary" },
   { label: "Risk", icon: AlertTriangle, query: "Predict next delay risk" },
   { label: "Delays", icon: Clock, query: "Show overdue tasks" },
@@ -828,7 +828,7 @@ const navTopics: { label: string; icon: LucideIcon; query: string }[] = [
   { label: "Status", icon: PieChartIcon, query: "Task status distribution pie chart" },
 ];
 
-type DrillStep = { query: string; label: string; answer: LocalAnswer };
+export type DrillStep = { query: string; label: string; answer: LocalAnswer };
 
 const AIAssistant = () => {
   const { user } = useAuth();

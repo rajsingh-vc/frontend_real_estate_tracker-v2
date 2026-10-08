@@ -18,7 +18,7 @@ import {
   UserPlus, Link2, AlertTriangle, CalendarDays,
   Paperclip, FolderOpen, Camera, SwitchCamera, Download, Trash2, Loader2,
   FileText, FileSpreadsheet, File as FileIcon, Image as ImageIcon, Send,
-  FileDown,
+  FileDown, Pencil, Check, X, ListTree,
 } from "lucide-react";
 import { NewTaskDialog } from "@/components/dialogs/NewTaskDialog";
 import { useToast } from "@/hooks/use-toast";
@@ -429,6 +429,287 @@ function CameraCaptureDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+
+// ============================================================================
+// Task subtasks: view, add, toggle completion, and delete subtasks under the
+// current task. Provides instant optimistic updates and syncs with backend.
+// ============================================================================
+function TaskSubtasks({ task }: { task: ApiTaskExt }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [newTitle, setNewTitle] = useState("");
+  const [priority, setPriority] = useState<string>("medium");
+  const [dueDate, setDueDate] = useState<string>("");
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  const subtasksQueryKey = ["task", task.id, "subtasks"] as const;
+
+  const { data: subtasks = (task.subtasks ?? []), isLoading } = useQuery({
+    queryKey: subtasksQueryKey,
+    queryFn: () => tasksApi.subtasks.list(task.id),
+    initialData: task.subtasks ?? [],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: { title: string; priority?: string; endDate?: string }) =>
+      tasksApi.subtasks.create(task.id, data),
+    onSuccess: (newSubtask) => {
+      queryClient.setQueryData<any[]>(subtasksQueryKey, (old = []) => [...old, newSubtask]);
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: subtasksQueryKey });
+      setNewTitle("");
+      setDueDate("");
+      setShowAddForm(false);
+      toast({ title: "Subtask created successfully" });
+    },
+    onError: (err) => {
+      toast({
+        title: "Couldn't create subtask",
+        description: err instanceof ApiError ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ subtaskId, completed }: { subtaskId: number; completed: boolean }) =>
+      tasksApi.update(subtaskId, {
+        status: completed ? "completed" : "in_progress",
+        progress: completed ? 100 : 0,
+      }),
+    onMutate: async ({ subtaskId, completed }) => {
+      await queryClient.cancelQueries({ queryKey: subtasksQueryKey });
+      const prevSubtasks = queryClient.getQueryData<any[]>(subtasksQueryKey);
+      queryClient.setQueryData<any[]>(subtasksQueryKey, (old = []) =>
+        old.map((st) =>
+          st.id === subtaskId
+            ? { ...st, status: completed ? "completed" : "in_progress", progress: completed ? 100 : 0 }
+            : st
+        )
+      );
+      return { prevSubtasks };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prevSubtasks) {
+        queryClient.setQueryData(subtasksQueryKey, context.prevSubtasks);
+      }
+      toast({ title: "Failed to update subtask", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: subtasksQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (subtaskId: number) => tasksApi.remove(subtaskId),
+    onMutate: async (subtaskId) => {
+      await queryClient.cancelQueries({ queryKey: subtasksQueryKey });
+      const prevSubtasks = queryClient.getQueryData<any[]>(subtasksQueryKey);
+      queryClient.setQueryData<any[]>(subtasksQueryKey, (old = []) =>
+        old.filter((st) => st.id !== subtaskId)
+      );
+      return { prevSubtasks };
+    },
+    onSuccess: () => {
+      toast({ title: "Subtask deleted" });
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prevSubtasks) {
+        queryClient.setQueryData(subtasksQueryKey, context.prevSubtasks);
+      }
+      toast({ title: "Failed to delete subtask", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: subtasksQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+
+  const handleCreate = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = newTitle.trim();
+    if (!trimmed) return;
+    createMutation.mutate({
+      title: trimmed,
+      priority,
+      endDate: dueDate || undefined,
+    });
+  };
+
+  const completedCount = subtasks.filter(
+    (st) => st.status === "completed" || st.progress === 100
+  ).length;
+  const progressPercent = subtasks.length > 0 ? Math.round((completedCount / subtasks.length) * 100) : 0;
+
+  return (
+    <div className="mt-5 rounded-lg border bg-card p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <ListTree className="h-4 w-4 text-primary" />
+          <h4 className="font-display font-semibold text-sm">
+            Subtasks ({completedCount}/{subtasks.length})
+          </h4>
+          {subtasks.length > 0 && (
+            <Badge variant="secondary" className="text-[11px] font-normal">
+              {progressPercent}% done
+            </Badge>
+          )}
+        </div>
+        {!showAddForm && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs gap-1"
+            onClick={() => setShowAddForm(true)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Subtask
+          </Button>
+        )}
+      </div>
+
+      {subtasks.length > 0 && (
+        <Progress value={progressPercent} className="h-1.5 bg-muted" />
+      )}
+
+      {/* List of subtasks */}
+      <div className="space-y-1.5">
+        {isLoading && subtasks.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">Loading subtasks…</p>
+        ) : subtasks.length === 0 && !showAddForm ? (
+          <div className="text-center py-4 border border-dashed rounded-md bg-muted/20">
+            <p className="text-xs text-muted-foreground mb-2">No subtasks created for this task yet.</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => setShowAddForm(true)}
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              Create First Subtask
+            </Button>
+          </div>
+        ) : (
+          subtasks.map((st) => {
+            const isCompleted = st.status === "completed" || st.progress === 100;
+            return (
+              <div
+                key={st.id}
+                className={`flex items-center justify-between gap-2 p-2 rounded-md border text-sm transition-all ${
+                  isCompleted ? "bg-muted/30 border-muted" : "bg-background hover:border-primary/40"
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <Checkbox
+                    checked={isCompleted}
+                    onCheckedChange={(checked) =>
+                      toggleMutation.mutate({ subtaskId: st.id, completed: !!checked })
+                    }
+                    className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                  />
+                  <span
+                    className={`truncate text-xs sm:text-sm font-medium ${
+                      isCompleted ? "line-through text-muted-foreground" : "text-foreground"
+                    }`}
+                  >
+                    {st.title}
+                  </span>
+                  {st.priority && (
+                    <Badge
+                      className={`${
+                        priorityColors[st.priority as Priority] || "bg-muted text-muted-foreground"
+                      } text-[9px] px-1 py-0 h-4`}
+                    >
+                      {st.priority}
+                    </Badge>
+                  )}
+                  {st.endDate && (
+                    <span className="text-[10px] text-muted-foreground hidden sm:inline-flex items-center gap-1">
+                      <CalendarDays className="h-3 w-3" />
+                      {new Date(st.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
+                  onClick={() => deleteMutation.mutate(st.id)}
+                  disabled={deleteMutation.isPending}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Quick Add Subtask Form */}
+      {showAddForm && (
+        <form onSubmit={handleCreate} className="p-3 rounded-md border border-primary/20 bg-primary/5 space-y-2 mt-2">
+          <div className="text-xs font-semibold text-primary flex items-center gap-1">
+            <Plus className="h-3.5 w-3.5" /> New Subtask
+          </div>
+          <Input
+            placeholder="Subtask title (e.g. Pour footing concrete, Inspect rebar...)"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            className="h-8 text-xs bg-background"
+            autoFocus
+          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={priority} onValueChange={setPriority}>
+              <SelectTrigger className="h-7 text-xs w-[100px] bg-background">
+                <SelectValue placeholder="Priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="h-7 text-xs w-[130px] bg-background"
+              placeholder="Due date"
+            />
+            <div className="flex items-center gap-1 ml-auto">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs px-2"
+                onClick={() => {
+                  setShowAddForm(false);
+                  setNewTitle("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="h-7 text-xs px-3 gap-1"
+                disabled={createMutation.isPending || !newTitle.trim()}
+              >
+                {createMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                Add
+              </Button>
+            </div>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -943,6 +1224,13 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [newComment, setNewComment] = useState("");
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editedTitle, setEditedTitle] = useState(task.title);
+
+  useEffect(() => {
+    setEditedTitle(task.title);
+    setIsEditingTitle(false);
+  }, [task.id, task.title]);
 
   const { data: projects } = useQuery({ queryKey: ["projects"], queryFn: projectsApi.list });
   const { data: towers } = useQuery({ queryKey: ["towers"], queryFn: towersApi.list });
@@ -969,18 +1257,6 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
   // OWN query key — ["task", task.id, "comments"] — populated from a
   // dedicated task-detail fetch, completely separate from the ["tasks"]
   // list-query cache.
-  //
-  // Root cause of the bug: `tasksApi.list()` (the ["tasks"] query) never
-  // returns nested `comments` for each row. As long as comments were stored
-  // inside that same ["tasks"] cache entry, ANY unrelated invalidation of
-  // ["tasks"] elsewhere in the app — a status change, a Kanban drag-drop, a
-  // checklist toggle on a different task, another open dialog settling its
-  // own mutation — would refetch the list endpoint and silently strip the
-  // comments back out, because the list endpoint doesn't know about them.
-  //
-  // Fix: comments are fetched and mutated through their own query key that
-  // nothing else in the app touches, so no unrelated refetch can ever wipe
-  // them out again.
   // ============================================================================
   const {
     data: taskComments = task.comments ?? [],
@@ -1009,6 +1285,42 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
       description: error instanceof ApiError ? error.message : "Please try again.",
       variant: "destructive",
     });
+  };
+
+  const updateTitleMutation = useMutation({
+    mutationFn: (newTitle: string) => tasksApi.update(task.id, { title: newTitle }),
+    onMutate: async (newTitle: string) => {
+      await queryClient.cancelQueries({ queryKey: ["tasks"] });
+      const previousTasks = queryClient.getQueryData<ApiTaskExt[]>(["tasks"]);
+      queryClient.setQueryData<ApiTaskExt[]>(["tasks"], (old) =>
+        old?.map((t) => (t.id === task.id ? { ...t, title: newTitle } : t))
+      );
+      return { previousTasks };
+    },
+    onSuccess: () => {
+      toast({ title: "Task title updated" });
+      setIsEditingTitle(false);
+    },
+    onError: (err, _newTitle, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(["tasks"], context.previousTasks);
+      }
+      toast({
+        title: "Failed to update title",
+        description: err instanceof ApiError ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    },
+    onSettled: invalidateTasks,
+  });
+
+  const handleSaveTitle = () => {
+    const trimmed = editedTitle.trim();
+    if (!trimmed || trimmed === task.title) {
+      setIsEditingTitle(false);
+      return;
+    }
+    updateTitleMutation.mutate(trimmed);
   };
 
   // ============================================================================
@@ -1049,17 +1361,8 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
       }
       onMutationError(err, "Add comment");
     },
-    // Deliberately NOT invalidating ["tasks"] here — that refetch is what
-    // was wiping comments out before, and comments no longer live there.
   });
 
-  // ============================================================================
-  // ✅ FIXED (same root cause as commentMutation above): toggling a checklist
-  // item used to call `invalidateTasks()` on success, which refetched
-  // tasksApi.list() and silently reverted the checklist toggle since the
-  // list endpoint doesn't include `checklist`. Now the toggle is applied
-  // optimistically and kept — no invalidation to undo it.
-  // ============================================================================
   const toggleChecklistMutation = useMutation({
     mutationFn: (itemId: number) => tasksApi.toggleChecklistItem(task.id, itemId),
     onMutate: async (itemId: number) => {
@@ -1085,12 +1388,8 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
       }
       onMutationError(err, "Toggle checklist item");
     },
-    // no onSettled: invalidateTasks — see comment above
   });
 
-  // status changes now also send a matching progress value, and update the
-  // UI instantly (optimistically) instead of waiting for a full network
-  // round trip + refetch before the Select / progress bar move.
   const statusMutation = useMutation({
     mutationFn: (newStatus: string) => {
       const progress = computeProgressForStatus(newStatus, task.progress);
@@ -1121,8 +1420,6 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
     commentMutation.mutate(newComment);
   };
 
-  // wires the shared task/project/tower/assignee/dependency and attachments data
-  // already loaded in this dialog into the PDF export helper.
   const handleExportPDF = () => {
     exportTaskToPDF(task, {
       projectName: project?.name,
@@ -1156,7 +1453,66 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
             Export PDF
           </Button>
         </div>
-        <DialogTitle className="font-display text-xl mt-2">{task.title}</DialogTitle>
+
+        {/* Editable Title Section */}
+        {isEditingTitle ? (
+          <div className="flex items-center gap-2 mt-2">
+            <Input
+              value={editedTitle}
+              onChange={(e) => setEditedTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSaveTitle();
+                } else if (e.key === "Escape") {
+                  setIsEditingTitle(false);
+                  setEditedTitle(task.title);
+                }
+              }}
+              className="text-lg font-bold font-display h-9 flex-1"
+              autoFocus
+            />
+            <Button
+              size="sm"
+              className="h-9 px-3 gap-1 bg-primary text-primary-foreground shrink-0"
+              onClick={handleSaveTitle}
+              disabled={updateTitleMutation.isPending || !editedTitle.trim()}
+            >
+              {updateTitleMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              Save
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-9 px-2 shrink-0"
+              onClick={() => {
+                setIsEditingTitle(false);
+                setEditedTitle(task.title);
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2 mt-2 group/title">
+            <DialogTitle className="font-display text-xl">{task.title}</DialogTitle>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground opacity-80 group-hover/title:opacity-100 flex items-center gap-1.5 rounded-md hover:bg-muted shrink-0"
+              onClick={() => {
+                setEditedTitle(task.title);
+                setIsEditingTitle(true);
+              }}
+              title="Click to edit task title"
+            >
+              <Pencil className="h-3.5 w-3.5 text-primary" />
+              Edit Title
+            </Button>
+          </div>
+        )}
+
         <p className="text-sm text-muted-foreground">{task.description}</p>
         {/* ✅ NEW — created / updated date & time */}
         {task.createdAt && (
@@ -1218,6 +1574,9 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
         usersErrorObj={usersErrorObj}
         assignee={assignee}
       />
+
+      {/* Subtasks: View, create, and manage subtasks */}
+      <TaskSubtasks task={task} />
 
       {/* Checklist */}
       {checklist.length > 0 && (
@@ -1284,6 +1643,11 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
 // rows with the full feature set (chat, attachments, dependencies, etc.).
 // Without `export` here, TypeScript reports "no exported member 'TaskRow'".
 export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?: boolean }) {
+  const subtasksCount = task.subtasks?.length ?? 0;
+  const subtasksCompleted = (task.subtasks ?? []).filter(
+    (s) => s.status === 'completed' || s.progress === 100
+  ).length;
+
   return (
     <Dialog defaultOpen={openOnMount}>
       <DialogTrigger asChild>
@@ -1305,7 +1669,7 @@ export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?:
               <p className="text-sm font-medium truncate">{task.title}</p>
               {task.criticalPath && <Badge variant="destructive" className="text-[9px] px-1 py-0">CP</Badge>}
             </div>
-            <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
               <span>{task.department}</span>
               <span>·</span>
               <span>{task.phase}</span>
@@ -1313,6 +1677,15 @@ export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?:
                 <>
                   <span>·</span>
                   <span>Created {new Date(task.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span>
+                </>
+              )}
+              {subtasksCount > 0 && (
+                <>
+                  <span>·</span>
+                  <span className="inline-flex items-center gap-1 text-primary font-medium">
+                    <ListTree className="h-3 w-3" />
+                    {subtasksCompleted}/{subtasksCount} subtasks
+                  </span>
                 </>
               )}
             </div>
@@ -1328,6 +1701,12 @@ export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?:
                 <span>·</span>
                 <span>Created {new Date(task.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span>
               </>
+            )}
+            {subtasksCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-primary font-medium">
+                <ListTree className="h-3 w-3" />
+                {subtasksCompleted}/{subtasksCount} subtasks
+              </span>
             )}
           </div>
 
@@ -1373,41 +1752,55 @@ function KanbanColumn({ status, columnTasks, onDrop }: { status: string; columnT
         <Badge variant="secondary" className="text-xs ml-auto">{columnTasks.length}</Badge>
       </div>
       <div className="space-y-2">
-        {columnTasks.map((task) => (
-          <div key={task.id} draggable onDragStart={e => { e.dataTransfer.setData('taskId', String(task.id)); e.dataTransfer.effectAllowed = 'move'; }}>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Card className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow">
-                  <CardContent className="p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1">
-                        <GripVertical className="h-3 w-3 text-muted-foreground" />
-                        <Badge className={`${priorityColors[task.priority as Priority]} text-[9px]`}>{task.priority}</Badge>
+        {columnTasks.map((task) => {
+          const subtasksCount = task.subtasks?.length ?? 0;
+          const subtasksCompleted = (task.subtasks ?? []).filter(
+            (s) => s.status === 'completed' || s.progress === 100
+          ).length;
+
+          return (
+            <div key={task.id} draggable onDragStart={e => { e.dataTransfer.setData('taskId', String(task.id)); e.dataTransfer.effectAllowed = 'move'; }}>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Card className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow">
+                    <CardContent className="p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1">
+                          <GripVertical className="h-3 w-3 text-muted-foreground" />
+                          <Badge className={`${priorityColors[task.priority as Priority]} text-[9px]`}>{task.priority}</Badge>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {task.criticalPath && <Badge variant="destructive" className="text-[9px]">CP</Badge>}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        {task.criticalPath && <Badge variant="destructive" className="text-[9px]">CP</Badge>}
+                      <p className="text-sm font-medium">{task.title}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{task.department}</span>
+                        <span>·</span>
+                        <span>{task.phase}</span>
                       </div>
-                    </div>
-                    <p className="text-sm font-medium">{task.title}</p>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>{task.department}</span>
-                      <span>·</span>
-                      <span>{task.phase}</span>
-                    </div>
-                    {/* ✅ NEW — created date */}
-                    {task.createdAt && (
-                      <p className="text-[10px] text-muted-foreground">
-                        Created {new Date(task.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
-                      </p>
-                    )}
-                    <Progress value={task.progress} className="h-1" />
-                  </CardContent>
-                </Card>
-              </DialogTrigger>
-              <TaskDetailDialog task={task} />
-            </Dialog>
-          </div>
-        ))}
+                      {/* Subtasks indicator */}
+                      {subtasksCount > 0 && (
+                        <div className="flex items-center gap-1 text-[11px] text-primary font-medium">
+                          <ListTree className="h-3 w-3" />
+                          <span>{subtasksCompleted}/{subtasksCount} subtasks</span>
+                        </div>
+                      )}
+                      {/* ✅ NEW — created date */}
+                      {task.createdAt && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Created {new Date(task.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+                        </p>
+                      )}
+                      <Progress value={task.progress} className="h-1" />
+                    </CardContent>
+                  </Card>
+                </DialogTrigger>
+                <TaskDetailDialog task={task} />
+              </Dialog>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1488,11 +1881,15 @@ const Tasks = () => {
 
   const tasks = (allTasks ?? []) as ApiTaskExt[];
 
+  // Filter top-level tasks for the main lists/kanban boards so child tasks
+  // (subtasks) are accessed directly inside their parent task module.
+  const topLevelTasks = tasks.filter((t) => !t.parentId);
+
   // Department is matched as a case-insensitive substring instead of an
   // exact equality check, since the filter field is free text — typing
   // "civ" should match a task with department "Civil" without requiring
   // the exact casing/spelling.
-  const filtered = tasks.filter(t => {
+  const filtered = topLevelTasks.filter(t => {
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
     if (deptFilter.trim() && !t.department?.toLowerCase().includes(deptFilter.trim().toLowerCase())) return false;
@@ -1505,7 +1902,7 @@ const Tasks = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Execution Tasks</h1>
-          <p className="text-muted-foreground mt-1 text-sm">{tasks.length} tasks across all projects</p>
+          <p className="text-muted-foreground mt-1 text-sm">{topLevelTasks.length} tasks across all projects</p>
         </div>
         <NewTaskDialog onCreated={handleCreated} />
       </div>

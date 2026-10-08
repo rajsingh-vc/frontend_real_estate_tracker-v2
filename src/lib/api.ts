@@ -295,6 +295,18 @@ export interface ApiTask {
   companyName?: string | null;
   entityId?: number | null;
   entityName?: string | null;
+  parentId?: number | null;
+  subtasks?: Array<{
+    id: number;
+    title: string;
+    status: string;
+    progress: number;
+    priority?: string;
+    assignedTo?: number | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    createdAt?: string | null;
+  }>;
   // Read by Tasks.tsx (created/updated timestamps shown on task rows and
   // the detail dialog). Optional since older records or a list endpoint
   // variant might omit them.
@@ -599,10 +611,12 @@ function normalizeOrganization(raw: any): Organization {
 function normalizeTask(raw: any): ApiTask {
   return {
     ...raw,
+    criticalPath: Boolean(raw.criticalPath ?? raw.critical_path ?? false),
     checklist: raw.checklist ?? [],
     comments: raw.comments ?? [],
     dependencies: raw.dependencies ?? [],
     assignedUsers: raw.assignedUsers ?? [],
+    subtasks: raw.subtasks ?? [],
   };
 }
 
@@ -995,6 +1009,23 @@ export const tasksApi = {
     apiPost<ApiChecklistItem>(`/tasks/${taskId}/checklist/${itemId}/toggle/`),
   addChecklistItem: (taskId: number, title: string) =>
     apiPost<ApiChecklistItem>(`/tasks/${taskId}/checklist/`, { title }),
+  removeChecklistItem: (taskId: number, itemId: number) =>
+    apiDelete(`/tasks/${taskId}/checklist/${itemId}/`),
+  subtasks: {
+    list: async (taskId: number) => (await apiList<any>(`/tasks/${taskId}/subtasks/`)).map(normalizeTask),
+    create: async (
+      taskId: number,
+      data: {
+        title: string;
+        status?: string;
+        progress?: number;
+        priority?: string;
+        assignedTo?: number | null;
+        startDate?: string | null;
+        endDate?: string | null;
+      }
+    ) => normalizeTask(await apiPost<any>(`/tasks/${taskId}/subtasks/`, data)),
+  },
   chat: {
     list: (taskId: number) => apiGet<ApiChatMessage[]>(`/tasks/${taskId}/chat/`),
     send: (taskId: number, text: string) => apiPost<ApiChatMessage>(`/tasks/${taskId}/chat/`, { text }),
@@ -1086,7 +1117,7 @@ function normalizeEntity(raw: any): Entity {
 }
 
 export const organizationApi = {
-  list: async () => (await apiGet<any[]>("/organizations/")).map(normalizeOrganization),
+  list: async () => unwrapList(await apiGet<any>("/organizations/")).map(normalizeOrganization),
   retrieve: async (id: number) => normalizeOrganization(await apiGet<any>(`/organizations/${id}/`)),
   create: async (payload: OrganizationPayload) =>
     normalizeOrganization(await apiPost<any>("/organizations/", organizationToFormData(payload))),
