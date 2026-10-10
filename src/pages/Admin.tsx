@@ -38,6 +38,7 @@ import {
   type Entity,
   type EntityPayload,
   type Invitation,
+  type InvitationPayload,
   type statusesApi,
   resolveImageUrl,
 } from "@/lib/api";
