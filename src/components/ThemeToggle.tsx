@@ -1,38 +1,45 @@
-import { Moon, Sun, Clock } from "lucide-react";
+import { Moon, Sun, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useEffect, useState } from "react";
 
-type ThemeMode = "light" | "dark" | "auto";
+type ThemeMode = "light" | "dark" | "system";
 
 export function ThemeToggle() {
   const [mode, setMode] = useState<ThemeMode>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("theme-mode") as ThemeMode | null;
-      if (saved) return saved;
-      // default to auto
-      return "auto";
+      const saved = localStorage.getItem("theme-mode");
+      if (saved === "light" || saved === "dark" || saved === "system") {
+        return saved as ThemeMode;
+      }
+      if (saved === "auto") {
+        return "system";
+      }
     }
-    return "auto";
+    return "system";
   });
 
-  // Helper: determine if it should be dark based on time
+  // System mode logic:
+  // 5 AM (05:00) to 6 PM (18:00) is light mode
+  // 6 PM (18:00) to 5 AM (04:59) is dark mode
   const isDarkByTime = () => {
     const now = new Date();
     const hours = now.getHours();
-    // Dark from 6 PM (18) to 6 AM (5:59)
-    return hours >= 18 || hours < 6;
+    return hours >= 18 || hours < 5;
   };
 
-  // Apply theme based on current mode and time
+  // Apply theme based on current mode
   const applyTheme = (currentMode: ThemeMode) => {
-    const shouldBeDark = currentMode === "dark" || (currentMode === "auto" && isDarkByTime());
-    if (shouldBeDark) {
+    let isDark = false;
+    if (currentMode === "dark") {
+      isDark = true;
+    } else if (currentMode === "light") {
+      isDark = false;
+    } else {
+      // System mode: 5 AM - 6 PM Light, 6 PM - 5 AM Dark
+      isDark = isDarkByTime();
+    }
+
+    if (isDark) {
       document.documentElement.classList.add("dark");
       localStorage.setItem("theme", "dark");
     } else {
@@ -45,60 +52,60 @@ export function ThemeToggle() {
   useEffect(() => {
     applyTheme(mode);
     localStorage.setItem("theme-mode", mode);
+
+    // If system mode, check every minute and when switching back to tab
+    if (mode === "system") {
+      const interval = setInterval(() => {
+        applyTheme("system");
+      }, 60000);
+
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === "visible") {
+          applyTheme("system");
+        }
+      };
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      };
+    }
   }, [mode]);
 
-  // For auto mode: check every minute and update if needed
-  useEffect(() => {
-    if (mode !== "auto") return;
-    const interval = setInterval(() => {
-      applyTheme("auto");
-    }, 60000); // every minute
-    return () => clearInterval(interval);
-  }, [mode]);
+  // Click cycle: Light -> Dark -> System -> Light
+  const handleToggle = () => {
+    setMode((prev) => {
+      if (prev === "light") return "dark";
+      if (prev === "dark") return "system";
+      return "light";
+    });
+  };
 
-  // Also re‑apply when the user returns to the tab (in case they changed system time)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && mode === "auto") {
-        applyTheme("auto");
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [mode]);
-
-  // Determine which icon to show on the button
   const getIcon = () => {
     if (mode === "light") return <Sun className="h-4 w-4" />;
     if (mode === "dark") return <Moon className="h-4 w-4" />;
-    // auto: show a clock or semi‑sun/moon – we use Clock
-    return <Clock className="h-4 w-4" />;
+    return <Monitor className="h-4 w-4" />;
+  };
+
+  const getTitle = () => {
+    if (mode === "light") return "Light Mode";
+    if (mode === "dark") return "Dark Mode";
+    return "System Mode";
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9">
-          {getIcon()}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setMode("light")}>
-          <Sun className="mr-2 h-4 w-4" />
-          <span>Light</span>
-          {mode === "light" && <span className="ml-auto text-xs text-muted-foreground">✓</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setMode("dark")}>
-          <Moon className="mr-2 h-4 w-4" />
-          <span>Dark</span>
-          {mode === "dark" && <span className="ml-auto text-xs text-muted-foreground">✓</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setMode("auto")}>
-          <Clock className="mr-2 h-4 w-4" />
-          <span>Auto</span>
-          {mode === "auto" && <span className="ml-auto text-xs text-muted-foreground">✓</span>}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-9 w-9 text-foreground hover:bg-muted/80 transition-colors"
+      onClick={handleToggle}
+      title={getTitle()}
+      aria-label={getTitle()}
+    >
+      {getIcon()}
+    </Button>
   );
 }
+
+

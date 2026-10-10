@@ -801,12 +801,12 @@ const Timeline = () => {
         <div className="flex items-center gap-2.5 flex-wrap flex-1">
           {/* Search Input */}
           <div className="relative min-w-[220px] max-w-xs flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
             <Input
               placeholder="Search tasks, milestones..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9.5 pr-8 h-10 rounded-xl bg-white dark:bg-card border-slate-200/90 dark:border-border text-xs sm:text-sm font-normal shadow-xs focus-visible:ring-blue-500"
+              className="pl-9 pr-8 h-10 rounded-xl bg-white dark:bg-card border-slate-200/90 dark:border-border text-xs sm:text-sm font-normal shadow-xs focus-visible:ring-blue-500"
             />
             {searchQuery && (
               <button
