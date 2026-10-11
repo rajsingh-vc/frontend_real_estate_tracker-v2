@@ -1,246 +1,234 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Button } from "@/components/ui/button";
-import { statusLabels } from "@/data/demo-data";
-import { Building2, Layers, Grid3X3, ArrowLeft, ChevronRight, Pencil, Check, X } from "lucide-react";
+import React, { useState, useMemo, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
   projectsApi,
   towersApi,
   floorsApi,
+  unitsApi,
   tasksApi,
+  checklistsApi,
+  subTasksApi,
+  usersApi,
   ApiError,
-  resolveImageUrl,
   type ApiProject,
   type ApiTower,
   type ApiFloor,
+  type ApiUnit,
   type ApiTask,
+  type ApiChecklist,
+  type ApiSubTask,
+  type User,
 } from "@/lib/api";
 
-// ============================================================================
-// Digital Twin — driven entirely by live API data instead of demo-data.
-//
-// Drill-down: Projects -> Towers -> Floors -> Units / Floor-level Tasks
-//
-// EDITING: only Project.progress and Task.progress are real, persisted
-// fields with an update endpoint (projectsApi.update / tasksApi.update).
-// Towers and Floors only have a `list()` in the API — no update endpoint —
-// so their progress here is always a computed rollup from their tasks, not
-// something you can PATCH directly. Editing a task's progress updates that
-// rollup automatically everywhere it's shown (tower card, floor row, unit
-// card) since they all derive from the same ["tasks"] query.
-// ============================================================================
+import type {
+  DigitalTwinSelection,
+  VisualizationMode,
+  CameraPreset,
+} from "@/components/digital-twin/types";
+import { buildProjectRollup } from "@/components/digital-twin/digitalTwinUtils";
+import { DigitalTwinHeader } from "@/components/digital-twin/DigitalTwinHeader";
+import {
+  DigitalTwinToolbar,
+  type DigitalTwinViewMode,
+} from "@/components/digital-twin/DigitalTwinToolbar";
+import { DigitalTwinCanvas3D } from "@/components/digital-twin/DigitalTwinCanvas3D";
+import { DigitalTwinMapViewer } from "@/components/digital-twin/DigitalTwinMapViewer";
+import { DigitalTwinDetailsPanel } from "@/components/digital-twin/DigitalTwinDetailsPanel";
+import { DigitalTwin2DElevation } from "@/components/digital-twin/DigitalTwin2DElevation";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Building2, FolderPlus, Layers, FileUp, PanelRightOpen, X, AlertTriangle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
-type View = "projects" | "towers" | "floors" | "units";
-
-const getStatusDot = (status: string) => {
-  switch (status) {
-    case "completed":
-      return "bg-success";
-    case "in_progress":
-      return "bg-warning";
-    case "delayed":
-    case "blocked":
-      return "bg-destructive";
-    default:
-      return "bg-muted-foreground/30";
+class ViewportErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallbackTitle?: string },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
   }
-};
 
-const getBgColor = (status: string) => {
-  switch (status) {
-    case "completed":
-      return "bg-success/10 border-success/30";
-    case "in_progress":
-      return "bg-warning/10 border-warning/30";
-    case "delayed":
-    case "blocked":
-      return "bg-destructive/10 border-destructive/30";
-    default:
-      return "bg-muted border-border";
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
   }
-};
 
-// Roll a set of tasks up into a single aggregate status.
-function aggregateStatus(groupTasks: ApiTask[]): string {
-  if (groupTasks.length === 0) return "not_started";
-  const total = groupTasks.length;
-  const completed = groupTasks.filter((t) => t.status === "completed").length;
-  const hasDelay = groupTasks.some((t) => t.status === "delayed" || t.status === "blocked");
-  const inProgress = groupTasks.some((t) => t.status === "in_progress");
-  if (completed === total) return "completed";
-  if (hasDelay) return "delayed";
-  if (inProgress) return "in_progress";
-  return "not_started";
-}
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error("DigitalTwin Viewport Error:", error, errorInfo);
+  }
 
-// Real progress % for any group of tasks — the average of each task's own
-// `progress` field, so a group with tasks at 40-60% in-progress shows that
-// instead of a blunt completed/total ratio.
-function computeAvgProgress(groupTasks: ApiTask[]): number {
-  if (groupTasks.length === 0) return 0;
-  const sum = groupTasks.reduce((acc, t) => acc + (t.progress || 0), 0);
-  return Math.round(sum / groupTasks.length);
-}
-
-// ============================================================================
-// EditableProgress — click a real, persisted progress value to open a
-// slider, then Save/Cancel. Used for Project.progress and Task.progress,
-// the only two fields the API can actually update.
-// ============================================================================
-
-function EditableProgress({
-  value,
-  onSave,
-  saving,
-  barClassName = "h-2",
-}: {
-  value: number;
-  onSave: (newValue: number) => void;
-  saving?: boolean;
-  barClassName?: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [localValue, setLocalValue] = useState(value);
-
-  useEffect(() => {
-    if (!editing) setLocalValue(value);
-  }, [value, editing]);
-
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setLocalValue(value);
-          setEditing(true);
-        }}
-        className="w-full text-left group"
-      >
-        <div className="flex items-center gap-2">
-          <Progress value={value} className={`${barClassName} flex-1`} />
-          <span className="text-xs font-medium w-10 text-right shrink-0">{value}%</span>
-          <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full min-h-[400px] p-6 text-center space-y-3 bg-card border border-border rounded-xl shadow-inner">
+          <div className="h-12 w-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center">
+            <AlertTriangle className="h-6 w-6" />
+          </div>
+          <h3 className="font-bold text-base text-foreground">
+            {this.props.fallbackTitle || "3D Viewport Notice"}
+          </h3>
+          <p className="text-xs text-muted-foreground max-w-sm">
+            {this.state.error?.message || "An unexpected error occurred while rendering the viewport."}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => this.setState({ hasError: false, error: null })}
+          >
+            Retry Viewport
+          </Button>
         </div>
-      </button>
-    );
+      );
+    }
+    return this.props.children;
   }
-
-  return (
-    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        value={localValue}
-        onChange={(e) => setLocalValue(Number(e.target.value))}
-        disabled={saving}
-        className="flex-1 accent-primary h-1.5 cursor-pointer"
-      />
-      <span className="text-xs font-medium w-10 text-right shrink-0">{localValue}%</span>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-6 w-6 shrink-0"
-        disabled={saving}
-        onClick={() => {
-          onSave(localValue);
-          setEditing(false);
-        }}
-      >
-        <Check className="h-3.5 w-3.5 text-success" />
-      </Button>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-6 w-6 shrink-0"
-        disabled={saving}
-        onClick={() => setEditing(false)}
-      >
-        <X className="h-3.5 w-3.5 text-muted-foreground" />
-      </Button>
-    </div>
-  );
 }
 
-// Read-only rollup display for Tower/Floor/Unit — clearly labeled as
-// computed, since there's no update endpoint for these to write to.
-function ComputedProgress({ value, barClassName = "h-2" }: { value: number; barClassName?: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <Progress value={value} className={`${barClassName} flex-1`} />
-      <span className="text-xs font-medium w-10 text-right shrink-0">{value}%</span>
-    </div>
-  );
-}
-
-const DigitalTwin = () => {
+const DigitalTwin: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const [view, setView] = useState<View>("projects");
+  // Selection states
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [selectedTowerId, setSelectedTowerId] = useState<number | null>(null);
   const [selectedFloorId, setSelectedFloorId] = useState<number | null>(null);
+  const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null);
 
+  // Visualization & Viewport Controls
+  const [visualizationMode, setVisualizationMode] = useState<VisualizationMode>("overall");
+  const [isolatedTowerId, setIsolatedTowerId] = useState<number | null>(null);
+  const [explosionFactor, setExplosionFactor] = useState<number>(0);
+  const [isXRayMode, setIsXRayMode] = useState<boolean>(false);
+  const [cameraPreset, setCameraPreset] = useState<CameraPreset>("orbit");
+  const [viewMode, setViewMode] = useState<DigitalTwinViewMode>("3d");
+  const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(true);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
+
+  // Data Queries
   const {
     data: projects = [],
     isLoading: projectsLoading,
     isError: projectsError,
     error: projectsErrorObj,
+    refetch: refetchProjects,
   } = useQuery({ queryKey: ["projects"], queryFn: projectsApi.list });
 
-  const { data: towers = [], isLoading: towersLoading } = useQuery({
-    queryKey: ["towers"],
-    queryFn: towersApi.list,
+  const {
+    data: towers = [],
+    isLoading: towersLoading,
+    refetch: refetchTowers,
+  } = useQuery({ queryKey: ["towers"], queryFn: towersApi.list });
+
+  const {
+    data: floors = [],
+    isLoading: floorsLoading,
+    refetch: refetchFloors,
+  } = useQuery({ queryKey: ["floors"], queryFn: floorsApi.list });
+
+  const {
+    data: units = [],
+    isLoading: unitsLoading,
+    refetch: refetchUnits,
+  } = useQuery({ queryKey: ["units"], queryFn: unitsApi.list });
+
+  const {
+    data: tasks = [],
+    isLoading: tasksLoading,
+    refetch: refetchTasks,
+  } = useQuery({ queryKey: ["tasks"], queryFn: tasksApi.list });
+
+  const {
+    data: checklists = [],
+    isLoading: checklistsLoading,
+    refetch: refetchChecklists,
+  } = useQuery({ queryKey: ["checklists"], queryFn: checklistsApi.list });
+
+  const {
+    data: subtasks = [],
+    isLoading: subtasksLoading,
+    refetch: refetchSubtasks,
+  } = useQuery({ queryKey: ["subtasks"], queryFn: subTasksApi.list });
+
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: usersApi.list,
   });
 
-  const { data: floors = [], isLoading: floorsLoading } = useQuery({
-    queryKey: ["floors"],
-    queryFn: floorsApi.list,
-  });
+  const isLoading =
+    projectsLoading ||
+    towersLoading ||
+    floorsLoading ||
+    unitsLoading ||
+    tasksLoading ||
+    checklistsLoading ||
+    subtasksLoading;
 
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery({
-    queryKey: ["tasks"],
-    queryFn: tasksApi.list,
-  });
+  // Auto-select first project with data if none selected
+  useEffect(() => {
+    if (projects.length > 0 && selectedProjectId === null) {
+      // Prefer a project that has towers, or default to first
+      const withTowers = projects.find((p) => towers.some((t) => t.projectId === p.id));
+      setSelectedProjectId(withTowers ? withTowers.id : projects[0].id);
+    }
+  }, [projects, towers, selectedProjectId]);
 
-  const isLoading = projectsLoading || towersLoading || floorsLoading || tasksLoading;
+  // When changing project, clear lower-level selections
+  const handleSelectProject = (projectId: number) => {
+    setSelectedProjectId(projectId);
+    setSelectedTowerId(null);
+    setSelectedFloorId(null);
+    setSelectedUnitId(null);
+    setIsolatedTowerId(null);
+    setExplosionFactor(0);
+  };
 
-  // ----- Mutations: the only two fields the backend can actually persist -----
+  // Find currently selected project
+  const currentProject = useMemo(
+    () => projects.find((p) => p.id === selectedProjectId) || null,
+    [projects, selectedProjectId]
+  );
 
-  const updateProjectProgress = useMutation({
-    mutationFn: ({ id, progress }: { id: number; progress: number }) =>
-      projectsApi.update(id, { progress }),
-    onMutate: async ({ id, progress }) => {
-      await queryClient.cancelQueries({ queryKey: ["projects"] });
-      const previous = queryClient.getQueryData<ApiProject[]>(["projects"]);
-      queryClient.setQueryData<ApiProject[]>(["projects"], (old) =>
-        old?.map((p) => (p.id === id ? { ...p, progress } : p))
-      );
-      return { previous };
-    },
-    onError: (err, _vars, context) => {
-      if (context?.previous) queryClient.setQueryData(["projects"], context.previous);
-      toast({
-        title: "Couldn't update project progress",
-        description: err instanceof ApiError ? err.message : "Please try again.",
-        variant: "destructive",
-      });
-    },
-    onSuccess: () => toast({ title: "Project progress updated" }),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
-  });
+  // Compute live project rollup hierarchy
+  const projectRollup = useMemo(() => {
+    if (!currentProject) return null;
+    return buildProjectRollup(
+      currentProject,
+      towers,
+      floors,
+      units,
+      tasks,
+      checklists,
+      subtasks
+    );
+  }, [currentProject, towers, floors, units, tasks, checklists, subtasks]);
 
-  const updateTaskProgress = useMutation({
+  // Combined selection object
+  const selection: DigitalTwinSelection = useMemo(() => {
+    let scope: DigitalTwinSelection["scope"] = "project";
+    if (selectedUnitId !== null) scope = "unit";
+    else if (selectedFloorId !== null) scope = "floor";
+    else if (selectedTowerId !== null) scope = "tower";
+
+    return {
+      scope,
+      projectId: selectedProjectId ?? 0,
+      towerId: selectedTowerId,
+      floorId: selectedFloorId,
+      unitId: selectedUnitId,
+    };
+  }, [selectedProjectId, selectedTowerId, selectedFloorId, selectedUnitId]);
+
+  const handleSelect = (sel: DigitalTwinSelection) => {
+    setSelectedTowerId(sel.towerId);
+    setSelectedFloorId(sel.floorId);
+    setSelectedUnitId(sel.unitId);
+    setIsDetailsOpen(true);
+  };
+
+  // Mutations for updating task progress directly from Digital Twin
+  const updateTaskProgressMutation = useMutation({
     mutationFn: ({ id, progress }: { id: number; progress: number }) =>
       tasksApi.update(id, { progress }),
     onMutate: async ({ id, progress }) => {
@@ -259,427 +247,305 @@ const DigitalTwin = () => {
         variant: "destructive",
       });
     },
-    onSuccess: () => toast({ title: "Task progress updated" }),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+    onSuccess: () => {
+      toast({ title: "Task progress updated in Digital Twin" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
   });
 
-  const selectedProject = useMemo(
-    () => projects.find((p: ApiProject) => p.id === selectedProjectId) || null,
-    [projects, selectedProjectId]
-  );
-  const selectedTower = useMemo(
-    () => towers.find((t: ApiTower) => t.id === selectedTowerId) || null,
-    [towers, selectedTowerId]
-  );
-  const selectedFloor = useMemo(
-    () => floors.find((f: ApiFloor) => f.id === selectedFloorId) || null,
-    [floors, selectedFloorId]
-  );
+  const toggleChecklistItemMutation = useMutation({
+    mutationFn: ({ taskId, itemId }: { taskId: number; itemId: number }) =>
+      tasksApi.toggleChecklistItem(taskId, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast({ title: "Checklist item updated" });
+    },
+  });
 
-  // Global task counts by status, shown as clickable summary blocks above
-  // the twin — clicking one jumps to the Tasks page pre-filtered to that
-  // status.
-  const taskCounts = useMemo(() => {
-    return {
-      not_started: tasks.filter((t: ApiTask) => t.status === "not_started").length,
-      in_progress: tasks.filter((t: ApiTask) => t.status === "in_progress").length,
-      completed: tasks.filter((t: ApiTask) => t.status === "completed").length,
-      delayed: tasks.filter((t: ApiTask) => t.status === "delayed").length,
-    };
-  }, [tasks]);
-
-  const goToTasksFilteredBy = (status: string) => {
-    navigate("/tasks", { state: { statusFilter: status } });
+  // Master refresh
+  const handleRefresh = async () => {
+    await Promise.all([
+      refetchProjects(),
+      refetchTowers(),
+      refetchFloors(),
+      refetchUnits(),
+      refetchTasks(),
+      refetchChecklists(),
+      refetchSubtasks(),
+    ]);
+    toast({ title: "Digital Twin refreshed with live database data" });
   };
 
-  const goBack = () => {
-    if (view === "units") {
-      setView("floors");
-      setSelectedFloorId(null);
-    } else if (view === "floors") {
-      setView("towers");
-      setSelectedTowerId(null);
-    } else if (view === "towers") {
-      setView("projects");
-      setSelectedProjectId(null);
-    }
-  };
-
-  const breadcrumb = () => {
-    const parts: string[] = ["Digital Twin"];
-    if (selectedProject) parts.push(selectedProject.name);
-    if (selectedTower) parts.push(selectedTower.name);
-    if (selectedFloor) parts.push(selectedFloor.name);
-    return parts;
-  };
-
-  if (isLoading) {
-    return <p className="text-center text-muted-foreground py-16">Loading digital twin…</p>;
+  if (isLoading && projects.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <div className="h-10 w-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-muted-foreground animate-pulse">
+          Building dynamic Digital Twin from database...
+        </p>
+      </div>
+    );
   }
 
   if (projectsError) {
     return (
-      <p className="text-center text-destructive py-16">
-        Couldn't load digital twin
-        {projectsErrorObj instanceof ApiError ? `: ${projectsErrorObj.message}` : ""}. Is the
-        backend running?
-      </p>
+      <Card className="max-w-lg mx-auto my-16 p-6 text-center space-y-4 border-destructive/40">
+        <div className="h-12 w-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+          <Building2 className="h-6 w-6" />
+        </div>
+        <CardContent className="space-y-2 p-0">
+          <h3 className="font-display font-bold text-lg">Failed to load Digital Twin</h3>
+          <p className="text-sm text-muted-foreground">
+            {projectsErrorObj instanceof ApiError
+              ? projectsErrorObj.message
+              : "Backend connection error. Please ensure the backend server is running."}
+          </p>
+          <Button onClick={() => refetchProjects()} variant="outline" className="mt-4">
+            Retry Connection
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        {view !== "projects" && (
-          <Button variant="ghost" size="icon" onClick={goBack} className="h-9 w-9">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        )}
-        <div>
-          <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
-            {breadcrumb().map((part, i) => (
-              <span key={i} className="flex items-center gap-1">
-                {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
-                <span className={i === breadcrumb().length - 1 ? "text-foreground font-medium" : ""}>
-                  {part}
-                </span>
-              </span>
-            ))}
-          </div>
-          <h1 className="font-display text-2xl md:text-3xl font-bold">Execution Map</h1>
-        </div>
-      </div>
+    <div className="space-y-4 pb-12">
+      {/* 1. Top Section: Project Selector, Information & Aggregate Rollup Metrics */}
+      <DigitalTwinHeader
+        projects={projects}
+        selectedProjectId={selectedProjectId}
+        onSelectProject={handleSelectProject}
+        projectRollup={projectRollup}
+        isRefreshing={isLoading}
+        onRefresh={handleRefresh}
+      />
 
-      {/* Task status summary — clickable, jumps to Tasks page filtered by status */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
-        <button
-          type="button"
-          onClick={() => goToTasksFilteredBy("not_started")}
-          className="text-left p-4 rounded-lg border bg-muted border-border hover:shadow-md transition-shadow"
-        >
-          <p className="text-2xl font-display font-bold text-muted-foreground">{taskCounts.not_started}</p>
-          <p className="text-xs text-muted-foreground mt-1">Not Started</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => goToTasksFilteredBy("in_progress")}
-          className="text-left p-4 rounded-lg border bg-warning/10 border-warning/30 hover:shadow-md transition-shadow"
-        >
-          <p className="text-2xl font-display font-bold text-warning">{taskCounts.in_progress}</p>
-          <p className="text-xs text-muted-foreground mt-1">In Progress</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => goToTasksFilteredBy("completed")}
-          className="text-left p-4 rounded-lg border bg-success/10 border-success/30 hover:shadow-md transition-shadow"
-        >
-          <p className="text-2xl font-display font-bold text-success">{taskCounts.completed}</p>
-          <p className="text-xs text-muted-foreground mt-1">Completed</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => goToTasksFilteredBy("delayed")}
-          className="text-left p-4 rounded-lg border bg-destructive/10 border-destructive/30 hover:shadow-md transition-shadow"
-        >
-          <p className="text-2xl font-display font-bold text-destructive">{taskCounts.delayed}</p>
-          <p className="text-xs text-muted-foreground mt-1">Delayed</p>
-        </button>
-      </div>
+      {/* 2. Main Section: Toolbar with Visualization Filters & Camera Controls */}
+      {projectRollup && (
+        <DigitalTwinToolbar
+          visualizationMode={visualizationMode}
+          onVisualizationModeChange={setVisualizationMode}
+          towers={projectRollup.towers}
+          isolatedTowerId={isolatedTowerId}
+          onIsolatedTowerChange={setIsolatedTowerId}
+          explosionFactor={explosionFactor}
+          onExplosionFactorChange={setExplosionFactor}
+          isXRayMode={isXRayMode}
+          onToggleXRay={() => setIsXRayMode((prev) => !prev)}
+          onCameraPreset={setCameraPreset}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+        />
+      )}
 
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-4">
-        {[
-          { label: "Completed", color: "bg-success" },
-          { label: "In Progress", color: "bg-warning" },
-          { label: "Delayed / Blocked", color: "bg-destructive" },
-          { label: "Not Started", color: "bg-muted-foreground/30" },
-        ].map((item) => (
-          <div key={item.label} className="flex items-center gap-2 text-sm">
-            <div className={`h-3 w-3 rounded-sm ${item.color}`} />
-            <span className="text-muted-foreground">{item.label}</span>
-          </div>
-        ))}
-        <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto">
-          <Pencil className="h-3 w-3" /> Click any progress bar with a pencil icon to edit
-        </span>
-      </div>
-
-      {/* Projects View */}
-      {view === "projects" && (
-        <>
-          {projects.length === 0 ? (
-            <Card>
-              <CardContent className="p-6 text-sm text-muted-foreground text-center">
-                No projects yet. Create one from the Projects page or import one via a document
-                upload.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {projects.map((project: ApiProject) => {
-                const pTowers = towers.filter((t: ApiTower) => t.projectId === project.id);
-                return (
-                  <Card
-                    key={project.id}
-                    className="cursor-pointer hover:shadow-md transition-shadow"
-                    onClick={() => {
-                      setSelectedProjectId(project.id);
-                      setView("towers");
+      {/* 3. Core Viewport & Details Inspector Panel */}
+      {projectRollup && projectRollup.towers.length > 0 ? (
+        <div className="relative">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start min-h-[550px]">
+            {/* Viewport Area */}
+            <div
+              className={`transition-all duration-300 ${
+                isDetailsOpen ? "lg:col-span-8 xl:col-span-8" : "lg:col-span-12"
+              } h-[550px] sm:h-[620px] lg:h-[680px] w-full`}
+            >
+              <ViewportErrorBoundary fallbackTitle="Digital Twin Viewport Notice">
+                {viewMode === "2d" ? (
+                  <DigitalTwin2DElevation
+                    projectRollup={projectRollup}
+                    visualizationMode={visualizationMode}
+                    selection={selection}
+                    onSelect={(sel) => {
+                      handleSelect(sel);
+                      setMobileDrawerOpen(true);
                     }}
-                  >
-                    <CardContent className="p-5 space-y-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-11 w-11 rounded-xl bg-muted/60 border flex items-center justify-center shrink-0 p-1 overflow-hidden">
-                          {resolveImageUrl(project.organizationLogo) ? (
-                            <img
-                              src={resolveImageUrl(project.organizationLogo)!}
-                              alt={project.organizationName || project.name}
-                              className="w-full h-full object-contain"
-                              onError={(e) => {
-                                (e.currentTarget as HTMLElement).style.display = 'none';
-                                e.currentTarget.parentElement?.querySelector('.fallback-icon')?.classList.remove('hidden');
-                              }}
-                            />
-                          ) : null}
-                          <Building2 className={`h-5 w-5 text-primary fallback-icon ${resolveImageUrl(project.organizationLogo) ? 'hidden' : ''}`} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="font-display font-bold truncate">{project.name}</h3>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {[project.organizationName, project.location].filter(Boolean).join(" · ") || "No organization"}
-                          </p>
-                        </div>
-                      </div>
-                      <EditableProgress
-                        value={project.progress}
-                        saving={updateProjectProgress.isPending}
-                        onSave={(v) => updateProjectProgress.mutate({ id: project.id, progress: v })}
+                  />
+                ) : viewMode === "map" ? (
+                  <DigitalTwinMapViewer
+                    projectRollup={projectRollup}
+                    selection={selection}
+                    onSelect={(sel) => {
+                      handleSelect(sel);
+                      setMobileDrawerOpen(true);
+                    }}
+                    onProjectUpdated={() => {
+                      refetchProjects();
+                      toast({ title: "Project location updated on Digital Twin" });
+                    }}
+                  />
+                ) : viewMode === "split" ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 h-full w-full">
+                    <div className="h-[270px] md:h-full rounded-xl overflow-hidden border border-border">
+                      <DigitalTwinCanvas3D
+                        projectRollup={projectRollup}
+                        visualizationMode={visualizationMode}
+                        selection={selection}
+                        onSelect={(sel) => {
+                          handleSelect(sel);
+                          setMobileDrawerOpen(true);
+                        }}
+                        isolatedTowerId={isolatedTowerId}
+                        explosionFactor={explosionFactor}
+                        isXRayMode={isXRayMode}
+                        cameraPreset={cameraPreset}
                       />
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">{pTowers.length} Towers</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Towers View */}
-      {view === "towers" && selectedProject && (
-        <>
-          {towers.filter((t: ApiTower) => t.projectId === selectedProject.id).length === 0 ? (
-            <Card>
-              <CardContent className="p-6 text-sm text-muted-foreground text-center">
-                No towers mapped yet for this project.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid md:grid-cols-2 gap-6">
-              {towers
-                .filter((t: ApiTower) => t.projectId === selectedProject.id)
-                .map((tower: ApiTower) => {
-                  const tFloors = floors.filter((f: ApiFloor) => f.towerId === tower.id);
-                  const towerTasks = tasks.filter((t: ApiTask) => t.towerId === tower.id);
-                  const towerComputedProgress = computeAvgProgress(towerTasks);
-
-                  return (
-                    <Card key={tower.id}>
-                      <CardHeader className="pb-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="font-display">{tower.name}</CardTitle>
-                          <Badge variant="secondary">{tower.status}</Badge>
-                        </div>
-                        <ComputedProgress value={towerComputedProgress} />
-                        <p className="text-[11px] text-muted-foreground">
-                          {towerTasks.length} tasks · auto-calculated — edit a task below to change it
-                        </p>
-                      </CardHeader>
-                      <CardContent>
-                        {tFloors.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">
-                            No floors mapped yet for this tower ({tower.totalFloors} expected).
-                          </p>
-                        ) : (
-                          <div className="flex flex-col-reverse gap-2">
-                            {tFloors
-                              .sort((a, b) => b.number - a.number)
-                              .map((floor) => {
-                                const floorTasks = tasks.filter((t: ApiTask) => t.floorId === floor.id);
-                                const completed = floorTasks.filter((t) => t.status === "completed").length;
-                                const total = floorTasks.length;
-                                const floorStatus = aggregateStatus(floorTasks);
-                                const floorProgress = computeAvgProgress(floorTasks);
-
-                                return (
-                                  <button
-                                    key={floor.id}
-                                    onClick={() => {
-                                      setSelectedTowerId(tower.id);
-                                      setSelectedFloorId(floor.id);
-                                      setView("units");
-                                    }}
-                                    className={`w-full text-left p-3 rounded-lg border transition-colors hover:shadow-sm space-y-1.5 ${getBgColor(
-                                      floorStatus
-                                    )}`}
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <Layers className="h-4 w-4 text-muted-foreground" />
-                                        <span className="text-sm font-medium">{floor.name}</span>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-xs text-muted-foreground">
-                                          {completed}/{total} tasks
-                                        </span>
-                                        <div className={`h-2.5 w-2.5 rounded-full ${getStatusDot(floorStatus)}`} />
-                                      </div>
-                                    </div>
-                                    <ComputedProgress value={floorProgress} barClassName="h-1.5" />
-                                  </button>
-                                );
-                              })}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Units / Floor View */}
-      {view === "units" && selectedFloor && (
-        <div className="space-y-6">
-          {/* Floor summary — computed rollup, tap a task below to change it */}
-          {(() => {
-            const allFloorTasks = tasks.filter((t: ApiTask) => t.floorId === selectedFloor.id);
-            const floorProgress = computeAvgProgress(allFloorTasks);
-            const completed = allFloorTasks.filter((t) => t.status === "completed").length;
-            const floorStatus = aggregateStatus(allFloorTasks);
-            return (
-              <Card>
-                <CardContent className="p-5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Layers className="h-4 w-4 text-primary" />
-                      <span className="font-display font-bold">{selectedFloor.name}</span>
-                      {selectedTower && (
-                        <span className="text-xs text-muted-foreground">· {selectedTower.name}</span>
-                      )}
                     </div>
-                    <div className={`h-2.5 w-2.5 rounded-full ${getStatusDot(floorStatus)}`} />
+                    <div className="h-[270px] md:h-full rounded-xl overflow-hidden border border-border">
+                      <DigitalTwinMapViewer
+                        projectRollup={projectRollup}
+                        selection={selection}
+                        onSelect={(sel) => {
+                          handleSelect(sel);
+                          setMobileDrawerOpen(true);
+                        }}
+                        onProjectUpdated={() => {
+                          refetchProjects();
+                          toast({ title: "Project location updated on Digital Twin" });
+                        }}
+                      />
+                    </div>
                   </div>
-                  <ComputedProgress value={floorProgress} barClassName="h-2.5" />
-                  <p className="text-[11px] text-muted-foreground">
-                    {completed}/{allFloorTasks.length} tasks completed · auto-calculated — edit a
-                    task below to change it
-                  </p>
-                </CardContent>
-              </Card>
-            );
-          })()}
+                ) : (
+                  <DigitalTwinCanvas3D
+                    projectRollup={projectRollup}
+                    visualizationMode={visualizationMode}
+                    selection={selection}
+                    onSelect={(sel) => {
+                      handleSelect(sel);
+                      setMobileDrawerOpen(true);
+                    }}
+                    isolatedTowerId={isolatedTowerId}
+                    explosionFactor={explosionFactor}
+                    isXRayMode={isXRayMode}
+                    cameraPreset={cameraPreset}
+                  />
+                )}
+              </ViewportErrorBoundary>
+            </div>
 
-          {/* Unit cards — derived purely from distinct unitIds on this floor's
-              tasks, since there's no separate units endpoint. */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from(
-              new Set(
-                tasks
-                  .filter((t: ApiTask) => t.floorId === selectedFloor.id && t.unitId !== null)
-                  .map((t) => t.unitId as number)
-              )
-            ).map((unitId) => {
-              const unitTasks = tasks.filter(
-                (t: ApiTask) => t.floorId === selectedFloor.id && t.unitId === unitId
-              );
-              const unitProgress = computeAvgProgress(unitTasks);
-              const unitStatus = aggregateStatus(unitTasks);
-              return (
-                <Card key={unitId}>
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Grid3X3 className="h-4 w-4 text-primary" />
-                        <span className="font-medium text-sm">Unit #{unitId}</span>
-                      </div>
-                      <div className={`h-2.5 w-2.5 rounded-full ${getStatusDot(unitStatus)}`} />
-                    </div>
-                    <ComputedProgress value={unitProgress} barClassName="h-1.5" />
-                    <div className="space-y-2">
-                      {unitTasks.map((task) => (
-                        <div key={task.id} className={`p-2 rounded-md border text-xs space-y-1 ${getBgColor(task.status)}`}>
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium truncate">{task.title}</span>
-                            <div className={`h-2 w-2 rounded-full shrink-0 ${getStatusDot(task.status)}`} />
-                          </div>
-                          <EditableProgress
-                            value={task.progress}
-                            barClassName="h-1"
-                            saving={updateTaskProgress.isPending}
-                            onSave={(v) => updateTaskProgress.mutate({ id: task.id, progress: v })}
-                          />
-                          <p className="text-muted-foreground">{task.department}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-            {tasks.filter((t: ApiTask) => t.floorId === selectedFloor.id && t.unitId !== null).length === 0 && (
-              <Card className="md:col-span-2 lg:col-span-4">
-                <CardContent className="p-6 text-sm text-muted-foreground text-center">
-                  No unit-level tasks assigned on this floor.
-                </CardContent>
-              </Card>
+            {/* Desktop Details Panel */}
+            {isDetailsOpen && (
+              <div className="hidden lg:block lg:col-span-4 xl:col-span-4 h-[680px] sticky top-4">
+                <DigitalTwinDetailsPanel
+                  projectRollup={projectRollup}
+                  selection={selection}
+                  onSelect={handleSelect}
+                  onClose={() => setIsDetailsOpen(false)}
+                  onUpdateTaskProgress={(id, progress) =>
+                    updateTaskProgressMutation.mutate({ id, progress })
+                  }
+                  onToggleChecklistItem={(taskId, itemId) =>
+                    toggleChecklistItemMutation.mutate({ taskId, itemId })
+                  }
+                  users={users}
+                />
+              </div>
             )}
           </div>
 
-          {/* Floor-level tasks (not unit-specific) */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg font-display">Floor-Level Tasks</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {tasks
-                  .filter((t: ApiTask) => t.floorId === selectedFloor.id && !t.unitId)
-                  .map((task) => (
-                    <div
-                      key={task.id}
-                      className={`flex items-center gap-3 p-3 rounded-lg border ${getBgColor(task.status)}`}
-                    >
-                      <div className={`h-3 w-3 rounded-full shrink-0 ${getStatusDot(task.status)}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{task.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {task.department} · {statusLabels[task.status as keyof typeof statusLabels]}
-                        </p>
-                      </div>
-                      <div className="w-40 shrink-0">
-                        <EditableProgress
-                          value={task.progress}
-                          barClassName="h-1.5"
-                          saving={updateTaskProgress.isPending}
-                          onSave={(v) => updateTaskProgress.mutate({ id: task.id, progress: v })}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                {tasks.filter((t: ApiTask) => t.floorId === selectedFloor.id && !t.unitId).length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No floor-level tasks yet.
-                  </p>
-                )}
+          {/* Mobile / Tablet Floating Trigger Bar */}
+          <div className="lg:hidden mt-3 flex items-center justify-between gap-2 p-3 bg-card border border-border rounded-xl shadow-sm">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-foreground truncate">
+                Scope: {selection.scope.toUpperCase()}{" "}
+                {selection.towerId ? `(Tower #${selection.towerId})` : ""}
+              </p>
+              <p className="text-[11px] text-muted-foreground truncate">
+                Tap to view hierarchy & task checklist
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => setMobileDrawerOpen(true)}
+              className="gap-1.5 text-xs shrink-0"
+            >
+              <PanelRightOpen className="h-3.5 w-3.5" />
+              <span>Inspect Details</span>
+            </Button>
+          </div>
+
+          {/* Mobile / Tablet Slide-Over Drawer */}
+          {mobileDrawerOpen && (
+            <div className="fixed inset-0 z-50 lg:hidden flex flex-col justify-end bg-black/60 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-card border-t border-border rounded-t-2xl shadow-2xl h-[82vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300">
+                <div className="p-3 border-b border-border flex items-center justify-between shrink-0 bg-muted/40">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-primary" />
+                    <span className="font-bold text-sm">Hierarchy & Task Details</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setMobileDrawerOpen(false)}
+                    className="h-7 w-7 p-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                  <DigitalTwinDetailsPanel
+                    projectRollup={projectRollup}
+                    selection={selection}
+                    onSelect={handleSelect}
+                    onClose={() => setMobileDrawerOpen(false)}
+                    onUpdateTaskProgress={(id, progress) =>
+                      updateTaskProgressMutation.mutate({ id, progress })
+                    }
+                    onToggleChecklistItem={(taskId, itemId) =>
+                      toggleChecklistItemMutation.mutate({ taskId, itemId })
+                    }
+                    users={users}
+                  />
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          )}
         </div>
+      ) : projectRollup && projectRollup.towers.length === 0 ? (
+        /* Empty state when project has no towers/floors created yet (Requirement 2 & 8: handle missing hierarchy without inventing fake data) */
+        <Card className="py-16 text-center border-dashed border-2">
+          <CardContent className="space-y-4 max-w-md mx-auto">
+            <div className="h-14 w-14 rounded-2xl bg-muted/60 border flex items-center justify-center mx-auto text-muted-foreground">
+              <Building2 className="h-7 w-7" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-display font-bold text-lg">No Towers Mapped Yet</h3>
+              <p className="text-xs text-muted-foreground">
+                Project &ldquo;{projectRollup.project.name}&rdquo; does not currently have any
+                towers or building levels defined in the system. The 3D Digital Twin will
+                dynamically generate once structural records are added.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => navigate("/category-management")}
+                className="gap-1.5 text-xs"
+              >
+                <Layers className="h-3.5 w-3.5" />
+                <span>Configure Towers & Floors</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("/documents")}
+                className="gap-1.5 text-xs"
+              >
+                <FileUp className="h-3.5 w-3.5" />
+                <span>Import via Documents</span>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="py-16 text-center">
+          <CardContent className="space-y-2">
+            <p className="text-sm text-muted-foreground">Select a project to view its Digital Twin.</p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

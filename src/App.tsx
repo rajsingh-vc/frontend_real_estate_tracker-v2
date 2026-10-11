@@ -82,13 +82,13 @@ function AppRoutes() {
                 <Route path="/hurdles" element={<HurdleTracker />} />
                 <Route path="/resources" element={<Resources />} />
                 <Route path="/checklists" element={<Checklists />} />
-                <Route path="/category-management" element={<CategoryManagement />} />
+                <Route path="/category-management" element={<AdminRoute><CategoryManagement /></AdminRoute>} />
                 <Route path="/compliance" element={<Compliance />} />
                 <Route path="/handover" element={<Handover />} />
                 <Route path="/society" element={<Society />} />
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/reports" element={<Reports />} />
-                <Route path="/ai-assistant" element={<AIAssistant />} />
+                <Route path="/ai-assistant" element={<AdminRoute><AIAssistant /></AdminRoute>} />
                 <Route path="/delay-prediction" element={<DelayPrediction />} />
                 <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
                 {/* 404 catch-all inside protected area */}

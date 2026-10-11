@@ -19,6 +19,10 @@ import {
   Check,
   CheckCircle2,
   Mail,
+  Eye,
+  RotateCw,
+  AlertTriangle,
+  FolderGit2,
 } from "lucide-react";
 import {
   usersApi,
@@ -27,6 +31,7 @@ import {
   companyApi,
   entityApi,
   invitationsApi,
+  projectsApi,
   type User,
   type UserUpdatePayload,
   type ApiEscalationRule,
@@ -39,10 +44,12 @@ import {
   type EntityPayload,
   type Invitation,
   type InvitationPayload,
+  type ApiProject,
   type statusesApi,
   resolveImageUrl,
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { UserProfileModal } from "@/components/layout/UserProfileModal";
 
 type TabKey = "users" | "escalation" | "settings";
 
@@ -182,13 +189,16 @@ function UsersTab({ currentUser }: { currentUser: User }) {
   const [invitesByEmail, setInvitesByEmail] = useState<Map<string, Invitation>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [showInviteUser, setShowInviteUser] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [viewingProfileUser, setViewingProfileUser] = useState<User | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [resendingId, setResendingId] = useState<number | null>(null);
 
   // Only SuperAdmin or an Admin whose Role actually carries
-  // 'can_manage_users' may invite people — this used to be shown to
-  // whoever could merely reach the Admin page, which was itself ungated.
+  // 'can_manage_users' may invite people
   const canInvite = currentUser.is_superuser || currentUser.can_manage_users;
 
   async function loadUsers() {
@@ -211,16 +221,18 @@ function UsersTab({ currentUser }: { currentUser: User }) {
     loadUsers();
   }, []);
 
-  // Manual override for admins: flips the account's is_active flag
-  // directly. Note that getUserActivity() will still report "Inactive"
-  // for a user whose invite is pending/expired/revoked even if this sets
-  // is_active to true — the invite state always wins, since that's the
-  // real signal for "did they accept".
   async function handleToggleActive(user: User) {
     setTogglingId(user.id);
     setError(null);
+    setActionSuccess(null);
     try {
-      await usersApi.update(user.id, { is_active: !user.is_active });
+      if (user.is_active) {
+        await usersApi.disable(user.id);
+        setActionSuccess(`User account "${user.name}" disabled and active sessions revoked.`);
+      } else {
+        await usersApi.enable(user.id);
+        setActionSuccess(`User account "${user.name}" re-enabled successfully.`);
+      }
       await loadUsers();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update user status");
@@ -229,10 +241,32 @@ function UsersTab({ currentUser }: { currentUser: User }) {
     }
   }
 
+  async function handleResendInvite(user: User) {
+    const invite = invitesByEmail.get(user.email.trim().toLowerCase());
+    if (!invite) return;
+    setResendingId(user.id);
+    setError(null);
+    setActionSuccess(null);
+    try {
+      await invitationsApi.resend(invite.id);
+      setActionSuccess(`Invitation email resent to ${user.email}.`);
+      await loadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resend invitation");
+    } finally {
+      setResendingId(null);
+    }
+  }
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">User Management</h2>
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">User Management</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Manage user accounts, roles, access permissions, and invitation lifecycle
+          </p>
+        </div>
         {canInvite && (
           <button
             onClick={() => setShowInviteUser(true)}
@@ -244,12 +278,24 @@ function UsersTab({ currentUser }: { currentUser: User }) {
         )}
       </div>
 
+      {actionSuccess && (
+        <div className="mb-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <CheckCircle2 size={15} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span>{actionSuccess}</span>
+          </span>
+          <button onClick={() => setActionSuccess(null)} className="text-emerald-600 hover:text-emerald-800">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {loading && <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">Loading users…</p>}
       {error && <p className="text-sm text-red-600 dark:text-red-400 py-6 text-center">{error}</p>}
 
       {!loading && !error && (
         <div className="overflow-x-auto border border-gray-100 dark:border-border rounded-xl">
-          <table className="w-full text-left">
+          <table className="w-full text-left text-xs sm:text-sm">
             <thead>
               <tr className="border-b border-gray-100 dark:border-border bg-gray-50/60 dark:bg-muted/50">
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -262,12 +308,21 @@ function UsersTab({ currentUser }: { currentUser: User }) {
                   Role
                 </th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Status
+                  Organization
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Assigned Projects
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Account Status
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Invitation
                 </th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Last Login
                 </th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 text-right">
                   Actions
                 </th>
               </tr>
@@ -275,82 +330,192 @@ function UsersTab({ currentUser }: { currentUser: User }) {
             <tbody>
               {users.map((user, index) => {
                 const lastLogin = formatLastLogin(user.last_login);
-                const activity = getUserActivity(user, invitesByEmail);
                 const isToggling = togglingId === user.id;
+                const isResending = resendingId === user.id;
+                const matchingInvite = invitesByEmail.get(user.email.trim().toLowerCase());
+                const inviteStatus = matchingInvite ? matchingInvite.status : user.invitation_status || "accepted";
+                const isPendingInvite = inviteStatus === "pending" || inviteStatus === "expired";
+
                 return (
                   <tr
                     key={user.id}
                     className="border-b border-gray-100 dark:border-border last:border-b-0 hover:bg-gray-50/60 dark:hover:bg-muted/30 transition-colors"
                   >
+                    {/* 1. User Full Name & Username */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div
-                          className={`w-10 h-10 rounded-full font-semibold flex items-center justify-center text-sm shrink-0 ${
+                          className={`w-9 h-9 rounded-full font-semibold flex items-center justify-center text-xs shrink-0 ${
                             AVATAR_COLORS[index % AVATAR_COLORS.length]
                           }`}
                         >
-                          {initials(user.name)}
+                          {initials(user.name || user.username)}
                         </div>
-                        <div>
-                          <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{user.name}</p>
-                          <p className="text-gray-400 dark:text-gray-500 text-xs">ID: USR-{String(user.id).padStart(4, "0")}</p>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate">
+                            {user.name || "—"}
+                          </p>
+                          <p className="text-gray-500 dark:text-gray-400 text-xs">@{user.username}</p>
+                          <span className="text-[10px] text-gray-400 dark:text-gray-500">ID: USR-{String(user.id).padStart(4, "0")}</span>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{user.email}</td>
+
+                    {/* 2. Email Address */}
+                    <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
+                      {user.email || "—"}
+                    </td>
+
+                    {/* 3. Assigned Role */}
                     <td className="px-4 py-3">
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${roleBadgeClasses(user.role)}`}
+                        className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${roleBadgeClasses(user.role)}`}
                       >
-                        {user.role}
+                        {user.is_superuser ? "Super Admin" : user.role || "User"}
                       </span>
                     </td>
+
+                    {/* 4. Organization */}
+                    <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
+                      {user.company_name || "Primary Tenant"}
+                    </td>
+
+                    {/* 5. Assigned Projects */}
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300">
+                      {user.assigned_projects && user.assigned_projects.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 max-w-[180px]">
+                          {user.assigned_projects.slice(0, 2).map((p, pIdx) => {
+                            const name = typeof p === "string" ? p : String((p as any)?.name ?? p);
+                            return (
+                              <span
+                                key={pIdx}
+                                className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 truncate max-w-[100px]"
+                                title={name}
+                              >
+                                {name}
+                              </span>
+                            );
+                          })}
+                          {user.assigned_projects.length > 2 && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 dark:bg-secondary text-gray-600 dark:text-gray-400">
+                              +{user.assigned_projects.length - 2}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400 dark:text-gray-500 italic">All Projects</span>
+                      )}
+                    </td>
+
+                    {/* 6. Account Status (Active / Disabled) */}
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          user.is_active
+                            ? "bg-green-50 text-green-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40"
+                            : "bg-red-50 text-red-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/40"
+                        }`}
+                      >
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${
-                            activity === "active" ? "bg-green-500 shadow-sm shadow-green-500/50" : "bg-gray-400 dark:bg-gray-500"
+                            user.is_active ? "bg-green-500" : "bg-red-500"
                           }`}
                         />
-                        {activity === "active" ? "Active" : "Inactive"}
+                        {user.is_active ? "Active" : "Disabled"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+
+                    {/* 7. Invitation Status */}
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-[11px] font-medium capitalize ${
+                          inviteStatus === "accepted"
+                            ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                            : inviteStatus === "pending"
+                            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                            : "bg-gray-100 text-gray-600 dark:bg-secondary dark:text-gray-400"
+                        }`}
+                      >
+                        {inviteStatus}
+                      </span>
+                    </td>
+
+                    {/* 8. Last Login */}
+                    <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap">
                       {typeof lastLogin === "string" ? (
                         lastLogin
                       ) : (
                         <>
-                          {lastLogin.datePart}
-                          <br />
-                          {lastLogin.timePart}
+                          <span>{lastLogin.datePart}</span>
+                          <span className="text-[10px] text-gray-400 block">{lastLogin.timePart}</span>
                         </>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+
+                    {/* 9. Action Buttons */}
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {/* View Profile */}
+                        <button
+                          type="button"
+                          onClick={() => setViewingProfileUser(user)}
+                          className="p-1.5 rounded-md border border-gray-200 dark:border-border text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-muted transition-colors"
+                          title="View Profile Details"
+                          aria-label={`View ${user.name} profile`}
+                        >
+                          <Eye size={14} />
+                        </button>
+
+                        {/* Edit Role & Permissions */}
                         <button
                           type="button"
                           onClick={() => setEditingUser(user)}
-                          className="p-1.5 rounded-md border border-blue-200 dark:border-blue-800/60 bg-transparent dark:bg-secondary/40 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/60 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-colors"
+                          className="p-1.5 rounded-md border border-blue-200 dark:border-blue-800/60 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/60 transition-colors"
+                          title="Edit User Role & Permissions"
                           aria-label={`Edit ${user.name}`}
                         >
                           <Pencil size={14} />
                         </button>
+
+                        {/* Toggle Disable / Enable Account */}
                         <button
                           type="button"
                           onClick={() => handleToggleActive(user)}
                           disabled={isToggling}
-                          className={`p-1.5 rounded-md border transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-                            activity === "active"
-                              ? "border-green-200 dark:border-emerald-800/60 bg-transparent dark:bg-secondary/40 text-green-600 dark:text-emerald-400 hover:bg-green-50 dark:hover:bg-emerald-950/60"
-                              : "border-gray-200 dark:border-border bg-transparent dark:bg-secondary/40 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-muted"
+                          className={`p-1.5 rounded-md border transition-colors disabled:opacity-50 ${
+                            user.is_active
+                              ? "border-green-200 dark:border-emerald-800/60 text-green-600 dark:text-emerald-400 hover:bg-green-50 dark:hover:bg-emerald-950/60"
+                              : "border-gray-200 dark:border-border text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-muted"
                           }`}
-                          aria-label={
-                            activity === "active" ? `Deactivate ${user.name}` : `Activate ${user.name}`
-                          }
-                          title={activity === "active" ? "Deactivate user" : "Activate user"}
+                          title={user.is_active ? "Disable user access" : "Re-enable user access"}
+                          aria-label={user.is_active ? `Disable ${user.name}` : `Enable ${user.name}`}
                         >
-                          {activity === "active" ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                          {user.is_active ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                        </button>
+
+                        {/* Resend Invitation (if pending) */}
+                        {isPendingInvite && matchingInvite && (
+                          <button
+                            type="button"
+                            onClick={() => handleResendInvite(user)}
+                            disabled={isResending}
+                            className="p-1.5 rounded-md border border-amber-200 dark:border-amber-800/60 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/60 transition-colors disabled:opacity-50"
+                            title="Resend Invitation Email"
+                            aria-label={`Resend invite to ${user.email}`}
+                          >
+                            <RotateCw size={14} className={isResending ? "animate-spin" : ""} />
+                          </button>
+                        )}
+
+                        {/* Delete User */}
+                        <button
+                          type="button"
+                          onClick={() => setDeletingUser(user)}
+                          className="p-1.5 rounded-md border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/60 transition-colors"
+                          title="Delete / Deactivate User"
+                          aria-label={`Delete ${user.name}`}
+                        >
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>
@@ -360,7 +525,7 @@ function UsersTab({ currentUser }: { currentUser: User }) {
             </tbody>
           </table>
           {users.length === 0 && (
-            <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">No users yet.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">No users registered yet.</p>
           )}
         </div>
       )}
@@ -384,6 +549,28 @@ function UsersTab({ currentUser }: { currentUser: User }) {
           onSaved={() => {
             setEditingUser(null);
             loadUsers();
+          }}
+        />
+      )}
+
+      {deletingUser && (
+        <DeleteUserDialog
+          user={deletingUser}
+          currentUser={currentUser}
+          onClose={() => setDeletingUser(null)}
+          onDeleted={() => {
+            setDeletingUser(null);
+            loadUsers();
+          }}
+        />
+      )}
+
+      {viewingProfileUser && (
+        <UserProfileModal
+          user={viewingProfileUser}
+          open={!!viewingProfileUser}
+          onOpenChange={(open) => {
+            if (!open) setViewingProfileUser(null);
           }}
         />
       )}
@@ -614,12 +801,127 @@ function AddInvitationDialog({
   );
 }
 
-// ---- Edit User Dialog ----
-// Role/Department are dropdowns fetched from the API, scoped to the
-// selected organization. Organization is always an editable dropdown here
-// too (previously gated behind is_superuser, which caused it to render as
-// a disabled input for most accounts).
+// ---- Delete User Dialog ----
+function DeleteUserDialog({
+  user,
+  currentUser,
+  onClose,
+  onDeleted,
+}: {
+  user: User;
+  currentUser: User;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [permanent, setPermanent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  const isSelf = user.id === currentUser.id;
+
+  async function handleDelete() {
+    if (isSelf) {
+      setError("You cannot delete or deactivate your own account.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await usersApi.remove(user.id, permanent);
+      onDeleted();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove user");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+      <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+            <AlertTriangle size={20} />
+            <h3 className="text-lg font-bold">Remove User</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+            <X size={20} />
+          </button>
+        </div>
+
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          You are about to modify access for <strong className="text-gray-900 dark:text-gray-100">{user.name}</strong> ({user.email}).
+        </p>
+
+        <div className="space-y-3 bg-gray-50 dark:bg-secondary/40 p-3 rounded-xl border border-gray-100 dark:border-border text-xs">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="radio"
+              name="delete-type"
+              checked={!permanent}
+              onChange={() => setPermanent(false)}
+              className="mt-0.5 text-blue-600 focus:ring-blue-500"
+            />
+            <div>
+              <span className="font-semibold text-gray-900 dark:text-gray-100 block">
+                Deactivate Account (Recommended)
+              </span>
+              <span className="text-gray-500 dark:text-gray-400">
+                Immediately revokes session tokens and blocks future login. Preserves user assignment history, checklists, task logs, and comments without breaking historical records.
+              </span>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-2.5 cursor-pointer pt-2 border-t border-gray-200 dark:border-border">
+            <input
+              type="radio"
+              name="delete-type"
+              checked={permanent}
+              onChange={() => setPermanent(true)}
+              className="mt-0.5 text-red-600 focus:ring-red-500"
+            />
+            <div>
+              <span className="font-semibold text-red-600 dark:text-red-400 block">
+                Permanent Deletion
+              </span>
+              <span className="text-gray-500 dark:text-gray-400">
+                Permanently deletes the user record from the database. Only permitted if no active tasks or workflow ownership exist.
+              </span>
+            </div>
+          </label>
+        </div>
+
+        {isSelf && (
+          <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+            Warning: You cannot delete your own account while logged in.
+          </p>
+        )}
+
+        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-secondary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={submitting || isSelf}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {submitting ? "Processing…" : permanent ? "Permanently Delete" : "Deactivate User"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Edit User Dialog ----
 function EditUserDialog({
   user,
   currentUser,
@@ -638,6 +940,11 @@ function EditUserDialog({
   const [role, setRole] = useState(user.role);
   const [department, setDepartment] = useState(user.department);
   const [isActive, setIsActive] = useState(user.is_active);
+
+  const [projects, setProjects] = useState<ApiProject[]>([]);
+  const [assignedProjectIds, setAssignedProjectIds] = useState<number[]>(
+    user.assigned_project_ids || []
+  );
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [orgsLoading, setOrgsLoading] = useState(true);
@@ -664,6 +971,14 @@ function EditUserDialog({
       .finally(() => {
         if (!cancelled) setOrgsLoading(false);
       });
+
+    projectsApi
+      .list()
+      .then((projs) => {
+        if (!cancelled) setProjects(projs);
+      })
+      .catch(console.error);
+
     return () => {
       cancelled = true;
     };
@@ -690,6 +1005,7 @@ function EditUserDialog({
         role,
         department,
         company,
+        assigned_project_ids: assignedProjectIds,
       };
       await usersApi.update(user.id, payload);
       onSaved();
@@ -702,17 +1018,15 @@ function EditUserDialog({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4">
-      <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-xl w-full max-w-md p-6">
+      <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Edit User</h3>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Edit User & Role Permissions</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          {/* Horizontal (2-column) layout so related fields sit side by side
-              instead of stacking one per row. */}
+        <form onSubmit={handleSubmit} className="space-y-3.5">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Full name">
               <TextInput required value={name} onChange={(e) => setName(e.target.value)} />
@@ -761,6 +1075,39 @@ function EditUserDialog({
             {orgsError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{orgsError}</p>}
           </Field>
 
+          {/* Assigned Projects Multi-Select */}
+          <div>
+            <span className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1 flex items-center gap-1.5">
+              <FolderGit2 size={13} className="text-blue-600" />
+              <span>Assigned Projects Access</span>
+            </span>
+            <div className="max-h-32 overflow-y-auto p-2.5 rounded-lg border border-gray-200 dark:border-border bg-gray-50/50 dark:bg-secondary/40 space-y-1.5">
+              {projects.map((proj) => {
+                const checked = assignedProjectIds.includes(proj.id);
+                return (
+                  <label key={proj.id} className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer hover:text-gray-900 dark:hover:text-gray-100">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setAssignedProjectIds((prev) => [...prev, proj.id]);
+                        } else {
+                          setAssignedProjectIds((prev) => prev.filter((id) => id !== proj.id));
+                        }
+                      }}
+                      className="rounded border-gray-300 dark:border-border text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="truncate font-medium">{proj.name}</span>
+                  </label>
+                );
+              })}
+              {projects.length === 0 && (
+                <p className="text-[11px] text-gray-400 italic">No projects created yet.</p>
+              )}
+            </div>
+          </div>
+
           <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 pt-1">
             <input
               type="checkbox"
@@ -768,7 +1115,7 @@ function EditUserDialog({
               onChange={(e) => setIsActive(e.target.checked)}
               className="rounded border-gray-300 dark:border-border bg-white dark:bg-secondary text-blue-600 focus:ring-blue-500"
             />
-            Active
+            Active Account
           </label>
 
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
@@ -786,7 +1133,7 @@ function EditUserDialog({
               disabled={submitting}
               className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white disabled:opacity-50 transition-colors shadow-sm"
             >
-              {submitting ? "Saving…" : "Save"}
+              {submitting ? "Saving…" : "Save Changes"}
             </button>
           </div>
         </form>

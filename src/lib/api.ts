@@ -128,6 +128,9 @@ export interface User extends ApiUser {
   can_manage_roles: boolean;
   can_manage_departments: boolean;
   can_manage_organization: boolean;
+  assigned_projects?: string[];
+  assigned_project_ids?: number[];
+  invitation_status?: string;
 }
 
 export interface Company {
@@ -159,6 +162,11 @@ export interface ApiProject {
   id: number;
   name: string;
   location: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   status: string;
   startDate: string | null;
   endDate: string | null;
@@ -385,6 +393,11 @@ export interface NewTaskPayload {
 export interface ProjectPayload {
   name: string;
   location: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   status?: string;
   startDate?: string;
   endDate?: string;
@@ -467,9 +480,10 @@ export interface UserUpdatePayload {
   username?: string;
   email?: string;
   is_active?: boolean;
-  role?: string;
-  department?: string;
+  role?: string | number;
+  department?: string | number;
   company?: number | null;
+  assigned_project_ids?: number[];
 }
 
 export interface ApiEscalationRule {
@@ -549,6 +563,9 @@ export function normalizeUser(raw: any): User {
     can_manage_roles: raw.can_manage_roles ?? raw.canManageRoles ?? (raw.is_superuser ?? raw.isSuperuser ?? false),
     can_manage_departments: raw.can_manage_departments ?? raw.canManageDepartments ?? (raw.is_superuser ?? raw.isSuperuser ?? false),
     can_manage_organization: raw.can_manage_organization ?? raw.canManageOrganization ?? (raw.is_superuser ?? raw.isSuperuser ?? false),
+    assigned_projects: raw.assigned_projects ?? raw.assignedProjects ?? [],
+    assigned_project_ids: raw.assigned_project_ids ?? raw.assignedProjectIds ?? [],
+    invitation_status: raw.invitation_status ?? raw.invitationStatus ?? "Active",
   };
 }
 
@@ -626,7 +643,9 @@ export const usersApi = {
   list: async () => (await apiList<any>("/users/")).map(normalizeUser),
   create: async (payload: UserPayload) => normalizeUser(await apiPost<any>("/users/", payload)),
   update: async (id: number, data: UserUpdatePayload) => normalizeUser(await apiPatch<any>(`/users/${id}/`, data)),
-  remove: (id: number) => apiDelete(`/users/${id}/`),
+  disable: async (id: number) => normalizeUser(await apiPost<any>(`/users/${id}/disable/`)),
+  enable: async (id: number) => normalizeUser(await apiPost<any>(`/users/${id}/enable/`)),
+  remove: (id: number, permanent = false) => apiDelete(`/users/${id}/${permanent ? "?permanent=true" : ""}`),
 };
 
 export const companiesApi = {
@@ -647,6 +666,7 @@ export const escalationRulesApi = {
 
 export const projectsApi = {
   list: () => apiList<ApiProject>("/projects/"),
+  get: (id: number) => apiGet<ApiProject>(`/projects/${id}/`),
   create: (data: ProjectPayload) => apiPost<ApiProject>("/projects/", data),
   update: (id: number, data: Partial<ProjectPayload>) => apiPatch<ApiProject>(`/projects/${id}/`, data),
   remove: (id: number) => apiDelete(`/projects/${id}/`),

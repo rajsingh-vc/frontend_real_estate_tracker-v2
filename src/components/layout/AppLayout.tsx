@@ -7,8 +7,9 @@ import { MobileNav } from "./MobileNav";
 import { NotificationBell } from "./NotificationBell";
 import {
   Search, Camera, Clock, CheckCircle, LogOut, X,
-  Building2, Layers, ListChecks, AlertTriangle,
+  Building2, Layers, ListChecks, AlertTriangle, User as UserIcon,
 } from "lucide-react";
+import { UserProfileModal } from "./UserProfileModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -370,6 +371,7 @@ function ProfileMenu({ user, onLogout }: ProfileMenuProps) {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isStartingCamera, setIsStartingCamera] = useState(false); // NEW: loading for camera start
   const [isConfirming, setIsConfirming] = useState(false); // NEW: prevent double‑click
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   // Location states
   const [checkInLocation, setCheckInLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -646,8 +648,11 @@ function ProfileMenu({ user, onLogout }: ProfileMenuProps) {
           <DropdownMenuLabel className="font-normal">
             <div className="flex flex-col space-y-1">
               <p className="text-sm font-medium leading-none">{displayName}</p>
+              {user?.email && user.email.trim() && (
+                <p className="text-[11px] leading-none text-muted-foreground truncate">{user.email}</p>
+              )}
               {displayRole && (
-                <p className="text-xs leading-none text-muted-foreground">{displayRole}</p>
+                <p className="text-xs leading-none text-primary font-medium">{displayRole}</p>
               )}
               <p className="text-xs leading-none text-muted-foreground">
                 {isCheckedIn ? "✅ Checked In" : "⏳ Checked Out"}
@@ -655,6 +660,10 @@ function ProfileMenu({ user, onLogout }: ProfileMenuProps) {
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setProfileModalOpen(true)} className="cursor-pointer">
+            <UserIcon className="mr-2 h-4 w-4" />
+            <span>View Profile</span>
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => handleAction("in")} disabled={isCheckedIn}>
             <Camera className="mr-2 h-4 w-4" />
             <span>Check In</span>
@@ -822,6 +831,12 @@ function ProfileMenu({ user, onLogout }: ProfileMenuProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <UserProfileModal
+        user={user}
+        open={profileModalOpen}
+        onOpenChange={setProfileModalOpen}
+      />
     </>
   );
 }

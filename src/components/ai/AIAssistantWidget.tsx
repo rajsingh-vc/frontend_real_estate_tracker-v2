@@ -31,9 +31,14 @@ export function AIAssistantWidget({
   onOpenChange,
   showFloatingTrigger = true,
 }: AIAssistantWidgetProps) {
-  const { user } = useAuth();
+  const { user, isAdmin, isSuperAdmin } = useAuth();
   const [internalOpen, setInternalOpen] = useState(false);
   const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
+
+  // Restrict Document & Intelligence AI Assistant strictly to Admin and Super Admin
+  if (!isAdmin && !isSuperAdmin) {
+    return null;
+  }
 
   const setIsOpen = (value: boolean) => {
     if (controlledOpen === undefined) {
