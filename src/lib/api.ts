@@ -406,8 +406,8 @@ export interface ProjectPayload {
   reraNumber?: string;
   budget?: number;
   spent?: number;
-  organizationId: number;
-  companyId: number;
+  organizationId?: number;
+  companyId?: number;
   entityId?: number | null;
   // ✅ NEW — defaults server-side to "full"
   hierarchyMode?: "full" | "direct_task";
