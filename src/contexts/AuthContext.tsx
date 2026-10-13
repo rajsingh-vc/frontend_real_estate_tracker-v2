@@ -76,8 +76,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return !!localStorage.getItem(ACCESS_TOKEN_KEY);
   });
   const [user, setUser] = useState<User | null>(() => {
-    const stored = localStorage.getItem(USER_KEY);
-    return stored ? (JSON.parse(stored) as User) : null;
+    try {
+      const stored = localStorage.getItem(USER_KEY);
+      return stored ? (JSON.parse(stored) as User) : null;
+    } catch {
+      localStorage.removeItem(USER_KEY);
+      return null;
+    }
   });
   const [lastLoginError, setLastLoginError] = useState<string | null>(null);
 

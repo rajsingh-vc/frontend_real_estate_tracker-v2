@@ -26,6 +26,8 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import type { VisualizationMode } from "./types";
+
 interface DigitalTwinHeaderProps {
   projects: ApiProject[];
   selectedProjectId: number | null;
@@ -33,6 +35,9 @@ interface DigitalTwinHeaderProps {
   projectRollup: ProjectRollup | null;
   isRefreshing?: boolean;
   onRefresh?: () => void;
+  visualizationMode?: VisualizationMode;
+  onVisualizationModeChange?: (mode: VisualizationMode) => void;
+  onTowerClick?: () => void;
 }
 
 export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
@@ -42,6 +47,9 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
   projectRollup,
   isRefreshing,
   onRefresh,
+  visualizationMode,
+  onVisualizationModeChange,
+  onTowerClick,
 }) => {
   const selectedProject = projectRollup?.project;
 
@@ -124,11 +132,21 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
         </div>
       </div>
 
-      {/* Selected Project Meta & Metrics Cards */}
+      {/* Selected Project Meta & Metrics Cards - All Interactive & Clickable */}
       {selectedProject && projectRollup && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {/* 1. Overall Progress */}
-          <Card className="col-span-2 sm:col-span-1 bg-gradient-to-br from-card via-card to-primary/5 border-primary/20">
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => onVisualizationModeChange?.("overall")}
+            className={`col-span-2 sm:col-span-1 bg-gradient-to-br from-card via-card to-primary/5 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] select-none ${
+              visualizationMode === "overall"
+                ? "ring-2 ring-primary border-primary shadow-sm"
+                : "border-primary/20 hover:border-primary/50"
+            }`}
+            title="Click to color model by Overall Progress"
+          >
             <CardContent className="p-4 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-muted-foreground">Project Progress</span>
@@ -137,17 +155,26 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
               <Progress value={projectRollup.progress} className="h-2 bg-muted" />
               <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
                 <span className="capitalize">{projectRollup.status.replace("_", " ")}</span>
-                <span>Rollup aggregate</span>
+                <span className="text-[10px] text-primary font-medium">Filter View ↗</span>
               </div>
             </CardContent>
           </Card>
 
           {/* 2. Towers */}
-          <Card>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => onTowerClick?.()}
+            className="cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] select-none hover:border-sky-500/50"
+            title="Click to cycle or focus Tower views"
+          >
             <CardContent className="p-4 space-y-1">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Building2 className="h-3.5 w-3.5 text-sky-500" />
-                <span>Towers</span>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <Building2 className="h-3.5 w-3.5 text-sky-500" />
+                  <span>Towers</span>
+                </div>
+                <span className="text-[10px] text-sky-500 font-medium">Focus ↗</span>
               </div>
               <p className="text-2xl font-display font-bold text-foreground">
                 {projectRollup.towers.length}
@@ -159,11 +186,24 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
           </Card>
 
           {/* 3. Floors & Units */}
-          <Card>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => onVisualizationModeChange?.("unit_status")}
+            className={`cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] select-none ${
+              visualizationMode === "unit_status"
+                ? "ring-2 ring-indigo-500 border-indigo-500 shadow-sm"
+                : "hover:border-indigo-500/50"
+            }`}
+            title="Click to filter 3D model by Unit Inventory (Available / Sold / Blocked)"
+          >
             <CardContent className="p-4 space-y-1">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Layers className="h-3.5 w-3.5 text-indigo-500" />
-                <span>Floors / Units</span>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5 text-indigo-500" />
+                  <span>Floors / Units</span>
+                </div>
+                <span className="text-[10px] text-indigo-500 font-medium">Inventory ↗</span>
               </div>
               <p className="text-2xl font-display font-bold text-foreground">
                 {projectRollup.allFloors.length}{" "}
@@ -178,11 +218,24 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
           </Card>
 
           {/* 4. Total Tasks */}
-          <Card>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => onVisualizationModeChange?.("tasks")}
+            className={`cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] select-none ${
+              visualizationMode === "tasks"
+                ? "ring-2 ring-emerald-500 border-emerald-500 shadow-sm"
+                : "hover:border-emerald-500/50"
+            }`}
+            title="Click to filter 3D model by Task % completion"
+          >
             <CardContent className="p-4 space-y-1">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <CheckSquare className="h-3.5 w-3.5 text-emerald-500" />
-                <span>Tasks</span>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <CheckSquare className="h-3.5 w-3.5 text-emerald-500" />
+                  <span>Tasks</span>
+                </div>
+                <span className="text-[10px] text-emerald-500 font-medium">Task % ↗</span>
               </div>
               <p className="text-2xl font-display font-bold text-foreground">
                 {projectRollup.completedTasks}
@@ -199,11 +252,24 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
           </Card>
 
           {/* 5. Checklists & Subtasks */}
-          <Card>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => onVisualizationModeChange?.("checklists")}
+            className={`cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] select-none ${
+              visualizationMode === "checklists"
+                ? "ring-2 ring-amber-500 border-amber-500 shadow-sm"
+                : "hover:border-amber-500/50"
+            }`}
+            title="Click to filter 3D model by Checklists"
+          >
             <CardContent className="p-4 space-y-1">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <ListTodo className="h-3.5 w-3.5 text-amber-500" />
-                <span>Checklists / Subs</span>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <ListTodo className="h-3.5 w-3.5 text-amber-500" />
+                  <span>Checklists / Subs</span>
+                </div>
+                <span className="text-[10px] text-amber-500 font-medium">Checklists ↗</span>
               </div>
               <p className="text-2xl font-display font-bold text-foreground">
                 {projectRollup.totalChecklists}
@@ -219,21 +285,32 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
 
           {/* 6. Overdue / Critical Blockers */}
           <Card
-            className={
-              projectRollup.overdueTasks > 0
-                ? "bg-rose-500/10 border-rose-500/30"
-                : "bg-emerald-500/10 border-emerald-500/20"
-            }
+            role="button"
+            tabIndex={0}
+            onClick={() => onVisualizationModeChange?.("overdue")}
+            className={`cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] select-none ${
+              visualizationMode === "overdue"
+                ? "ring-2 ring-rose-500 border-rose-500 shadow-sm"
+                : projectRollup.overdueTasks > 0
+                ? "bg-rose-500/10 border-rose-500/30 hover:border-rose-500/60"
+                : "bg-emerald-500/10 border-emerald-500/20 hover:border-emerald-500/50"
+            }`}
+            title="Click to highlight Overdue Tasks & Blockers on the 3D model"
           >
             <CardContent className="p-4 space-y-1">
-              <div className="flex items-center gap-1.5 text-xs">
-                {projectRollup.overdueTasks > 0 ? (
-                  <AlertOctagon className="h-3.5 w-3.5 text-rose-500" />
-                ) : (
-                  <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
-                )}
-                <span className={projectRollup.overdueTasks > 0 ? "text-rose-600 font-medium dark:text-rose-400" : "text-emerald-600 font-medium dark:text-emerald-400"}>
-                  {projectRollup.overdueTasks > 0 ? "Attention" : "On Track"}
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5">
+                  {projectRollup.overdueTasks > 0 ? (
+                    <AlertOctagon className="h-3.5 w-3.5 text-rose-500" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
+                  )}
+                  <span className={projectRollup.overdueTasks > 0 ? "text-rose-600 font-medium dark:text-rose-400" : "text-emerald-600 font-medium dark:text-emerald-400"}>
+                    {projectRollup.overdueTasks > 0 ? "Attention" : "On Track"}
+                  </span>
+                </div>
+                <span className={`text-[10px] font-medium ${projectRollup.overdueTasks > 0 ? "text-rose-500" : "text-emerald-500"}`}>
+                  Highlight ↗
                 </span>
               </div>
               <p className={`text-2xl font-display font-bold ${projectRollup.overdueTasks > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
@@ -249,3 +326,5 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
     </div>
   );
 };
+
+

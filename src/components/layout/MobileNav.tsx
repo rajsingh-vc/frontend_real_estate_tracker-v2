@@ -26,7 +26,6 @@ const moreItems = [
   { title: "Delay Prediction", url: "/delay-prediction", icon: TrendingUp },
   { title: "Compliance", url: "/compliance", icon: ShieldCheck },
   { title: "Handover", url: "/handover", icon: HandshakeIcon },
-  { title: "Society", url: "/society", icon: Landmark },
   { title: "Documents", url: "/documents", icon: FileText },
   { title: "Reports", url: "/reports", icon: BarChart3 },
   { title: "AI Assistant", url: "/ai-assistant", icon: Bot },

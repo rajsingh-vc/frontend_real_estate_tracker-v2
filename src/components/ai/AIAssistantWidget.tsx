@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Bot, Send, Trash2, ArrowLeft, ChevronRight, X, Minus,
-  ExternalLink, Sparkles, RefreshCw,
+  ExternalLink, Sparkles, RefreshCw, Maximize2, Minimize2,
 } from "lucide-react";
 import {
   projectsApi, tasksApi, hurdlesApi, towersApi, analyticsApi, ApiError,
@@ -33,6 +33,8 @@ export function AIAssistantWidget({
 }: AIAssistantWidgetProps) {
   const { user, isAdmin, isSuperAdmin } = useAuth();
   const [internalOpen, setInternalOpen] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
 
   // Restrict Document & Intelligence AI Assistant strictly to Admin and Super Admin
@@ -341,6 +343,7 @@ export function AIAssistantWidget({
   const handleButtonClick = () => {
     if (dragInfoRef.current.hasMoved || isDragging) return;
     setIsOpen(true);
+    setIsMinimized(false);
   };
 
   // ── Drag & Drop for Open AI Assistant Window ──
@@ -362,6 +365,7 @@ export function AIAssistantWidget({
   }>({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
 
   const handleWindowDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (isMaximized) return;
     const target = e.target as HTMLElement;
     if (target.closest("button") || target.closest("a") || target.closest("input")) return;
     if ('button' in e && e.button !== 0) return;
@@ -460,31 +464,81 @@ export function AIAssistantWidget({
         </button>
       )}
 
-      {/* ── Compact, Draggable Floating AI Assistant Window ── */}
-      {isOpen && (
+      {/* ── Minimized Floating Dock Bar ── */}
+      {isOpen && isMinimized && (
+        <div
+          className="fixed bottom-4 right-4 z-50 flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-border/80 bg-background/95 backdrop-blur-xl shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200 select-none group"
+        >
+          <div className="h-6 w-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0 shadow-xs text-white">
+            <Bot className="h-3.5 w-3.5" />
+          </div>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer focus:outline-none"
+            onClick={() => setIsMinimized(false)}
+            title="Restore AI Assistant"
+          >
+            <span className="font-display font-semibold text-xs text-foreground">AI Assistant</span>
+            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-emerald-500/10 text-emerald-600 border-emerald-500/20 font-medium">
+              Live
+            </Badge>
+          </button>
+          <div className="flex items-center gap-0.5 ml-1 border-l pl-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground"
+              onClick={() => setIsMinimized(false)}
+              title="Restore window"
+            >
+              <Maximize2 className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+              onClick={() => {
+                setIsOpen(false);
+                setIsMinimized(false);
+                setIsMaximized(false);
+              }}
+              title="Close"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Floating AI Assistant Window with Minimize & Maximize controls ── */}
+      {isOpen && !isMinimized && (
         <div
           ref={windowRef}
           style={
-            windowPosition
+            !isMaximized && windowPosition
               ? { left: `${windowPosition.x}px`, top: `${windowPosition.y}px`, right: 'auto', bottom: 'auto' }
               : undefined
           }
           className={`fixed ${
-            !windowPosition
-              ? position && position.x < (typeof window !== 'undefined' ? window.innerWidth / 2 : 500)
-                ? 'bottom-4 sm:bottom-6 left-4 sm:left-6'
-                : 'bottom-4 sm:bottom-6 right-4 sm:right-6'
-              : ''
-          } z-50 w-[92vw] sm:w-[370px] md:w-[385px] h-[490px] max-h-[75vh] rounded-2xl border border-border/80 bg-background/95 backdrop-blur-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-6 duration-200`}
+            isMaximized
+              ? 'inset-3 sm:inset-6 md:inset-8 lg:inset-10 z-50 rounded-2xl border border-border/80 bg-background/98 backdrop-blur-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200'
+              : `${
+                  !windowPosition
+                    ? position && position.x < (typeof window !== 'undefined' ? window.innerWidth / 2 : 500)
+                      ? 'bottom-4 sm:bottom-6 left-4 sm:left-6'
+                      : 'bottom-4 sm:bottom-6 right-4 sm:right-6'
+                    : ''
+                } z-50 w-[92vw] sm:w-[370px] md:w-[385px] h-[490px] max-h-[75vh] rounded-2xl border border-border/80 bg-background/95 backdrop-blur-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-6 duration-200`
+          }`}
         >
-          {/* Draggable Header */}
+          {/* Header */}
           <div
             onMouseDown={handleWindowDragStart}
             onTouchStart={handleWindowDragStart}
             className={`px-3 py-2 border-b bg-card/75 flex items-center justify-between gap-2 shrink-0 select-none ${
-              isDraggingWindow ? 'cursor-grabbing' : 'cursor-grab'
+              isMaximized ? 'cursor-default' : isDraggingWindow ? 'cursor-grabbing' : 'cursor-grab'
             }`}
-            title="Drag header to move"
+            title={isMaximized ? "AI Assistant (Maximized)" : "Drag header to move"}
           >
             <div className="flex items-center gap-2 min-w-0 pointer-events-none">
               <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0 shadow-xs text-white">
@@ -496,6 +550,11 @@ export function AIAssistantWidget({
                   <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-emerald-500/10 text-emerald-600 border-emerald-500/20 font-medium">
                     Live
                   </Badge>
+                  {isMaximized && (
+                    <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5 font-normal">
+                      Expanded
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-[10px] text-muted-foreground truncate">Real-time project intelligence</p>
               </div>
@@ -531,14 +590,43 @@ export function AIAssistantWidget({
                   <ExternalLink className="h-3 w-3" />
                 </Link>
               </Button>
+              {/* Minimize to bar */}
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                onClick={() => setIsOpen(false)}
-                title="Minimize"
+                onClick={() => setIsMinimized(true)}
+                title="Minimize to dock bar"
               >
                 <Minus className="h-3.5 w-3.5" />
+              </Button>
+              {/* Maximize / Restore */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                onClick={() => setIsMaximized((prev) => !prev)}
+                title={isMaximized ? "Restore size" : "Maximize"}
+              >
+                {isMaximized ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+              </Button>
+              {/* Close */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                onClick={() => {
+                  setIsOpen(false);
+                  setIsMaximized(false);
+                  setIsMinimized(false);
+                }}
+                title="Close"
+              >
+                <X className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>

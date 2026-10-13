@@ -56,6 +56,111 @@ export const DigitalTwinCanvas3D: React.FC<DigitalTwinCanvas3DProps> = ({
   // Helper to get element key
   const getMeshKey = (type: string, id: number) => `${type}_${id}`;
 
+  // Procedural Architectural Helpers for Digital Twin Realism
+  const createArchitecturalTree = (x: number, z: number, scale = 1): THREE.Group => {
+    const treeGroup = new THREE.Group();
+    treeGroup.userData = { isBuildingPart: true };
+
+    const trunkGeo = new THREE.CylinderGeometry(0.12 * scale, 0.18 * scale, 1.2 * scale, 6);
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2e18, roughness: 0.9 });
+    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+    trunk.position.set(0, 0.6 * scale, 0);
+    trunk.castShadow = true;
+    treeGroup.add(trunk);
+
+    const foliageGeo1 = new THREE.ConeGeometry(0.9 * scale, 1.8 * scale, 7);
+    const foliageMat1 = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.8 });
+    const foliage1 = new THREE.Mesh(foliageGeo1, foliageMat1);
+    foliage1.position.set(0, 1.6 * scale, 0);
+    foliage1.castShadow = true;
+    treeGroup.add(foliage1);
+
+    const foliageGeo2 = new THREE.ConeGeometry(0.7 * scale, 1.4 * scale, 7);
+    const foliageMat2 = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.75 });
+    const foliage2 = new THREE.Mesh(foliageGeo2, foliageMat2);
+    foliage2.position.set(0, 2.3 * scale, 0);
+    foliage2.castShadow = true;
+    treeGroup.add(foliage2);
+
+    treeGroup.position.set(x, 0.35, z);
+    return treeGroup;
+  };
+
+  const createTowerCrane = (x: number, yBase: number, z: number, height: number): THREE.Group => {
+    const craneGroup = new THREE.Group();
+    craneGroup.userData = { isBuildingPart: true };
+
+    const craneMat = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b, // Vibrant Construction Yellow
+      metalness: 0.65,
+      roughness: 0.35,
+    });
+
+    // Vertical Lattice Mast
+    const mastGeo = new THREE.BoxGeometry(0.85, height, 0.85);
+    const mast = new THREE.Mesh(mastGeo, craneMat);
+    mast.position.set(0, height / 2, 0);
+    mast.castShadow = true;
+    craneGroup.add(mast);
+
+    // Slewing Ring & Cab
+    const cabGeo = new THREE.BoxGeometry(1.3, 1.1, 1.3);
+    const cabMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.5, roughness: 0.3 });
+    const cab = new THREE.Mesh(cabGeo, cabMat);
+    cab.position.set(0.3, height + 0.55, 0);
+    craneGroup.add(cab);
+
+    // Tower Peak / Apex
+    const apexGeo = new THREE.ConeGeometry(0.65, 2.4, 4);
+    const apex = new THREE.Mesh(apexGeo, craneMat);
+    apex.position.set(0, height + 1.9, 0);
+    craneGroup.add(apex);
+
+    // Flashing Red Aviation Warning Beacon
+    const beaconGeo = new THREE.SphereGeometry(0.2, 8, 8);
+    const beaconMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+    const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+    beacon.position.set(0, height + 3.1, 0);
+    beacon.userData = { isBeacon: true };
+    craneGroup.add(beacon);
+
+    // Horizontal Working Jib
+    const jibLength = 17;
+    const jibGeo = new THREE.BoxGeometry(jibLength, 0.55, 0.55);
+    const jib = new THREE.Mesh(jibGeo, craneMat);
+    jib.position.set(jibLength / 2 - 2, height + 1.1, 0);
+    jib.castShadow = true;
+    craneGroup.add(jib);
+
+    // Counter-Jib & Counterweight
+    const counterJibGeo = new THREE.BoxGeometry(5.5, 0.55, 0.55);
+    const counterJib = new THREE.Mesh(counterJibGeo, craneMat);
+    counterJib.position.set(-2.75, height + 1.1, 0);
+    craneGroup.add(counterJib);
+
+    const counterWeightGeo = new THREE.BoxGeometry(2.0, 1.1, 1.1);
+    const counterWeightMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
+    const counterWeight = new THREE.Mesh(counterWeightGeo, counterWeightMat);
+    counterWeight.position.set(-4.2, height + 0.7, 0);
+    craneGroup.add(counterWeight);
+
+    // Cable & Hook
+    const cableGeo = new THREE.CylinderGeometry(0.02, 0.02, 5, 4);
+    const cableMat = new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
+    const cable = new THREE.Mesh(cableGeo, cableMat);
+    cable.position.set(jibLength * 0.55, height - 1.4, 0);
+    craneGroup.add(cable);
+
+    const hookGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+    const hookMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.5 });
+    const hook = new THREE.Mesh(hookGeo, hookMat);
+    hook.position.set(jibLength * 0.55, height - 3.9, 0);
+    craneGroup.add(hook);
+
+    craneGroup.position.set(x, yBase, z);
+    return craneGroup;
+  };
+
   // Set up Three.js Scene, Camera, Renderer, Controls
   useEffect(() => {
     const container = mountRef.current;
@@ -146,21 +251,20 @@ export const DigitalTwinCanvas3D: React.FC<DigitalTwinCanvas3DProps> = ({
     grid.position.y = 0;
     scene.add(grid);
 
-    // Site base plate
-    const sitePlateGeo = new THREE.BoxGeometry(60, 0.4, 45);
-    const sitePlateMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      roughness: 0.7,
-      metalness: 0.2,
-    });
-    const sitePlate = new THREE.Mesh(sitePlateGeo, sitePlateMat);
-    sitePlate.position.set(0, -0.2, 0);
-    sitePlate.receiveShadow = true;
-    scene.add(sitePlate);
-
-    // 7. Animation Loop
+    // 7. Animation Loop with Beacon Light Pulse
     const animate = () => {
       animFrameIdRef.current = requestAnimationFrame(animate);
+      const time = Date.now() * 0.003;
+      if (sceneRef.current) {
+        sceneRef.current.traverse((obj) => {
+          if (obj.userData?.isBeacon) {
+            const bMat = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
+            if (bMat && bMat.color) {
+              bMat.color.setHex(Math.sin(time * 3) > 0 ? 0xef4444 : 0x7f1d1d);
+            }
+          }
+        });
+      }
       controls.update();
       renderer.render(scene, camera);
     };
@@ -246,46 +350,180 @@ export const DigitalTwinCanvas3D: React.FC<DigitalTwinCanvas3DProps> = ({
       ? towers.filter((t) => t.tower.id === isolatedTowerId)
       : towers;
 
-    // Calculate tower positioning on the site
-    const towerSpacing = 22;
+    // Calculate site geometry dynamically depending on project information
+    const towerSpacing = 24;
     const totalTowers = activeTowers.length;
     const startX = -((totalTowers - 1) * towerSpacing) / 2;
 
+    // 1. Dynamic Landscaped Site Podium & Surrounding Infrastructure
+    const siteW = Math.max(76, totalTowers * towerSpacing + 28);
+    const siteD = 58;
+
+    // Main site podium
+    const sitePlateGeo = new THREE.BoxGeometry(siteW, 0.6, siteD);
+    const sitePlateMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.75,
+      metalness: 0.2,
+    });
+    const sitePlate = new THREE.Mesh(sitePlateGeo, sitePlateMat);
+    sitePlate.position.set(0, 0.1, 0);
+    sitePlate.receiveShadow = true;
+    sitePlate.userData = { isBuildingPart: true };
+    scene.add(sitePlate);
+
+    // Front approach road / asphalt driveway
+    const roadGeo = new THREE.PlaneGeometry(siteW - 6, 8.5);
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.9 });
+    const road = new THREE.Mesh(roadGeo, roadMat);
+    road.rotation.x = -Math.PI / 2;
+    road.position.set(0, 0.41, 17);
+    road.receiveShadow = true;
+    road.userData = { isBuildingPart: true };
+    scene.add(road);
+
+    // White dashed road centerline
+    const dashLength = 2.5;
+    const dashGap = 2.0;
+    const numDashes = Math.floor((siteW - 12) / (dashLength + dashGap));
+    const startDashX = -((numDashes - 1) * (dashLength + dashGap)) / 2;
+    for (let di = 0; di < numDashes; di++) {
+      const dashGeo = new THREE.PlaneGeometry(dashLength, 0.22);
+      const dashMat = new THREE.MeshBasicMaterial({ color: 0xe2e8f0 });
+      const dash = new THREE.Mesh(dashGeo, dashMat);
+      dash.rotation.x = -Math.PI / 2;
+      dash.position.set(startDashX + di * (dashLength + dashGap), 0.42, 17);
+      dash.userData = { isBuildingPart: true };
+      scene.add(dash);
+    }
+
+    // Landscaped Green Lawn Belts around the site
+    const lawnGeoFront = new THREE.PlaneGeometry(siteW - 6, 6.5);
+    const lawnMat = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.85 });
+    const lawnFront = new THREE.Mesh(lawnGeoFront, lawnMat);
+    lawnFront.rotation.x = -Math.PI / 2;
+    lawnFront.position.set(0, 0.41, 8.5);
+    lawnFront.receiveShadow = true;
+    lawnFront.userData = { isBuildingPart: true };
+    scene.add(lawnFront);
+
+    const lawnGeoBack = new THREE.PlaneGeometry(siteW - 6, 12);
+    const lawnBack = new THREE.Mesh(lawnGeoBack, lawnMat);
+    lawnBack.rotation.x = -Math.PI / 2;
+    lawnBack.position.set(0, 0.41, -19);
+    lawnBack.receiveShadow = true;
+    lawnBack.userData = { isBuildingPart: true };
+    scene.add(lawnBack);
+
+    // Add perimeter architectural trees
+    const treePositions = [
+      [-siteW / 2 + 5, 8.5],
+      [-siteW / 2 + 10, 8.5],
+      [siteW / 2 - 5, 8.5],
+      [siteW / 2 - 10, 8.5],
+      [-siteW / 2 + 5, 23],
+      [siteW / 2 - 5, 23],
+      [-siteW / 2 + 5, -19],
+      [-siteW / 2 + 14, -19],
+      [siteW / 2 - 5, -19],
+      [siteW / 2 - 14, -19],
+      [0, -19],
+    ];
+    treePositions.forEach(([tx, tz]) => {
+      const tree = createArchitecturalTree(tx, tz, 1.25);
+      scene.add(tree);
+    });
+
+    // 2. Build Each Tower with Realistic Architectural Facades & Details
     activeTowers.forEach((towerRollup, tIndex) => {
       const towerX = startX + tIndex * towerSpacing;
-      const towerZ = 0;
+      const towerZ = -1.5;
       const towerFloors = towerRollup.floors;
       const numFloors = towerFloors.length;
 
-      // Base footprint dimensions for this tower
-      const towerWidth = 14;
-      const towerDepth = 12;
-      const floorHeight = 1.4;
-      const floorSeparation = explosionFactor * 2.2; // Vertical explosion gap
+      // Realistic Tower Dimensions
+      const towerWidth = 15;
+      const towerDepth = 13;
+      const floorHeight = 1.45;
+      const floorSeparation = explosionFactor * 2.4; // Vertical explosion gap
 
-      // Tower Foundation Plinth
-      const plinthGeo = new THREE.BoxGeometry(towerWidth + 2, 0.6, towerDepth + 2);
+      // Foundation Plinth
+      const plinthGeo = new THREE.BoxGeometry(towerWidth + 2.5, 0.65, towerDepth + 2.5);
       const plinthMat = new THREE.MeshStandardMaterial({
         color: 0x334155,
-        roughness: 0.8,
-        metalness: 0.2,
+        roughness: 0.75,
+        metalness: 0.25,
       });
       const plinth = new THREE.Mesh(plinthGeo, plinthMat);
-      plinth.position.set(towerX, 0.3, towerZ);
+      plinth.position.set(towerX, 0.4, towerZ);
       plinth.receiveShadow = true;
       plinth.userData = { isBuildingPart: true, type: "tower_base", towerId: towerRollup.tower.id };
       scene.add(plinth);
 
+      // Architectural 3D Plinth Monument in front of Tower Entrance
+      const monumentGeo = new THREE.BoxGeometry(4.8, 0.75, 0.45);
+      const monumentMat = new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        roughness: 0.3,
+        metalness: 0.7,
+      });
+      const monument = new THREE.Mesh(monumentGeo, monumentMat);
+      monument.position.set(towerX, 0.7, towerZ + towerDepth / 2 + 3.2);
+      monument.castShadow = true;
+      monument.userData = { isBuildingPart: true };
+      scene.add(monument);
+
+      // Monument status accent stripe
+      const stripeGeo = new THREE.BoxGeometry(4.4, 0.12, 0.05);
+      const stripeMat = new THREE.MeshBasicMaterial({
+        color: towerRollup.progress === 100 ? 0x10b981 : 0x0ea5e9,
+      });
+      const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+      stripe.position.set(towerX, 0.9, towerZ + towerDepth / 2 + 3.44);
+      stripe.userData = { isBuildingPart: true };
+      scene.add(stripe);
+
+      // Grand Entrance Canopy on Ground Floor (Floor 0)
+      const canopyGeo = new THREE.BoxGeometry(7.2, 0.28, 4.2);
+      const canopyMat = new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        metalness: 0.85,
+        roughness: 0.2,
+      });
+      const canopy = new THREE.Mesh(canopyGeo, canopyMat);
+      canopy.position.set(towerX, 0.6 + floorHeight * 0.92, towerZ + towerDepth / 2 + 2.1);
+      canopy.castShadow = true;
+      canopy.userData = { isBuildingPart: true };
+      scene.add(canopy);
+
+      // Canopy Stainless Steel Support Columns
+      const postGeo = new THREE.CylinderGeometry(0.12, 0.12, floorHeight * 0.92, 10);
+      const postMat = new THREE.MeshStandardMaterial({
+        color: 0x94a3b8,
+        metalness: 0.9,
+        roughness: 0.2,
+      });
+      const post1 = new THREE.Mesh(postGeo, postMat);
+      post1.position.set(towerX - 3.1, 0.6 + (floorHeight * 0.92) / 2, towerZ + towerDepth / 2 + 3.8);
+      post1.castShadow = true;
+      post1.userData = { isBuildingPart: true };
+      scene.add(post1);
+
+      const post2 = new THREE.Mesh(postGeo, postMat);
+      post2.position.set(towerX + 3.1, 0.6 + (floorHeight * 0.92) / 2, towerZ + towerDepth / 2 + 3.8);
+      post2.castShadow = true;
+      post2.userData = { isBuildingPart: true };
+      scene.add(post2);
+
       // Build each floor
       towerFloors.forEach((floorRollup, fIndex) => {
-        // Compute vertical position with explosion factor
         const floorBaseY = 0.6 + fIndex * (floorHeight + floorSeparation);
         const isFloorSelected = selection.floorId === floorRollup.floor.id;
-        const isTowerSelected = selection.towerId === towerRollup.tower.id;
+        const isTopFloor = fIndex === numFloors - 1;
 
-        // Concrete Floor Slab
-        const slabThickness = 0.2;
-        const slabGeo = new THREE.BoxGeometry(towerWidth, slabThickness, towerDepth);
+        // Architectural Concrete Floor Slab with chamfered edge trim
+        const slabThickness = 0.22;
+        const slabGeo = new THREE.BoxGeometry(towerWidth + 0.15, slabThickness, towerDepth + 0.15);
         const slabMat = new THREE.MeshStandardMaterial({
           color: isFloorSelected ? 0x6366f1 : 0x1e293b,
           roughness: 0.6,
@@ -305,13 +543,11 @@ export const DigitalTwinCanvas3D: React.FC<DigitalTwinCanvas3DProps> = ({
         scene.add(slab);
         meshMapRef.current.set(getMeshKey("floor_slab", floorRollup.floor.id), slab);
 
-        // Ceiling/Roof for top floor or individual floor slab capping
         const units = floorRollup.units;
         const numUnits = units.length;
 
         if (numUnits > 0) {
-          // Floor has actual units from DB: subdivide the floor into unit blocks
-          // We lay them out in a realistic architectural configuration
+          // Subdivide floor into realistic unit configurations
           const cols = Math.min(numUnits, 4);
           const rows = Math.ceil(numUnits / cols);
           const unitMargin = 0.35;
@@ -319,38 +555,31 @@ export const DigitalTwinCanvas3D: React.FC<DigitalTwinCanvas3DProps> = ({
           const usableD = towerDepth - 1.2;
           const unitW = (usableW - (cols - 1) * unitMargin) / cols;
           const unitD = (usableD - (rows - 1) * unitMargin) / rows;
-          const unitH = floorHeight - slabThickness - 0.1;
+          const unitH = floorHeight - slabThickness - 0.08;
 
           units.forEach((unitRollup, uIndex) => {
             const col = uIndex % cols;
             const row = Math.floor(uIndex / cols);
 
-            const ux =
-              towerX -
-              usableW / 2 +
-              col * (unitW + unitMargin) +
-              unitW / 2;
-            const uz =
-              towerZ -
-              usableD / 2 +
-              row * (unitD + unitMargin) +
-              unitD / 2;
+            const ux = towerX - usableW / 2 + col * (unitW + unitMargin) + unitW / 2;
+            const uz = towerZ - usableD / 2 + row * (unitD + unitMargin) + unitD / 2;
             const uy = floorBaseY + slabThickness + unitH / 2;
 
             const isUnitSelected = selection.unitId === unitRollup.unit.id;
             const colorHex = getElementColor(unitRollup, visualizationMode);
 
+            // Modern architectural glazed unit material
             const unitGeo = new THREE.BoxGeometry(unitW, unitH, unitD);
             const unitMat = new THREE.MeshStandardMaterial({
               color: new THREE.Color(colorHex),
-              roughness: isXRayMode ? 0.2 : 0.45,
-              metalness: isXRayMode ? 0.1 : 0.3,
+              roughness: isXRayMode ? 0.15 : 0.25,
+              metalness: isXRayMode ? 0.1 : 0.65,
               transparent: isXRayMode || (selection.unitId !== null && !isUnitSelected),
-              opacity: isUnitSelected ? 1.0 : isXRayMode ? 0.35 : selection.unitId !== null ? 0.4 : 0.88,
+              opacity: isUnitSelected ? 1.0 : isXRayMode ? 0.35 : selection.unitId !== null ? 0.35 : 0.92,
               emissive: isUnitSelected
                 ? new THREE.Color(DIGITAL_TWIN_COLORS.highlight)
                 : new THREE.Color(0x000000),
-              emissiveIntensity: isUnitSelected ? 0.4 : 0,
+              emissiveIntensity: isUnitSelected ? 0.45 : 0,
             });
 
             const unitMesh = new THREE.Mesh(unitGeo, unitMat);
@@ -373,39 +602,68 @@ export const DigitalTwinCanvas3D: React.FC<DigitalTwinCanvas3DProps> = ({
             interactiveObjectsRef.current.push(unitMesh);
             meshMapRef.current.set(getMeshKey("unit", unitRollup.unit.id), unitMesh);
 
-            // Subtle outline edge for selected or colored unit
+            // Architectural Window Mullion Edges
             const edgesGeo = new THREE.EdgesGeometry(unitGeo);
             const edgesMat = new THREE.LineBasicMaterial({
               color: isUnitSelected ? 0x38bdf8 : 0x0f172a,
-              linewidth: isUnitSelected ? 2 : 1,
+              transparent: true,
+              opacity: isXRayMode ? 0.35 : 0.8,
             });
             const edgeLine = new THREE.LineSegments(edgesGeo, edgesMat);
             unitMesh.add(edgeLine);
+
+            // Cantilevered Glass Balconies on perimeter units (adds real architectural high-rise depth)
+            const isFrontUnit = row === rows - 1;
+            const isBackUnit = row === 0;
+            if ((isFrontUnit || isBackUnit) && fIndex > 0) {
+              const balconyDepth = 0.75;
+              const balconyWidth = unitW * 0.88;
+              const balconySlabGeo = new THREE.BoxGeometry(balconyWidth, 0.12, balconyDepth);
+              const balconySlabMat = new THREE.MeshStandardMaterial({
+                color: 0x334155,
+                roughness: 0.6,
+                metalness: 0.25,
+              });
+              const balconySlab = new THREE.Mesh(balconySlabGeo, balconySlabMat);
+              const bz = isFrontUnit ? unitD / 2 + balconyDepth / 2 : -unitD / 2 - balconyDepth / 2;
+              balconySlab.position.set(0, -unitH / 2 + 0.06, bz);
+              unitMesh.add(balconySlab);
+
+              // Tempered glass balustrade railing
+              const railingGeo = new THREE.BoxGeometry(balconyWidth, 0.48, 0.04);
+              const railingMat = new THREE.MeshStandardMaterial({
+                color: 0x93c5fd,
+                transparent: true,
+                opacity: 0.65,
+                roughness: 0.1,
+                metalness: 0.85,
+              });
+              const railing = new THREE.Mesh(railingGeo, railingMat);
+              const rz = isFrontUnit ? unitD / 2 + balconyDepth - 0.02 : -unitD / 2 - balconyDepth + 0.02;
+              railing.position.set(0, -unitH / 2 + 0.36, rz);
+              unitMesh.add(railing);
+            }
           });
         } else {
-          // No unit-level breakdown in DB for this floor: create whole floor volume
+          // Whole floor volume when unit details are not available
           const floorH = floorHeight - slabThickness - 0.05;
-          const floorGeo = new THREE.BoxGeometry(towerWidth - 0.4, floorH, towerDepth - 0.4);
+          const floorGeo = new THREE.BoxGeometry(towerWidth - 0.3, floorH, towerDepth - 0.3);
           const colorHex = getElementColor(floorRollup, visualizationMode);
 
           const floorMat = new THREE.MeshStandardMaterial({
             color: new THREE.Color(colorHex),
-            roughness: 0.5,
-            metalness: 0.2,
+            roughness: 0.45,
+            metalness: 0.3,
             transparent: isXRayMode,
-            opacity: isFloorSelected ? 1.0 : isXRayMode ? 0.35 : 0.85,
+            opacity: isFloorSelected ? 1.0 : isXRayMode ? 0.35 : 0.88,
             emissive: isFloorSelected
               ? new THREE.Color(DIGITAL_TWIN_COLORS.highlight)
               : new THREE.Color(0x000000),
-            emissiveIntensity: isFloorSelected ? 0.35 : 0,
+            emissiveIntensity: isFloorSelected ? 0.4 : 0,
           });
 
           const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-          floorMesh.position.set(
-            towerX,
-            floorBaseY + slabThickness + floorH / 2,
-            towerZ
-          );
+          floorMesh.position.set(towerX, floorBaseY + slabThickness + floorH / 2, towerZ);
           floorMesh.castShadow = true;
           floorMesh.receiveShadow = true;
           floorMesh.userData = {
@@ -421,16 +679,26 @@ export const DigitalTwinCanvas3D: React.FC<DigitalTwinCanvas3DProps> = ({
           scene.add(floorMesh);
           interactiveObjectsRef.current.push(floorMesh);
           meshMapRef.current.set(getMeshKey("floor", floorRollup.floor.id), floorMesh);
+
+          // Window Mullions on whole floor
+          const edgesGeo = new THREE.EdgesGeometry(floorGeo);
+          const edgesMat = new THREE.LineBasicMaterial({
+            color: isFloorSelected ? 0x38bdf8 : 0x0f172a,
+            transparent: true,
+            opacity: 0.7,
+          });
+          const edgeLine = new THREE.LineSegments(edgesGeo, edgesMat);
+          floorMesh.add(edgeLine);
         }
 
-        // Structural corner pillars
-        const pillarGeo = new THREE.BoxGeometry(0.35, floorHeight, 0.35);
-        const pillarMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.8 });
+        // Structural corner architectural pillars
+        const pillarGeo = new THREE.BoxGeometry(0.38, floorHeight, 0.38);
+        const pillarMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.75 });
         const corners = [
-          [-towerWidth / 2 + 0.2, -towerDepth / 2 + 0.2],
-          [towerWidth / 2 - 0.2, -towerDepth / 2 + 0.2],
-          [-towerWidth / 2 + 0.2, towerDepth / 2 - 0.2],
-          [towerWidth / 2 - 0.2, towerDepth / 2 - 0.2],
+          [-towerWidth / 2 + 0.22, -towerDepth / 2 + 0.22],
+          [towerWidth / 2 - 0.22, -towerDepth / 2 + 0.22],
+          [-towerWidth / 2 + 0.22, towerDepth / 2 - 0.22],
+          [towerWidth / 2 - 0.22, towerDepth / 2 - 0.22],
         ];
         corners.forEach(([cx, cz]) => {
           const pillar = new THREE.Mesh(pillarGeo, pillarMat);
@@ -442,20 +710,95 @@ export const DigitalTwinCanvas3D: React.FC<DigitalTwinCanvas3DProps> = ({
 
       // Top Roof Slab
       const roofY = 0.6 + numFloors * (floorHeight + floorSeparation);
-      const roofGeo = new THREE.BoxGeometry(towerWidth + 0.4, 0.3, towerDepth + 0.4);
+      const roofGeo = new THREE.BoxGeometry(towerWidth + 0.6, 0.35, towerDepth + 0.6);
       const roofMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 });
       const roof = new THREE.Mesh(roofGeo, roofMat);
-      roof.position.set(towerX, roofY + 0.15, towerZ);
+      roof.position.set(towerX, roofY + 0.175, towerZ);
       roof.userData = { isBuildingPart: true };
       scene.add(roof);
 
-      // Parapet and mechanical penthouse
-      const penthouseGeo = new THREE.BoxGeometry(towerWidth * 0.45, 1.2, towerDepth * 0.45);
+      // Glass Parapet Railing around the rooftop
+      const parapetGeo = new THREE.BoxGeometry(towerWidth + 0.5, 0.55, towerDepth + 0.5);
+      const parapetEdges = new THREE.EdgesGeometry(parapetGeo);
+      const parapetLine = new THREE.LineSegments(
+        parapetEdges,
+        new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.7 })
+      );
+      parapetLine.position.set(towerX, roofY + 0.35 + 0.27, towerZ);
+      parapetLine.userData = { isBuildingPart: true };
+      scene.add(parapetLine);
+
+      // Parapet & Mechanical Penthouse (HVAC & Lift Machine Room)
+      const penthouseGeo = new THREE.BoxGeometry(towerWidth * 0.42, 1.4, towerDepth * 0.42);
       const penthouseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
       const penthouse = new THREE.Mesh(penthouseGeo, penthouseMat);
-      penthouse.position.set(towerX, roofY + 0.3 + 0.6, towerZ);
+      penthouse.position.set(towerX, roofY + 0.35 + 0.7, towerZ);
       penthouse.userData = { isBuildingPart: true };
       scene.add(penthouse);
+
+      // 3. Realistic Progress-Driven Features (Crane vs Helipad / Crown)
+      const isUnderConstruction = towerRollup.progress < 100;
+
+      if (isUnderConstruction) {
+        // Active Tower Construction Crane beside the building
+        const craneX = towerX + towerWidth / 2 + 2.8;
+        const craneZ = towerZ - towerDepth / 2 + 1.5;
+        const craneHeight = roofY + 7.5;
+        const crane = createTowerCrane(craneX, 0.3, craneZ, craneHeight);
+        scene.add(crane);
+
+        // Exposed structural rebar columns rising from the top slab
+        const rebarMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.8 });
+        const roofCorners = [
+          [-towerWidth / 2 + 0.3, -towerDepth / 2 + 0.3],
+          [towerWidth / 2 - 0.3, -towerDepth / 2 + 0.3],
+          [-towerWidth / 2 + 0.3, towerDepth / 2 - 0.3],
+          [towerWidth / 2 - 0.3, towerDepth / 2 - 0.3],
+        ];
+        roofCorners.forEach(([cx, cz]) => {
+          const rebarGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.2, 5);
+          const rebar = new THREE.Mesh(rebarGeo, rebarMat);
+          rebar.position.set(towerX + cx, roofY + 0.35 + 0.6, towerZ + cz);
+          rebar.userData = { isBuildingPart: true };
+          scene.add(rebar);
+        });
+      } else {
+        // Completed Tower: Luxury Rooftop Helipad & Architectural Spire
+        const helipadGeo = new THREE.CylinderGeometry(3.6, 3.6, 0.1, 32);
+        const helipadMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+        const helipad = new THREE.Mesh(helipadGeo, helipadMat);
+        helipad.position.set(towerX, roofY + 0.35 + 0.05, towerZ);
+        helipad.userData = { isBuildingPart: true };
+        scene.add(helipad);
+
+        // Helipad Yellow Circle Ring
+        const ringGeo = new THREE.RingGeometry(3.0, 3.25, 32);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, side: THREE.DoubleSide });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(towerX, roofY + 0.35 + 0.11, towerZ);
+        ring.userData = { isBuildingPart: true };
+        scene.add(ring);
+
+        // Architectural Communications Spire with Flashing Red Beacon
+        const spireGeo = new THREE.CylinderGeometry(0.06, 0.22, 5.0, 8);
+        const spireMat = new THREE.MeshStandardMaterial({
+          color: 0x94a3b8,
+          metalness: 0.9,
+          roughness: 0.2,
+        });
+        const spire = new THREE.Mesh(spireGeo, spireMat);
+        spire.position.set(towerX, roofY + 0.35 + 1.4 + 2.5, towerZ);
+        spire.userData = { isBuildingPart: true };
+        scene.add(spire);
+
+        const beaconGeo = new THREE.SphereGeometry(0.2, 8, 8);
+        const beaconMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+        const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+        beacon.position.set(towerX, roofY + 0.35 + 1.4 + 5.1, towerZ);
+        beacon.userData = { isBeacon: true, isBuildingPart: true };
+        scene.add(beacon);
+      }
     });
   }, [projectRollup, visualizationMode, selection, isolatedTowerId, explosionFactor, isXRayMode]);
 

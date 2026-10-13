@@ -857,7 +857,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
           <header className="sticky top-0 z-40 flex h-14 items-center gap-2 md:gap-4 border-b bg-card/80 backdrop-blur-sm px-3 md:px-6">
-            <SidebarTrigger className="flex shrink-0" />
+            <SidebarTrigger className="flex shrink-0" title="Toggle sidebar (Minimize / Maximize)" />
             <div className="flex-1 flex items-center min-w-0">
               <TopSearch />
             </div>

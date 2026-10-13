@@ -3,7 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Building2, MapPin, Calendar, ArrowRight, Pencil, Trash2, ChevronLeft } from "lucide-react";
+import {
+  Building2, MapPin, Calendar, ArrowRight, Pencil, Trash2, ChevronLeft,
+  ChevronRight, ChevronDown, Layers, Boxes, GitFork, ListTree, ArrowDown,
+  Sparkles, CheckCircle2, Clock, CheckSquare, Split, ArrowDownRight, CornerDownRight,
+  ListChecks, Plus, Check, Circle, ExternalLink
+} from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -245,17 +250,20 @@ function ProjectDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{initialProject ? "Edit Project" : "New Project"}</DialogTitle>
+      <DialogContent className="w-[96vw] max-w-4xl p-5 sm:p-6 max-h-[95vh] overflow-y-auto sm:overflow-visible">
+        <DialogHeader className="pb-1">
+          <DialogTitle className="text-xl font-display font-bold">
+            {initialProject ? "Edit Project" : "New Project"}
+          </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="grid gap-2">
-              <Label>Organization</Label>
+        <form onSubmit={handleSubmit} className="space-y-3.5">
+          {/* Row 1: Organization, Company, Entity (Clean 3-column grid) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid gap-1.5">
+              <Label className="text-xs font-semibold">Organization</Label>
               <Select value={form.organizationId} onValueChange={handleOrgChange}>
-                <SelectTrigger>
+                <SelectTrigger className="h-9">
                   <SelectValue placeholder={orgsLoading ? "Loading…" : "Select organization"} />
                 </SelectTrigger>
                 <SelectContent>
@@ -282,18 +290,18 @@ function ProjectDialog({
               </Select>
             </div>
 
-            <div className="grid gap-2">
-              <Label>Company</Label>
+            <div className="grid gap-1.5">
+              <Label className="text-xs font-semibold">Company</Label>
               <Select
                 value={form.companyId}
                 onValueChange={(value) => setForm((prev) => ({ ...prev, companyId: value }))}
                 disabled={!form.organizationId}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-9">
                   <SelectValue
                     placeholder={
                       !form.organizationId
-                        ? "Select organization first"
+                        ? "Select org first"
                         : companiesLoading
                         ? "Loading…"
                         : "Select company"
@@ -310,21 +318,21 @@ function ProjectDialog({
               </Select>
             </div>
 
-            <div className="grid gap-2">
-              <Label>Entity</Label>
+            <div className="grid gap-1.5">
+              <Label className="text-xs font-semibold">Entity</Label>
               <Select
                 value={form.entityId}
                 onValueChange={(value) => setForm((prev) => ({ ...prev, entityId: value }))}
                 disabled={!form.organizationId}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-9">
                   <SelectValue
                     placeholder={
                       !form.organizationId
-                        ? "Select organization first"
+                        ? "Select org first"
                         : entitiesLoading
                         ? "Loading…"
-                        : "Select entity (optional)"
+                        : "Select entity (opt)"
                     }
                   />
                 </SelectTrigger>
@@ -339,86 +347,89 @@ function ProjectDialog({
             </div>
           </div>
 
-          {/* Organization preview badge */}
+          {/* Organization preview badge - Compact inline bar */}
           {selectedOrg && (
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-primary/5 border border-primary/20">
+            <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/20 text-xs">
               {selectedOrg.logo ? (
                 <img
                   src={resolveImageUrl(selectedOrg.logo) || ""}
                   alt={selectedOrg.name}
-                  className="w-10 h-10 rounded-lg object-contain bg-white dark:bg-card p-1 border shadow-xs shrink-0"
+                  className="w-5 h-5 rounded object-contain bg-white dark:bg-card p-0.5 border shadow-xs shrink-0"
                 />
               ) : (
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                  <Building2 className="w-5 h-5 text-primary" />
-                </div>
+                <Building2 className="w-4 h-4 text-primary shrink-0" />
               )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="text-xs font-bold text-foreground truncate">{selectedOrg.name}</p>
-                  <Badge variant="secondary" className="text-[10px] shrink-0 font-medium">Assigned Organization</Badge>
-                </div>
-                <p className="text-[11px] text-muted-foreground truncate">{selectedOrg.address || "Organization assigned to this project"}</p>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="font-semibold text-foreground truncate">{selectedOrg.name}</span>
+                <span className="text-[11px] text-muted-foreground truncate hidden sm:inline">
+                  {selectedOrg.address || "Assigned Organization"}
+                </span>
               </div>
+              <Badge variant="secondary" className="text-[10px] shrink-0 font-medium h-5">
+                Assigned Org
+              </Badge>
             </div>
           )}
 
-          <div className="grid gap-2">
-            <Label htmlFor="project-name">Project Name</Label>
-            <Input
-              id="project-name"
-              value={form.name}
-              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-              required
-            />
+          {/* Row 2: Project Name & Location */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="project-name" className="text-xs font-semibold">Project Name</Label>
+              <Input
+                id="project-name"
+                value={form.name}
+                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g. Marina Heights"
+                className="h-9"
+                required
+              />
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="project-location" className="text-xs font-semibold">Location</Label>
+              <Input
+                id="project-location"
+                value={form.location}
+                onChange={(e) => setForm((prev) => ({ ...prev, location: e.target.value }))}
+                placeholder="e.g. Worli, Mumbai"
+                className="h-9"
+                required
+              />
+            </div>
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="project-location">Location</Label>
-            <Input
-              id="project-location"
-              value={form.location}
-              onChange={(e) => setForm((prev) => ({ ...prev, location: e.target.value }))}
-              required
-            />
-          </div>
+          {/* Row 3: Structure, Status, Progress % */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid gap-1.5">
+              <Label className="text-xs font-semibold">Project Flow Structure</Label>
+              <Select
+                value={form.hierarchyMode}
+                onValueChange={(value) =>
+                  setForm((prev) => ({ ...prev, hierarchyMode: value as "full" | "direct_task" }))
+                }
+                disabled={!!initialProject}
+              >
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full">Full Flow (Tower → Floor → Unit → Task → Checklist → Sub Task)</SelectItem>
+                  <SelectItem value="direct_task">Direct Flow (Tasks directly under Project)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          {/* ✅ NEW: Project Structure toggle */}
-          <div className="grid gap-2">
-            <Label>Project Structure</Label>
-            <Select
-              value={form.hierarchyMode}
-              onValueChange={(value) =>
-                setForm((prev) => ({ ...prev, hierarchyMode: value as "full" | "direct_task" }))
-              }
-              disabled={!!initialProject}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="full">Full hierarchy (Tower → Floor → Unit → Task)</SelectItem>
-                <SelectItem value="direct_task">Direct to Task (skip Tower/Floor/Unit)</SelectItem>
-              </SelectContent>
-            </Select>
-            {initialProject && (
-              <p className="text-xs text-muted-foreground">
-                Structure is locked after creation to avoid orphaning existing data.
-              </p>
-            )}
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="project-status">Status</Label>
+            <div className="grid gap-1.5">
+              <Label htmlFor="project-status" className="text-xs font-semibold">Status</Label>
               <Input
                 id="project-status"
                 value={form.status}
                 onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
                 placeholder="e.g. Planning, Active, Completed"
+                className="h-9"
               />
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="project-progress">Progress %</Label>
+            <div className="grid gap-1.5">
+              <Label htmlFor="project-progress" className="text-xs font-semibold">Progress %</Label>
               <Input
                 id="project-progress"
                 type="number"
@@ -426,66 +437,72 @@ function ProjectDialog({
                 max={100}
                 value={form.progress}
                 onChange={(e) => setForm((prev) => ({ ...prev, progress: e.target.value }))}
+                className="h-9"
               />
             </div>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="project-start">Start Date</Label>
+          {/* Row 4: Start Date, End Date, Total Units, Budget, RERA */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="project-start" className="text-xs font-semibold">Start Date</Label>
               <Input
                 id="project-start"
                 type="date"
                 value={form.startDate}
                 onChange={(e) => setForm((prev) => ({ ...prev, startDate: e.target.value }))}
+                className="h-9 text-xs"
               />
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="project-end">End Date</Label>
+            <div className="grid gap-1.5">
+              <Label htmlFor="project-end" className="text-xs font-semibold">End Date</Label>
               <Input
                 id="project-end"
                 type="date"
                 value={form.endDate}
                 onChange={(e) => setForm((prev) => ({ ...prev, endDate: e.target.value }))}
+                className="h-9 text-xs"
               />
             </div>
-          </div>
 
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="project-units">Total Units</Label>
+            <div className="grid gap-1.5">
+              <Label htmlFor="project-units" className="text-xs font-semibold">Total Units</Label>
               <Input
                 id="project-units"
                 type="number"
                 min={1}
                 value={form.totalUnits}
                 onChange={(e) => setForm((prev) => ({ ...prev, totalUnits: e.target.value }))}
+                className="h-9"
               />
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="project-rera">RERA Number</Label>
-              <Input
-                id="project-rera"
-                value={form.reraNumber}
-                onChange={(e) => setForm((prev) => ({ ...prev, reraNumber: e.target.value }))}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="project-budget">Budget (Cr)</Label>
+            <div className="grid gap-1.5">
+              <Label htmlFor="project-budget" className="text-xs font-semibold">Budget (Cr)</Label>
               <Input
                 id="project-budget"
                 type="number"
                 min={1}
                 value={form.budgetCr}
                 onChange={(e) => setForm((prev) => ({ ...prev, budgetCr: e.target.value }))}
+                className="h-9"
+              />
+            </div>
+
+            <div className="grid gap-1.5 col-span-2 sm:col-span-1">
+              <Label htmlFor="project-rera" className="text-xs font-semibold">RERA Number</Label>
+              <Input
+                id="project-rera"
+                value={form.reraNumber}
+                onChange={(e) => setForm((prev) => ({ ...prev, reraNumber: e.target.value }))}
+                placeholder="e.g. P51900028372"
+                className="h-9"
               />
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="pt-2 sm:pt-3 border-t border-border/60 flex items-center justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
@@ -1433,7 +1450,11 @@ function ProjectList({
 function ProjectDetail({
   project,
   towers,
-  tasks,
+  floors = [],
+  units = [],
+  tasks = [],
+  checklists = [],
+  subTasks = [],
   organizations,
   onCreateTower,
   onEditTower,
@@ -1441,7 +1462,11 @@ function ProjectDetail({
 }: {
   project: ApiProject | undefined;
   towers: ApiTower[];
+  floors?: ApiFloor[];
+  units?: ApiUnit[];
   tasks: ApiTask[];
+  checklists?: ApiChecklist[];
+  subTasks?: ApiSubTask[];
   organizations?: Organization[];
   onCreateTower: () => void;
   onEditTower: (tower: ApiTower) => void;
@@ -1449,12 +1474,310 @@ function ProjectDetail({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   if (!project) return <div className="text-center py-12">Project not found</div>;
 
-  const isDirect = project.hierarchyMode === "direct_task"; // ✅ NEW
+  const isDirect = project.hierarchyMode === "direct_task";
   const pTowers = towers.filter((t) => t.projectId === project.id);
   const pTasks = tasks.filter((t) => t.projectId === project.id);
+  const pFloors = floors.filter((f) => f.projectId === project.id);
+  const pUnits = units.filter((u) => u.projectId === project.id);
+
+  // Flow Interactive Selection States
+  const [activeTowerId, setActiveTowerId] = useState<number | null>(() => pTowers[0]?.id ?? null);
+  const [activeFloorId, setActiveFloorId] = useState<number | null>(null);
+  const [activeUnitId, setActiveUnitId] = useState<number | null>(null);
+  const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
+  const [activeChecklistId, setActiveChecklistId] = useState<number | null>(null);
+
+  // Flow View Mode & Expandable Tree states
+  const [flowMode, setFlowMode] = useState<"cascading" | "tree">("cascading");
+  const [expandedTowers, setExpandedTowers] = useState<Record<number, boolean>>({});
+  const [expandedFloors, setExpandedFloors] = useState<Record<number, boolean>>({});
+  const [expandedUnits, setExpandedUnits] = useState<Record<number, boolean>>({});
+  const [expandedTasks, setExpandedTasks] = useState<Record<number, boolean>>({});
+  const [expandedChecklists, setExpandedChecklists] = useState<Record<number, boolean>>({});
+
+  // Dynamic quick-add states
+  const [newChecklistName, setNewChecklistName] = useState("");
+  const [creatingChecklist, setCreatingChecklist] = useState(false);
+  const [newSubTaskName, setNewSubTaskName] = useState("");
+  const [creatingSubTask, setCreatingSubTask] = useState(false);
+  const [updatingSubTaskId, setUpdatingSubTaskId] = useState<number | null>(null);
+
+  // 1. Auto-sync Active Tower
+  useEffect(() => {
+    if (pTowers.length > 0 && (!activeTowerId || !pTowers.some((t) => t.id === activeTowerId))) {
+      setActiveTowerId(pTowers[0].id);
+    }
+  }, [pTowers, activeTowerId]);
+
+  const selectedTower = useMemo(
+    () => pTowers.find((t) => t.id === activeTowerId) || pTowers[0],
+    [pTowers, activeTowerId]
+  );
+
+  // 2. Auto-sync Active Floor
+  const selectedTowerFloors = useMemo(() => {
+    if (!selectedTower) return [];
+    return floors
+      .filter((f) => f.towerId === selectedTower.id)
+      .sort((a, b) => a.number - b.number);
+  }, [floors, selectedTower]);
+
+  useEffect(() => {
+    if (selectedTowerFloors.length > 0) {
+      if (!activeFloorId || !selectedTowerFloors.some((f) => f.id === activeFloorId)) {
+        setActiveFloorId(selectedTowerFloors[0].id);
+      }
+    } else {
+      setActiveFloorId(null);
+    }
+  }, [selectedTowerFloors, activeFloorId]);
+
+  const selectedFloor = useMemo(
+    () => selectedTowerFloors.find((f) => f.id === activeFloorId) || selectedTowerFloors[0],
+    [selectedTowerFloors, activeFloorId]
+  );
+
+  // 3. Auto-sync Active Unit
+  const selectedFloorUnits = useMemo(() => {
+    if (!selectedFloor) return [];
+    return units.filter((u) => u.floorId === selectedFloor.id);
+  }, [units, selectedFloor]);
+
+  useEffect(() => {
+    if (selectedFloorUnits.length > 0) {
+      if (!activeUnitId || !selectedFloorUnits.some((u) => u.id === activeUnitId)) {
+        setActiveUnitId(selectedFloorUnits[0].id);
+      }
+    } else {
+      setActiveUnitId(null);
+    }
+  }, [selectedFloorUnits, activeUnitId]);
+
+  const selectedUnit = useMemo(
+    () => selectedFloorUnits.find((u) => u.id === activeUnitId) || selectedFloorUnits[0],
+    [selectedFloorUnits, activeUnitId]
+  );
+
+  // 4. Auto-sync Active Task
+  const selectedUnitTasks = useMemo(() => {
+    if (!selectedUnit) return [];
+    return tasks.filter((t) => t.unitId === selectedUnit.id);
+  }, [tasks, selectedUnit]);
+
+  useEffect(() => {
+    if (selectedUnitTasks.length > 0) {
+      if (!activeTaskId || !selectedUnitTasks.some((t) => t.id === activeTaskId)) {
+        setActiveTaskId(selectedUnitTasks[0].id);
+      }
+    } else {
+      setActiveTaskId(null);
+    }
+  }, [selectedUnitTasks, activeTaskId]);
+
+  const selectedTask = useMemo(
+    () => selectedUnitTasks.find((t) => t.id === activeTaskId) || selectedUnitTasks[0],
+    [selectedUnitTasks, activeTaskId]
+  );
+
+  // 5. Auto-sync Active Checklist
+  const selectedTaskChecklists = useMemo(() => {
+    if (!selectedTask) return [];
+    return checklists.filter((c) => c.taskId === selectedTask.id);
+  }, [checklists, selectedTask]);
+
+  useEffect(() => {
+    if (selectedTaskChecklists.length > 0) {
+      if (!activeChecklistId || !selectedTaskChecklists.some((c) => c.id === activeChecklistId)) {
+        setActiveChecklistId(selectedTaskChecklists[0].id);
+      }
+    } else {
+      setActiveChecklistId(null);
+    }
+  }, [selectedTaskChecklists, activeChecklistId]);
+
+  const selectedChecklist = useMemo(
+    () => selectedTaskChecklists.find((c) => c.id === activeChecklistId) || selectedTaskChecklists[0],
+    [selectedTaskChecklists, activeChecklistId]
+  );
+
+  // 6. SubTasks under Active Checklist
+  const selectedChecklistSubTasks = useMemo(() => {
+    if (!selectedChecklist) return [];
+    return subTasks.filter((s) => s.checklistId === selectedChecklist.id);
+  }, [subTasks, selectedChecklist]);
+
+  // Tree Expand / Collapse Toggles
+  const toggleExpandTower = (id: number) => {
+    setExpandedTowers((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+  const toggleExpandFloor = (id: number) => {
+    setExpandedFloors((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+  const toggleExpandUnit = (id: number) => {
+    setExpandedUnits((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+  const toggleExpandTask = (id: number) => {
+    setExpandedTasks((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+  const toggleExpandChecklist = (id: number) => {
+    setExpandedChecklists((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Jump scroll helper for Stepper breadcrumb pills
+  const scrollToStage = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  // Dynamic SubTask Toggle
+  const handleToggleSubTask = async (st: ApiSubTask) => {
+    setUpdatingSubTaskId(st.id);
+    const isCompleted = st.status === "completed";
+    const nextStatus = isCompleted ? "pending" : "completed";
+    const nextProgress = isCompleted ? 0 : 100;
+    try {
+      await subTasksApi.update(st.id, {
+        name: st.name,
+        status: nextStatus,
+        progress: nextProgress,
+        checklistId: st.checklistId,
+        taskId: st.taskId,
+        unitId: st.unitId,
+        floorId: st.floorId,
+        towerId: st.towerId,
+        projectId: st.projectId,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["subtasks"] }),
+        queryClient.invalidateQueries({ queryKey: ["checklists"] }),
+        queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+      ]);
+      toast({
+        title: nextStatus === "completed" ? "Sub Task Completed ✓" : "Sub Task Reopened",
+        description: `"${st.name}" marked as ${nextStatus}`,
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Update Failed",
+        description: err?.message || "Could not update sub task",
+      });
+    } finally {
+      setUpdatingSubTaskId(null);
+    }
+  };
+
+  // Dynamic Quick Add Checklist
+  const handleQuickAddChecklist = async () => {
+    if (!newChecklistName.trim() || !selectedTask) return;
+    setCreatingChecklist(true);
+    try {
+      await checklistsApi.create({
+        name: newChecklistName.trim(),
+        taskId: selectedTask.id,
+        unitId: selectedUnit?.id,
+        floorId: selectedFloor?.id,
+        towerId: selectedTower?.id,
+        projectId: project.id,
+        status: "pending",
+        progress: 0,
+      });
+      setNewChecklistName("");
+      await queryClient.invalidateQueries({ queryKey: ["checklists"] });
+      toast({
+        title: "Checklist Created",
+        description: `Added "${newChecklistName.trim()}" to task ${selectedTask.title}`,
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Creation Failed",
+        description: err?.message || "Could not create checklist",
+      });
+    } finally {
+      setCreatingChecklist(false);
+    }
+  };
+
+  // Dynamic Quick Add SubTask
+  const handleQuickAddSubTask = async () => {
+    if (!newSubTaskName.trim() || !selectedChecklist) return;
+    setCreatingSubTask(true);
+    try {
+      await subTasksApi.create({
+        name: newSubTaskName.trim(),
+        checklistId: selectedChecklist.id,
+        taskId: selectedTask?.id,
+        unitId: selectedUnit?.id,
+        floorId: selectedFloor?.id,
+        towerId: selectedTower?.id,
+        projectId: project.id,
+        status: "pending",
+        progress: 0,
+      });
+      setNewSubTaskName("");
+      await queryClient.invalidateQueries({ queryKey: ["subtasks"] });
+      toast({
+        title: "Sub Task Created",
+        description: `Added "${newSubTaskName.trim()}" to checklist ${selectedChecklist.name}`,
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Creation Failed",
+        description: err?.message || "Could not create sub task",
+      });
+    } finally {
+      setCreatingSubTask(false);
+    }
+  };
+
+  // Dynamic Delete Checklist
+  const handleDeleteChecklistInFlow = async (chk: ApiChecklist) => {
+    if (!window.confirm(`Delete checklist "${chk.name}" and all its sub tasks?`)) return;
+    try {
+      await checklistsApi.remove(chk.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["checklists"] }),
+        queryClient.invalidateQueries({ queryKey: ["subtasks"] }),
+      ]);
+      toast({
+        title: "Checklist Deleted",
+        description: `Removed "${chk.name}"`,
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Delete Failed",
+        description: err?.message || "Could not delete checklist",
+      });
+    }
+  };
+
+  // Dynamic Delete SubTask
+  const handleDeleteSubTaskInFlow = async (st: ApiSubTask) => {
+    if (!window.confirm(`Delete sub task "${st.name}"?`)) return;
+    try {
+      await subTasksApi.remove(st.id);
+      await queryClient.invalidateQueries({ queryKey: ["subtasks"] });
+      toast({
+        title: "Sub Task Deleted",
+        description: `Removed "${st.name}"`,
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Delete Failed",
+        description: err?.message || "Could not delete sub task",
+      });
+    }
+  };
 
   const matchedOrg = organizations?.find(
     (o: Organization) =>
@@ -1537,13 +1860,28 @@ function ProjectDetail({
         ))}
       </div>
 
-      <Tabs defaultValue={isDirect ? "tasks" : "towers"}>
-        <div className="flex items-center justify-between gap-3">
-          <TabsList>
-            {!isDirect && <TabsTrigger value="towers">Towers</TabsTrigger>}
-            <TabsTrigger value="tasks">Tasks</TabsTrigger>
+      <Tabs defaultValue={isDirect ? "tasks" : "flow"}>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <TabsList className="bg-muted/60 p-1">
+            {!isDirect && (
+              <TabsTrigger value="flow" className="gap-1.5 font-semibold">
+                <GitFork className="h-4 w-4 text-primary" />
+                Flow
+              </TabsTrigger>
+            )}
+            {!isDirect && (
+              <TabsTrigger value="towers" className="gap-1.5">
+                <Building2 className="h-4 w-4" />
+                Towers ({pTowers.length})
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="tasks" className="gap-1.5">
+              <CheckSquare className="h-4 w-4" />
+              Tasks ({pTasks.length})
+            </TabsTrigger>
             <TabsTrigger value="budget">Budget</TabsTrigger>
           </TabsList>
+
           {isDirect ? (
             <NewTaskDialog
               lockedProjectId={project.id}
@@ -1554,6 +1892,1182 @@ function ProjectDetail({
             <Button size="sm" onClick={onCreateTower}>+ New Tower</Button>
           )}
         </div>
+
+        {/* ================= COMPLETE DYNAMIC FLOW ================= */}
+        {!isDirect && (
+          <TabsContent value="flow" className="mt-4 space-y-5 animate-in fade-in-50 duration-300">
+            {/* Flow Header with Pipeline Breadcrumbs & View Toggle */}
+            <div className="bg-card/75 backdrop-blur-md border border-border rounded-2xl p-4 shadow-xs space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-primary/20 to-primary/10 border border-primary/30 flex items-center justify-center text-primary shrink-0">
+                    <GitFork className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-display font-bold text-sm text-foreground flex items-center gap-1.5">
+                      <span>Flow Pipeline</span>
+                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Cascading construction flow: Project ➔ Tower ➔ Floor ➔ Unit ➔ Task ➔ Checklist ➔ Sub Task
+                    </p>
+                  </div>
+                </div>
+
+                {/* View Mode Toggle */}
+                <div className="flex items-center gap-1 bg-muted/70 p-1 rounded-xl self-start sm:self-center">
+                  <Button
+                    size="sm"
+                    variant={flowMode === "cascading" ? "secondary" : "ghost"}
+                    className="h-7 text-xs gap-1 px-2.5 font-medium shadow-2xs"
+                    onClick={() => setFlowMode("cascading")}
+                  >
+                    <Split className="h-3.5 w-3.5" />
+                    Cascading Flow
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={flowMode === "tree" ? "secondary" : "ghost"}
+                    className="h-7 text-xs gap-1 px-2.5 font-medium shadow-2xs"
+                    onClick={() => setFlowMode("tree")}
+                  >
+                    <ListTree className="h-3.5 w-3.5" />
+                    Full Flow Tree
+                  </Button>
+                </div>
+              </div>
+
+              {/* Complete 7-Stage Interactive Stepper Breadcrumb Bar */}
+              <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none text-xs">
+                {/* 1. Project */}
+                <button
+                  type="button"
+                  onClick={() => scrollToStage("flow-stage-towers")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-background border border-border/80 shrink-0 font-medium text-foreground shadow-2xs hover:border-primary/50 transition-colors cursor-pointer"
+                  title="Project Level"
+                >
+                  <Building2 className="h-3.5 w-3.5 text-primary" />
+                  <span>{project.name}</span>
+                </button>
+
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+
+                {/* 2. Tower */}
+                <button
+                  type="button"
+                  onClick={() => scrollToStage("flow-stage-towers")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shrink-0 transition-all font-medium cursor-pointer ${
+                    selectedTower
+                      ? "bg-primary/10 border-primary/40 text-primary font-semibold shadow-2xs hover:bg-primary/15"
+                      : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/60"
+                  }`}
+                  title="Click to jump to Towers"
+                >
+                  <Boxes className="h-3.5 w-3.5" />
+                  <span>{selectedTower ? selectedTower.name : "Select Tower"}</span>
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-primary/30">
+                    {pTowers.length}
+                  </Badge>
+                </button>
+
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+
+                {/* 3. Floor */}
+                <button
+                  type="button"
+                  onClick={() => scrollToStage("flow-stage-floors")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shrink-0 transition-all font-medium cursor-pointer ${
+                    selectedFloor
+                      ? "bg-primary/10 border-primary/40 text-primary font-semibold shadow-2xs hover:bg-primary/15"
+                      : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/60"
+                  }`}
+                  title="Click to jump to Floors"
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  <span>{selectedFloor ? (selectedFloor.name || `Floor ${selectedFloor.number}`) : "Select Floor"}</span>
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-primary/30">
+                    {selectedTowerFloors.length}
+                  </Badge>
+                </button>
+
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+
+                {/* 4. Unit */}
+                <button
+                  type="button"
+                  onClick={() => scrollToStage("flow-stage-units")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shrink-0 transition-all font-medium cursor-pointer ${
+                    selectedUnit
+                      ? "bg-primary/10 border-primary/40 text-primary font-semibold shadow-2xs hover:bg-primary/15"
+                      : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/60"
+                  }`}
+                  title="Click to jump to Units"
+                >
+                  <Boxes className="h-3.5 w-3.5" />
+                  <span>{selectedUnit ? `Unit ${selectedUnit.unitNumber}` : "Select Unit"}</span>
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-primary/30">
+                    {selectedFloorUnits.length}
+                  </Badge>
+                </button>
+
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+
+                {/* 5. Task */}
+                <button
+                  type="button"
+                  onClick={() => scrollToStage("flow-stage-tasks")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shrink-0 transition-all font-medium cursor-pointer ${
+                    selectedTask
+                      ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 font-semibold shadow-2xs hover:bg-emerald-500/15"
+                      : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/60"
+                  }`}
+                  title="Click to jump to Tasks"
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  <span>{selectedTask ? selectedTask.title : "Select Task"}</span>
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-emerald-500/30">
+                    {selectedUnitTasks.length}
+                  </Badge>
+                </button>
+
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+
+                {/* 6. Checklist */}
+                <button
+                  type="button"
+                  onClick={() => scrollToStage("flow-stage-checklists")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shrink-0 transition-all font-medium cursor-pointer ${
+                    selectedChecklist
+                      ? "bg-indigo-500/10 border-indigo-500/40 text-indigo-600 dark:text-indigo-400 font-semibold shadow-2xs hover:bg-indigo-500/15"
+                      : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/60"
+                  }`}
+                  title="Click to jump to Checklists"
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  <span>{selectedChecklist ? selectedChecklist.name : "Select Checklist"}</span>
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-indigo-500/30">
+                    {selectedTaskChecklists.length}
+                  </Badge>
+                </button>
+
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+
+                {/* 7. Sub Task */}
+                <button
+                  type="button"
+                  onClick={() => scrollToStage("flow-stage-subtasks")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shrink-0 transition-all font-medium cursor-pointer ${
+                    selectedChecklistSubTasks.length > 0
+                      ? "bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-400 font-semibold shadow-2xs hover:bg-violet-500/15"
+                      : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/60"
+                  }`}
+                  title="Click to jump to Sub Tasks"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>{selectedChecklistSubTasks.length} Sub Tasks</span>
+                </button>
+              </div>
+            </div>
+
+            {/* FLOW VIEW 1: CASCADING PIPELINE FLOW */}
+            {flowMode === "cascading" ? (
+              <div className="space-y-6">
+                {/* ================= LEVEL 1: TOWERS ================= */}
+                <div id="flow-stage-towers" className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-lg bg-primary/15 text-primary flex items-center justify-center text-xs font-bold">
+                        1
+                      </div>
+                      <h4 className="font-display font-bold text-sm text-foreground">
+                        Towers in {project.name}
+                      </h4>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {pTowers.length} Total
+                      </Badge>
+                    </div>
+                    <span className="text-xs text-muted-foreground hidden sm:inline">
+                      Click a tower to flow into its floors
+                    </span>
+                  </div>
+
+                  {pTowers.length === 0 ? (
+                    <Card>
+                      <CardContent className="p-6 text-sm text-muted-foreground text-center">
+                        No towers added yet. Click "+ New Tower" to begin building the flow.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                      {pTowers.map((tower, idx) => {
+                        const isSelected = selectedTower?.id === tower.id;
+                        const towerFloorsCount = floors.filter((f) => f.towerId === tower.id).length;
+                        return (
+                          <Card
+                            key={tower.id}
+                            className={`cursor-pointer transition-all duration-200 transform hover:-translate-y-1 hover:shadow-md select-none overflow-hidden animate-in fade-in-50 slide-in-from-bottom-2 ${
+                              isSelected
+                                ? "ring-2 ring-primary border-primary bg-primary/5 shadow-sm"
+                                : "hover:border-primary/40 bg-card"
+                            }`}
+                            style={{ animationDelay: `${idx * 50}ms` }}
+                            onClick={() => {
+                              setActiveTowerId(tower.id);
+                              setActiveFloorId(null);
+                              setActiveUnitId(null);
+                              setActiveTaskId(null);
+                              setActiveChecklistId(null);
+                            }}
+                          >
+                            <CardContent className="p-4 space-y-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5">
+                                  <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                    isSelected
+                                      ? "bg-primary text-primary-foreground shadow-sm"
+                                      : "bg-muted text-muted-foreground"
+                                  }`}>
+                                    <Building2 className="h-5 w-5" />
+                                  </div>
+                                  <div>
+                                    <h5 className="font-display font-bold text-base text-foreground">
+                                      {tower.name}
+                                    </h5>
+                                    <p className="text-xs text-muted-foreground">
+                                      {tower.totalFloors} Floors planned · {towerFloorsCount} mapped
+                                    </p>
+                                  </div>
+                                </div>
+                                <Badge variant={isSelected ? "default" : "secondary"} className="text-[10px] capitalize">
+                                  {tower.status}
+                                </Badge>
+                              </div>
+
+                              <div className="space-y-1 pt-1">
+                                <div className="flex justify-between text-xs text-muted-foreground">
+                                  <span>Progress</span>
+                                  <span className="font-bold text-foreground">{tower.progress}%</span>
+                                </div>
+                                <Progress value={tower.progress} className="h-2" />
+                              </div>
+
+                              <div className="flex items-center justify-between text-xs pt-1 border-t border-border/50">
+                                <span className={`text-[11px] font-medium flex items-center gap-1 ${
+                                  isSelected ? "text-primary font-bold" : "text-muted-foreground"
+                                }`}>
+                                  {isSelected ? "Active Flow Target ✓" : "Click to select ↘"}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigate(`/projects/${project.id}/towers/${tower.id}`);
+                                  }}
+                                  title="Open dedicated tower view"
+                                >
+                                  Open Page ↗
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Animated Flow Connector Arrow */}
+                {selectedTower && (
+                  <div className="flex items-center justify-center gap-2 py-1 animate-in fade-in zoom-in duration-300">
+                    <div className="h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent flex-1" />
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/25 text-primary text-xs font-semibold shadow-2xs">
+                      <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
+                      <span>Flowing into {selectedTower.name} Floors</span>
+                    </div>
+                    <div className="h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent flex-1" />
+                  </div>
+                )}
+
+                {/* ================= LEVEL 2: FLOORS ================= */}
+                {selectedTower && (
+                  <div id="flow-stage-floors" className="space-y-3 animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-lg bg-primary/15 text-primary flex items-center justify-center text-xs font-bold">
+                          2
+                        </div>
+                        <h4 className="font-display font-bold text-sm text-foreground">
+                          Floors under {selectedTower.name}
+                        </h4>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {selectedTowerFloors.length} Floors
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-muted-foreground hidden sm:inline">
+                        Click a floor to flow into its units
+                      </span>
+                    </div>
+
+                    {selectedTowerFloors.length === 0 ? (
+                      <Card className="bg-muted/30">
+                        <CardContent className="p-6 text-sm text-muted-foreground text-center">
+                          No floors mapped yet under {selectedTower.name}.
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                        {selectedTowerFloors.map((floor, idx) => {
+                          const isSelected = selectedFloor?.id === floor.id;
+                          const floorUnitCount = units.filter((u) => u.floorId === floor.id).length;
+                          return (
+                            <Card
+                              key={floor.id}
+                              className={`cursor-pointer transition-all duration-200 transform hover:-translate-y-1 hover:shadow-md select-none overflow-hidden animate-in fade-in-50 slide-in-from-bottom-2 ${
+                                isSelected
+                                  ? "ring-2 ring-primary border-primary bg-primary/5 shadow-sm"
+                                  : "hover:border-primary/40 bg-card"
+                              }`}
+                              style={{ animationDelay: `${idx * 30}ms` }}
+                              onClick={() => {
+                                setActiveFloorId(floor.id);
+                                setActiveUnitId(null);
+                                setActiveTaskId(null);
+                                setActiveChecklistId(null);
+                              }}
+                            >
+                              <CardContent className="p-3.5 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5">
+                                    <Layers className="h-3.5 w-3.5 text-primary shrink-0" />
+                                    <span className="font-display font-bold text-sm text-foreground">
+                                      {floor.name || `Floor ${floor.number}`}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    #{floor.number}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                  <span>Units</span>
+                                  <span className="font-bold text-foreground">{floorUnitCount}</span>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                                    <span>Progress</span>
+                                    <span>{floor.progress}%</span>
+                                  </div>
+                                  <Progress value={floor.progress} className="h-1.5" />
+                                </div>
+
+                                <div className="pt-1 text-[10px] text-center font-medium">
+                                  <span className={isSelected ? "text-primary font-bold" : "text-muted-foreground"}>
+                                    {isSelected ? "Active Floor ✓" : "Select ↘"}
+                                  </span>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Animated Flow Connector Arrow */}
+                {selectedFloor && (
+                  <div className="flex items-center justify-center gap-2 py-1 animate-in fade-in zoom-in duration-300">
+                    <div className="h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent flex-1" />
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/25 text-primary text-xs font-semibold shadow-2xs">
+                      <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
+                      <span>Flowing into {selectedFloor.name} Units</span>
+                    </div>
+                    <div className="h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent flex-1" />
+                  </div>
+                )}
+
+                {/* ================= LEVEL 3: UNITS ================= */}
+                {selectedFloor && (
+                  <div id="flow-stage-units" className="space-y-3 animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-lg bg-primary/15 text-primary flex items-center justify-center text-xs font-bold">
+                          3
+                        </div>
+                        <h4 className="font-display font-bold text-sm text-foreground">
+                          Units on {selectedFloor.name}
+                        </h4>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {selectedFloorUnits.length} Units
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-muted-foreground hidden sm:inline">
+                        Click a unit to flow into its tasks
+                      </span>
+                    </div>
+
+                    {selectedFloorUnits.length === 0 ? (
+                      <Card className="bg-muted/30">
+                        <CardContent className="p-6 text-sm text-muted-foreground text-center">
+                          No units mapped yet on {selectedFloor.name}.
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                        {selectedFloorUnits.map((unit, idx) => {
+                          const isSelected = selectedUnit?.id === unit.id;
+                          const unitTasksCount = tasks.filter((t) => t.unitId === unit.id).length;
+                          return (
+                            <Card
+                              key={unit.id}
+                              className={`cursor-pointer transition-all duration-200 transform hover:-translate-y-1 hover:shadow-md select-none overflow-hidden animate-in fade-in-50 slide-in-from-bottom-2 ${
+                                isSelected
+                                  ? "ring-2 ring-primary border-primary bg-primary/5 shadow-sm"
+                                  : "hover:border-primary/40 bg-card"
+                              }`}
+                              style={{ animationDelay: `${idx * 30}ms` }}
+                              onClick={() => {
+                                setActiveUnitId(unit.id);
+                                setActiveTaskId(null);
+                                setActiveChecklistId(null);
+                              }}
+                            >
+                              <CardContent className="p-3.5 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-display font-bold text-sm text-foreground">
+                                    Unit {unit.unitNumber}
+                                  </span>
+                                  <Badge
+                                    variant={
+                                      unit.status === "available"
+                                        ? "outline"
+                                        : unit.status === "booked"
+                                        ? "secondary"
+                                        : "default"
+                                    }
+                                    className="text-[9px] px-1 py-0 h-4 capitalize"
+                                  >
+                                    {unit.status}
+                                  </Badge>
+                                </div>
+
+                                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                  <span>{unit.type || "2BHK"}</span>
+                                  <span>{unit.areaSqFt} sq ft</span>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                                    <span>Tasks</span>
+                                    <span className="font-bold text-foreground">{unitTasksCount}</span>
+                                  </div>
+                                  <Progress value={unit.progress} className="h-1.5" />
+                                </div>
+
+                                <div className="pt-1 text-[10px] text-center font-medium">
+                                  <span className={isSelected ? "text-primary font-bold" : "text-muted-foreground"}>
+                                    {isSelected ? "Active Unit ✓" : "Select ↘"}
+                                  </span>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Animated Flow Connector Arrow */}
+                {selectedUnit && (
+                  <div className="flex items-center justify-center gap-2 py-1 animate-in fade-in zoom-in duration-300">
+                    <div className="h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent flex-1" />
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-semibold shadow-2xs">
+                      <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
+                      <span>Flowing into Unit {selectedUnit.unitNumber} Tasks</span>
+                    </div>
+                    <div className="h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent flex-1" />
+                  </div>
+                )}
+
+                {/* ================= LEVEL 4: TASKS ================= */}
+                {selectedUnit && (
+                  <div id="flow-stage-tasks" className="space-y-3 animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs font-bold">
+                          4
+                        </div>
+                        <h4 className="font-display font-bold text-sm text-foreground">
+                          Tasks under Unit {selectedUnit.unitNumber}
+                        </h4>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {selectedUnitTasks.length} Tasks
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2 self-start sm:self-center">
+                        <NewTaskDialog
+                          lockedProjectId={project.id}
+                          trigger={
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
+                              <Plus className="h-3 w-3" />
+                              New Task
+                            </Button>
+                          }
+                          onCreated={() => queryClient.invalidateQueries({ queryKey: ["tasks"] })}
+                        />
+                      </div>
+                    </div>
+
+                    {selectedUnitTasks.length === 0 ? (
+                      <Card className="bg-muted/30">
+                        <CardContent className="p-6 text-sm text-muted-foreground text-center space-y-2">
+                          <p>No tasks directly mapped to Unit {selectedUnit.unitNumber} yet.</p>
+                          <NewTaskDialog
+                            lockedProjectId={project.id}
+                            trigger={<Button size="sm">+ Create First Task for this Unit</Button>}
+                            onCreated={() => queryClient.invalidateQueries({ queryKey: ["tasks"] })}
+                          />
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {selectedUnitTasks.map((task, idx) => {
+                          const isSelected = selectedTask?.id === task.id;
+                          const taskChecklistsCount = checklists.filter((c) => c.taskId === task.id).length;
+                          return (
+                            <Card
+                              key={task.id}
+                              className={`cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5 hover:shadow-md select-none overflow-hidden animate-in fade-in-50 slide-in-from-bottom-2 ${
+                                isSelected
+                                  ? "ring-2 ring-emerald-500 border-emerald-500 bg-emerald-500/5 shadow-sm"
+                                  : "hover:border-emerald-500/40 bg-card"
+                              }`}
+                              style={{ animationDelay: `${idx * 40}ms` }}
+                              onClick={() => {
+                                setActiveTaskId(task.id);
+                                setActiveChecklistId(null);
+                              }}
+                            >
+                              <CardContent className="p-3.5 space-y-2.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-start gap-2.5 min-w-0">
+                                    <div
+                                      className={`h-3 w-3 rounded-full shrink-0 mt-1 ${
+                                        task.status === "completed"
+                                          ? "bg-emerald-500 ring-2 ring-emerald-500/20"
+                                          : task.status === "in_progress"
+                                          ? "bg-amber-500 ring-2 ring-amber-500/20"
+                                          : task.status === "delayed"
+                                          ? "bg-rose-500 ring-2 ring-rose-500/20"
+                                          : "bg-muted-foreground/40"
+                                      }`}
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-foreground truncate">{task.title}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {task.department || "General"} · {task.phase || "Construction"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <Badge variant="outline" className="text-[10px] capitalize shrink-0">
+                                    {task.priority || "Normal"}
+                                  </Badge>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-xs text-muted-foreground">
+                                    <span>Checklists: <strong className="text-foreground">{taskChecklistsCount}</strong></span>
+                                    <span className="font-bold text-foreground">{task.progress}%</span>
+                                  </div>
+                                  <Progress value={task.progress} className="h-1.5" />
+                                </div>
+
+                                <div className="flex items-center justify-between text-xs pt-1 border-t border-border/50">
+                                  <span className={`text-[11px] font-medium flex items-center gap-1 ${
+                                    isSelected ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-muted-foreground"
+                                  }`}>
+                                    {isSelected ? "Active Task Target ✓" : "Click to select ↘"}
+                                  </span>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigate(
+                                        `/projects/${project.id}/towers/${selectedTower.id}/floors/${selectedFloor.id}/units/${selectedUnit.id}/tasks/${task.id}`
+                                      );
+                                    }}
+                                  >
+                                    Open Page ↗
+                                  </Button>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Animated Flow Connector Arrow */}
+                {selectedTask && (
+                  <div className="flex items-center justify-center gap-2 py-1 animate-in fade-in zoom-in duration-300">
+                    <div className="h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent flex-1" />
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-600 dark:text-indigo-400 text-xs font-semibold shadow-2xs">
+                      <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
+                      <span>Flowing into "{selectedTask.title}" Checklists</span>
+                    </div>
+                    <div className="h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent flex-1" />
+                  </div>
+                )}
+
+                {/* ================= LEVEL 5: CHECKLISTS ================= */}
+                {selectedTask && (
+                  <div id="flow-stage-checklists" className="space-y-3 animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">
+                          5
+                        </div>
+                        <h4 className="font-display font-bold text-sm text-foreground">
+                          Checklists for "{selectedTask.title}"
+                        </h4>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {selectedTaskChecklists.length} Checklists
+                        </Badge>
+                      </div>
+
+                      {/* Quick Add Checklist Input */}
+                      <div className="flex items-center gap-2 self-start sm:self-center">
+                        <Input
+                          placeholder="New checklist name..."
+                          value={newChecklistName}
+                          onChange={(e) => setNewChecklistName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleQuickAddChecklist();
+                            }
+                          }}
+                          className="h-8 text-xs w-48 sm:w-56"
+                        />
+                        <Button
+                          size="sm"
+                          className="h-8 text-xs gap-1"
+                          onClick={handleQuickAddChecklist}
+                          disabled={creatingChecklist || !newChecklistName.trim()}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          {creatingChecklist ? "Adding..." : "Add"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {selectedTaskChecklists.length === 0 ? (
+                      <Card className="bg-muted/30">
+                        <CardContent className="p-6 text-sm text-muted-foreground text-center">
+                          No checklists mapped for this task yet. Type a name above and click <strong>Add</strong> to create one.
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {selectedTaskChecklists.map((chk, idx) => {
+                          const isSelected = selectedChecklist?.id === chk.id;
+                          const chkSubTasksCount = subTasks.filter((s) => s.checklistId === chk.id).length;
+                          return (
+                            <Card
+                              key={chk.id}
+                              className={`cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5 hover:shadow-md select-none overflow-hidden animate-in fade-in-50 slide-in-from-bottom-2 ${
+                                isSelected
+                                  ? "ring-2 ring-indigo-500 border-indigo-500 bg-indigo-500/5 shadow-sm"
+                                  : "hover:border-indigo-500/40 bg-card"
+                              }`}
+                              style={{ animationDelay: `${idx * 40}ms` }}
+                              onClick={() => setActiveChecklistId(chk.id)}
+                            >
+                              <CardContent className="p-3.5 space-y-2.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <ListChecks className="h-4 w-4 text-indigo-500 shrink-0" />
+                                    <span className="font-display font-bold text-sm text-foreground truncate">
+                                      {chk.name}
+                                    </span>
+                                  </div>
+                                  <Badge
+                                    variant={chk.status === "completed" ? "default" : "secondary"}
+                                    className="text-[9px] px-1 py-0 h-4 capitalize"
+                                  >
+                                    {chk.status || "Pending"}
+                                  </Badge>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-xs text-muted-foreground">
+                                    <span>Sub Tasks: <strong className="text-foreground">{chkSubTasksCount}</strong></span>
+                                    <span className="font-bold text-foreground">{chk.progress}%</span>
+                                  </div>
+                                  <Progress value={chk.progress} className="h-1.5" />
+                                </div>
+
+                                <div className="flex items-center justify-between text-xs pt-1 border-t border-border/50">
+                                  <span className={`text-[11px] font-medium flex items-center gap-1 ${
+                                    isSelected ? "text-indigo-600 dark:text-indigo-400 font-bold" : "text-muted-foreground"
+                                  }`}>
+                                    {isSelected ? "Active Checklist Target ✓" : "Click to select ↘"}
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteChecklistInFlow(chk);
+                                      }}
+                                      title="Delete Checklist"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigate(
+                                          `/projects/${project.id}/towers/${selectedTower.id}/floors/${selectedFloor.id}/units/${selectedUnit.id}/tasks/${selectedTask.id}/checklists/${chk.id}`
+                                        );
+                                      }}
+                                    >
+                                      Open ↗
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Animated Flow Connector Arrow */}
+                {selectedChecklist && (
+                  <div className="flex items-center justify-center gap-2 py-1 animate-in fade-in zoom-in duration-300">
+                    <div className="h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent flex-1" />
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-500/10 border border-violet-500/30 text-violet-600 dark:text-violet-400 text-xs font-semibold shadow-2xs">
+                      <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
+                      <span>Flowing into "{selectedChecklist.name}" Sub Tasks</span>
+                    </div>
+                    <div className="h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent flex-1" />
+                  </div>
+                )}
+
+                {/* ================= LEVEL 6: SUB TASKS ================= */}
+                {selectedChecklist && (
+                  <div id="flow-stage-subtasks" className="space-y-3 animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-lg bg-violet-500/15 text-violet-600 dark:text-violet-400 flex items-center justify-center text-xs font-bold">
+                          6
+                        </div>
+                        <h4 className="font-display font-bold text-sm text-foreground">
+                          Sub Tasks under "{selectedChecklist.name}"
+                        </h4>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {selectedChecklistSubTasks.filter((s) => s.status === "completed").length} / {selectedChecklistSubTasks.length} Completed
+                        </Badge>
+                      </div>
+
+                      {/* Quick Add SubTask Input */}
+                      <div className="flex items-center gap-2 self-start sm:self-center">
+                        <Input
+                          placeholder="New sub task name..."
+                          value={newSubTaskName}
+                          onChange={(e) => setNewSubTaskName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleQuickAddSubTask();
+                            }
+                          }}
+                          className="h-8 text-xs w-48 sm:w-56"
+                        />
+                        <Button
+                          size="sm"
+                          className="h-8 text-xs gap-1 bg-violet-600 hover:bg-violet-700 text-white"
+                          onClick={handleQuickAddSubTask}
+                          disabled={creatingSubTask || !newSubTaskName.trim()}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          {creatingSubTask ? "Adding..." : "Add Sub Task"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {selectedChecklistSubTasks.length === 0 ? (
+                      <Card className="bg-muted/30">
+                        <CardContent className="p-6 text-sm text-muted-foreground text-center">
+                          No sub tasks in this checklist yet. Type a name above and click <strong>Add Sub Task</strong> to begin tracking individual checklist items!
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedChecklistSubTasks.map((st, idx) => {
+                          const isDone = st.status === "completed";
+                          const isUpdating = updatingSubTaskId === st.id;
+                          return (
+                            <div
+                              key={st.id}
+                              className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all duration-200 animate-in fade-in-50 slide-in-from-bottom-2 ${
+                                isDone
+                                  ? "bg-muted/30 border-border/60 text-muted-foreground"
+                                  : "bg-card border-border hover:border-violet-500/40 shadow-2xs"
+                              }`}
+                              style={{ animationDelay: `${idx * 30}ms` }}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                {/* Interactive Completion Checkbox */}
+                                <button
+                                  type="button"
+                                  disabled={isUpdating}
+                                  onClick={() => handleToggleSubTask(st)}
+                                  className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                                    isDone
+                                      ? "bg-emerald-500 border-emerald-500 text-white"
+                                      : "border-border hover:border-violet-500 bg-background"
+                                  }`}
+                                  title={isDone ? "Mark Pending" : "Mark Completed"}
+                                >
+                                  {isDone && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+                                </button>
+
+                                <span
+                                  onClick={() => handleToggleSubTask(st)}
+                                  className={`text-sm cursor-pointer select-none truncate ${
+                                    isDone ? "line-through text-muted-foreground" : "font-medium text-foreground"
+                                  }`}
+                                >
+                                  {st.name}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Badge
+                                  variant={isDone ? "default" : "outline"}
+                                  className={`text-[10px] capitalize ${
+                                    isDone
+                                      ? "bg-emerald-600 text-white"
+                                      : "border-violet-500/30 text-violet-600 dark:text-violet-400"
+                                  }`}
+                                >
+                                  {st.status || "Pending"}
+                                </Badge>
+
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                  onClick={() => handleDeleteSubTaskInFlow(st)}
+                                  title="Delete Sub Task"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* FLOW VIEW 2: FULL EXPANDABLE FLOW TREE */
+              <div className="space-y-4 animate-in fade-in-50 duration-300">
+                {pTowers.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-6 text-sm text-muted-foreground text-center">
+                      No towers mapped yet for this project.
+                    </CardContent>
+                  </Card>
+                ) : (
+                  pTowers.map((tower) => {
+                    const isExpanded = expandedTowers[tower.id] ?? true;
+                    const towerFloorsList = floors
+                      .filter((f) => f.towerId === tower.id)
+                      .sort((a, b) => a.number - b.number);
+
+                    return (
+                      <Card key={tower.id} className="overflow-hidden border-border/80 shadow-xs">
+                        <div
+                          className="flex items-center justify-between p-4 bg-muted/40 cursor-pointer hover:bg-muted/60 transition-colors select-none"
+                          onClick={() => toggleExpandTower(tower.id)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground p-0"
+                            >
+                              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </Button>
+                            <Building2 className="h-5 w-5 text-primary" />
+                            <div>
+                              <h4 className="font-display font-bold text-base text-foreground">
+                                {tower.name}
+                              </h4>
+                              <p className="text-xs text-muted-foreground">
+                                {towerFloorsList.length} Floors · {tower.progress}% Progress
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="capitalize text-xs">
+                              {tower.status}
+                            </Badge>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/projects/${project.id}/towers/${tower.id}`);
+                              }}
+                            >
+                              Details ↗
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Nested Floors Branch */}
+                        {isExpanded && (
+                          <div className="p-4 pt-2 border-t border-border/60 space-y-3 bg-card/60">
+                            {towerFloorsList.length === 0 ? (
+                              <p className="text-xs text-muted-foreground pl-10 py-2">
+                                No floors mapped under this tower.
+                              </p>
+                            ) : (
+                              towerFloorsList.map((floor) => {
+                                const isFloorExpanded = expandedFloors[floor.id] ?? false;
+                                const floorUnitsList = units.filter((u) => u.floorId === floor.id);
+
+                                return (
+                                  <div
+                                    key={floor.id}
+                                    className="border-l-2 border-primary/30 pl-4 ml-4 space-y-2 py-1"
+                                  >
+                                    <div
+                                      className="flex items-center justify-between p-2.5 rounded-xl bg-muted/30 hover:bg-muted/50 cursor-pointer transition-colors"
+                                      onClick={() => toggleExpandFloor(floor.id)}
+                                    >
+                                      <div className="flex items-center gap-2.5">
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-muted-foreground">
+                                          {isFloorExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                        </Button>
+                                        <Layers className="h-4 w-4 text-primary" />
+                                        <span className="font-medium text-sm text-foreground">
+                                          {floor.name || `Floor ${floor.number}`}
+                                        </span>
+                                        <Badge variant="outline" className="text-[10px] h-4">
+                                          {floorUnitsList.length} Units
+                                        </Badge>
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-semibold text-foreground">{floor.progress}%</span>
+                                        <Progress value={floor.progress} className="h-1.5 w-16 hidden sm:flex" />
+                                      </div>
+                                    </div>
+
+                                    {/* Nested Units Branch */}
+                                    {isFloorExpanded && (
+                                      <div className="border-l-2 border-border/80 pl-4 ml-4 space-y-2 pt-1">
+                                        {floorUnitsList.length === 0 ? (
+                                          <p className="text-xs text-muted-foreground py-1">
+                                            No units mapped on this floor.
+                                          </p>
+                                        ) : (
+                                          floorUnitsList.map((unit) => {
+                                            const isUnitExpanded = expandedUnits[unit.id] ?? false;
+                                            const unitTasksList = tasks.filter((t) => t.unitId === unit.id);
+
+                                            return (
+                                              <div
+                                                key={unit.id}
+                                                className="border-l-2 border-emerald-500/30 pl-3 ml-2 space-y-2 py-1"
+                                              >
+                                                <div
+                                                  className="flex items-center justify-between p-2 rounded-lg bg-background border border-border hover:border-primary/40 cursor-pointer transition-colors"
+                                                  onClick={() => toggleExpandUnit(unit.id)}
+                                                >
+                                                  <div className="flex items-center gap-2">
+                                                    <Button variant="ghost" size="icon" className="h-5 w-5 p-0 text-muted-foreground">
+                                                      {isUnitExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                                    </Button>
+                                                    <Boxes className="h-3.5 w-3.5 text-emerald-500" />
+                                                    <span className="font-bold text-xs text-foreground">
+                                                      Unit {unit.unitNumber}
+                                                    </span>
+                                                    <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4">
+                                                      {unit.status}
+                                                    </Badge>
+                                                  </div>
+                                                  <span className="text-[11px] text-muted-foreground">
+                                                    {unitTasksList.length} tasks
+                                                  </span>
+                                                </div>
+
+                                                {/* Nested Tasks Branch */}
+                                                {isUnitExpanded && (
+                                                  <div className="border-l-2 border-emerald-500/40 pl-3 ml-2 space-y-2 pt-1">
+                                                    {unitTasksList.length === 0 ? (
+                                                      <p className="text-[11px] text-muted-foreground py-1">
+                                                        No tasks mapped to this unit.
+                                                      </p>
+                                                    ) : (
+                                                      unitTasksList.map((task) => {
+                                                        const isTaskExpanded = expandedTasks[task.id] ?? false;
+                                                        const taskChecklistsList = checklists.filter((c) => c.taskId === task.id);
+
+                                                        return (
+                                                          <div
+                                                            key={task.id}
+                                                            className="border-l-2 border-indigo-500/30 pl-3 ml-2 space-y-1.5 py-0.5"
+                                                          >
+                                                            <div
+                                                              className="flex items-center justify-between p-1.5 rounded-md bg-muted/40 hover:bg-muted/60 cursor-pointer transition-colors text-xs"
+                                                              onClick={() => toggleExpandTask(task.id)}
+                                                            >
+                                                              <div className="flex items-center gap-1.5">
+                                                                <Button variant="ghost" size="icon" className="h-4 w-4 p-0 text-muted-foreground">
+                                                                  {isTaskExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                                                </Button>
+                                                                <CheckSquare className="h-3.5 w-3.5 text-indigo-500" />
+                                                                <span className="font-semibold text-foreground truncate max-w-[150px] sm:max-w-xs">
+                                                                  {task.title}
+                                                                </span>
+                                                              </div>
+                                                              <Badge variant="outline" className="text-[9px] h-3.5">
+                                                                {taskChecklistsList.length} checklists
+                                                              </Badge>
+                                                            </div>
+
+                                                            {/* Nested Checklists Branch */}
+                                                            {isTaskExpanded && (
+                                                              <div className="border-l-2 border-indigo-500/40 pl-3 ml-2 space-y-1.5 pt-1">
+                                                                {taskChecklistsList.length === 0 ? (
+                                                                  <p className="text-[11px] text-muted-foreground py-0.5">
+                                                                    No checklists in this task.
+                                                                  </p>
+                                                                ) : (
+                                                                  taskChecklistsList.map((chk) => {
+                                                                    const isChkExpanded = expandedChecklists[chk.id] ?? false;
+                                                                    const chkSubTasksList = subTasks.filter((s) => s.checklistId === chk.id);
+
+                                                                    return (
+                                                                      <div
+                                                                        key={chk.id}
+                                                                        className="border-l-2 border-violet-500/30 pl-3 ml-2 space-y-1 py-0.5"
+                                                                      >
+                                                                        <div
+                                                                          className="flex items-center justify-between p-1.5 rounded bg-background border border-border/80 cursor-pointer hover:border-violet-500/40 transition-colors text-xs"
+                                                                          onClick={() => toggleExpandChecklist(chk.id)}
+                                                                        >
+                                                                          <div className="flex items-center gap-1.5">
+                                                                            <Button variant="ghost" size="icon" className="h-4 w-4 p-0 text-muted-foreground">
+                                                                              {isChkExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                                                            </Button>
+                                                                            <ListChecks className="h-3.5 w-3.5 text-violet-500" />
+                                                                            <span className="font-medium text-foreground">
+                                                                              {chk.name}
+                                                                            </span>
+                                                                          </div>
+                                                                          <span className="text-[10px] text-muted-foreground">
+                                                                            {chkSubTasksList.length} sub tasks
+                                                                          </span>
+                                                                        </div>
+
+                                                                        {/* Nested Sub Tasks Branch with interactive checkboxes */}
+                                                                        {isChkExpanded && (
+                                                                          <div className="border-l-2 border-violet-500/40 pl-3 ml-2 space-y-1 pt-1">
+                                                                            {chkSubTasksList.length === 0 ? (
+                                                                              <p className="text-[10px] text-muted-foreground py-0.5">
+                                                                                No sub tasks.
+                                                                              </p>
+                                                                            ) : (
+                                                                              chkSubTasksList.map((st) => {
+                                                                                const isDone = st.status === "completed";
+                                                                                return (
+                                                                                  <div
+                                                                                    key={st.id}
+                                                                                    className="flex items-center justify-between p-1.5 rounded bg-card border border-border/60 text-xs"
+                                                                                  >
+                                                                                    <div className="flex items-center gap-2">
+                                                                                      <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleToggleSubTask(st)}
+                                                                                        className={`h-4 w-4 rounded border flex items-center justify-center cursor-pointer transition-colors ${
+                                                                                          isDone
+                                                                                            ? "bg-emerald-500 border-emerald-500 text-white"
+                                                                                            : "border-border hover:border-violet-500 bg-background"
+                                                                                        }`}
+                                                                                      >
+                                                                                        {isDone && <Check className="h-3 w-3 stroke-[3]" />}
+                                                                                      </button>
+                                                                                      <span className={isDone ? "line-through text-muted-foreground" : "text-foreground"}>
+                                                                                        {st.name}
+                                                                                      </span>
+                                                                                    </div>
+                                                                                    <Badge variant={isDone ? "default" : "outline"} className="text-[9px] h-3.5">
+                                                                                      {st.status || "Pending"}
+                                                                                    </Badge>
+                                                                                  </div>
+                                                                                );
+                                                                              })
+                                                                            )}
+                                                                          </div>
+                                                                        )}
+                                                                      </div>
+                                                                    );
+                                                                  })
+                                                                )}
+                                                              </div>
+                                                            )}
+                                                          </div>
+                                                        );
+                                                      })
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </Card>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </TabsContent>
+        )}
 
         {!isDirect && (
           <TabsContent value="towers" className="mt-4 space-y-4">
@@ -3076,7 +4590,11 @@ const Projects = () => {
         <ProjectDetail
           project={selectedProject}
           towers={towers}
+          floors={floors}
+          units={units}
           tasks={tasks}
+          checklists={checklists}
+          subTasks={subTasks}
           organizations={projectListOrganizations}
           onCreateTower={() => {
             setEditingTower(null);

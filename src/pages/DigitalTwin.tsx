@@ -313,7 +313,6 @@ const DigitalTwin: React.FC = () => {
 
   return (
     <div className="space-y-4 pb-12">
-      {/* 1. Top Section: Project Selector, Information & Aggregate Rollup Metrics */}
       <DigitalTwinHeader
         projects={projects}
         selectedProjectId={selectedProjectId}
@@ -321,6 +320,26 @@ const DigitalTwin: React.FC = () => {
         projectRollup={projectRollup}
         isRefreshing={isLoading}
         onRefresh={handleRefresh}
+        visualizationMode={visualizationMode}
+        onVisualizationModeChange={setVisualizationMode}
+        onTowerClick={() => {
+          if (!projectRollup?.towers.length) return;
+          if (isolatedTowerId === null) {
+            const first = projectRollup.towers[0];
+            setIsolatedTowerId(first.tower.id);
+            toast({ title: `Focused on ${first.tower.name}` });
+          } else {
+            const idx = projectRollup.towers.findIndex((t) => t.tower.id === isolatedTowerId);
+            if (idx >= 0 && idx < projectRollup.towers.length - 1) {
+              const next = projectRollup.towers[idx + 1];
+              setIsolatedTowerId(next.tower.id);
+              toast({ title: `Focused on ${next.tower.name}` });
+            } else {
+              setIsolatedTowerId(null);
+              toast({ title: "Viewing All Towers" });
+            }
+          }
+        }}
       />
 
       {/* 2. Main Section: Toolbar with Visualization Filters & Camera Controls */}
@@ -335,6 +354,7 @@ const DigitalTwin: React.FC = () => {
           onExplosionFactorChange={setExplosionFactor}
           isXRayMode={isXRayMode}
           onToggleXRay={() => setIsXRayMode((prev) => !prev)}
+          cameraPreset={cameraPreset}
           onCameraPreset={setCameraPreset}
           viewMode={viewMode}
           onViewModeChange={setViewMode}

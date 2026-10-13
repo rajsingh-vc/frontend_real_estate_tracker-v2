@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import AcceptInvite from "./components/AcceptInvite";
@@ -85,7 +86,7 @@ function AppRoutes() {
                 <Route path="/category-management" element={<AdminRoute><CategoryManagement /></AdminRoute>} />
                 <Route path="/compliance" element={<Compliance />} />
                 <Route path="/handover" element={<Handover />} />
-                <Route path="/society" element={<Society />} />
+                <Route path="/society" element={<Navigate to="/" replace />} />
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/ai-assistant" element={<AdminRoute><AIAssistant /></AdminRoute>} />
@@ -103,17 +104,21 @@ function AppRoutes() {
 }
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <AuthProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </AuthProvider>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ErrorBoundary section="Root Application">
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <AuthProvider>
+          <BrowserRouter>
+            <ErrorBoundary section="Routes">
+              <AppRoutes />
+            </ErrorBoundary>
+          </BrowserRouter>
+        </AuthProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

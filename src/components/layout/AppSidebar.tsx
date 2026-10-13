@@ -3,6 +3,7 @@ import {
   LayoutDashboard, Building2, ListChecks, CalendarRange, Map, AlertTriangle,
   Users, ShieldCheck, FileText, BarChart3, Bot, Settings, ClipboardList,
   HandshakeIcon, Landmark, Package, TrendingUp, LogOut, Tags, MoreVertical, User as UserIcon,
+  ChevronLeft,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -17,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { UserProfileModal } from "./UserProfileModal";
 
 const mainItems = [
@@ -37,7 +39,6 @@ const baseOperationsItems = [
 const managementItems = [
   { title: "Compliance", url: "/compliance", icon: ShieldCheck },
   { title: "Handover", url: "/handover", icon: HandshakeIcon },
-  { title: "Society", url: "/society", icon: Landmark },
   { title: "Documents", url: "/documents", icon: FileText },
   { title: "Reports", url: "/reports", icon: BarChart3 },
 ];
@@ -49,7 +50,7 @@ const baseSystemItems = [
 ];
 
 export function AppSidebar() {
-  const { state } = useSidebar();
+  const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
   const navigate = useNavigate();
@@ -128,22 +129,47 @@ export function AppSidebar() {
     <>
       <Sidebar collapsible="icon" className="border-r-0">
         {/* Sidebar Header */}
-        <SidebarHeader className="px-4 py-5">
-          <NavLink to="/" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-              <Building2 className="h-5 w-5" />
-            </div>
-            {!collapsed && (
-              <div className="flex flex-col">
-                <span className="font-display font-bold text-sm text-sidebar-foreground">
-                  Real Estate Tracker
-                </span>
-                <span className="text-[10px] text-sidebar-foreground/50 uppercase tracking-widest">
-                  Project Management
-                </span>
+        <SidebarHeader className="px-3 py-4">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (collapsed) {
+                  toggleSidebar();
+                } else {
+                  navigate("/");
+                }
+              }}
+              className="flex items-center gap-2.5 min-w-0 flex-1 text-left group cursor-pointer focus:outline-none"
+              title={collapsed ? "Maximize sidebar" : "Real Estate Tracker"}
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shrink-0 shadow-xs group-hover:opacity-90 transition-opacity">
+                <Building2 className="h-5 w-5" />
               </div>
+              {!collapsed && (
+                <div className="flex flex-col min-w-0">
+                  <span className="font-display font-bold text-sm text-sidebar-foreground truncate">
+                    Real Estate Tracker
+                  </span>
+                  <span className="text-[10px] text-sidebar-foreground/50 uppercase tracking-widest truncate">
+                    Project Management
+                  </span>
+                </div>
+              )}
+            </button>
+            {!collapsed && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                className="h-7 w-7 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent shrink-0 rounded-lg"
+                title="Minimize sidebar"
+                aria-label="Minimize sidebar"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
             )}
-          </NavLink>
+          </div>
         </SidebarHeader>
 
         {/* Sidebar Content */}
@@ -174,11 +200,6 @@ export function AppSidebar() {
                       <span className="text-xs font-semibold text-sidebar-foreground truncate leading-tight">
                         {user.name || user.username}
                       </span>
-                      {user.email && user.email.trim() && (
-                        <span className="text-[11px] text-sidebar-foreground/60 truncate">
-                          {user.email}
-                        </span>
-                      )}
                       <div className="mt-1 flex items-center gap-1">
                         <Badge
                           variant="secondary"
@@ -198,9 +219,6 @@ export function AppSidebar() {
               <DropdownMenuContent align="end" side="top" className="w-56 mb-2">
                 <div className="px-3 py-2 border-b">
                   <p className="text-xs font-bold truncate">{user.name || user.username}</p>
-                  {user.email && user.email.trim() && (
-                    <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
-                  )}
                   <p className="text-[10px] text-primary font-medium mt-0.5">{displayRole}</p>
                 </div>
                 <DropdownMenuItem

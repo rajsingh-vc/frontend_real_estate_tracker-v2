@@ -1,7 +1,6 @@
 import React from "react";
 import type { VisualizationMode, CameraPreset, TowerRollup } from "./types";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import {
   Select,
@@ -10,6 +9,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Layers,
   RotateCcw,
@@ -25,6 +29,8 @@ import {
   LayoutGrid,
   Box,
   MapPin,
+  Palette,
+  Info,
 } from "lucide-react";
 
 export type DigitalTwinViewMode = "3d" | "map" | "split" | "2d";
@@ -39,10 +45,28 @@ interface DigitalTwinToolbarProps {
   onExplosionFactorChange: (val: number) => void;
   isXRayMode: boolean;
   onToggleXRay: () => void;
+  cameraPreset?: CameraPreset;
   onCameraPreset: (preset: CameraPreset) => void;
   viewMode: DigitalTwinViewMode;
   onViewModeChange: (mode: DigitalTwinViewMode) => void;
 }
+
+const COLOR_MODES: { id: VisualizationMode; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "overall", label: "Overall Progress", icon: CheckCircle2 },
+  { id: "tasks", label: "Task %", icon: CheckCircle2 },
+  { id: "checklists", label: "Checklists", icon: ListTodo },
+  { id: "subtasks", label: "Subtasks", icon: Boxes },
+  { id: "overdue", label: "Overdue & Blockers", icon: AlertTriangle },
+  { id: "status", label: "Status State", icon: Layers },
+  { id: "unit_status", label: "Unit Inventory", icon: Building },
+];
+
+const VIEW_MODES: { id: DigitalTwinViewMode; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "3d", label: "3D Model", icon: Box },
+  { id: "map", label: "Geo 3D Map", icon: MapPin },
+  { id: "split", label: "Split View", icon: Split },
+  { id: "2d", label: "2D Elevation", icon: LayoutGrid },
+];
 
 export const DigitalTwinToolbar: React.FC<DigitalTwinToolbarProps> = ({
   visualizationMode,
@@ -54,229 +78,237 @@ export const DigitalTwinToolbar: React.FC<DigitalTwinToolbarProps> = ({
   onExplosionFactorChange,
   isXRayMode,
   onToggleXRay,
+  cameraPreset = "orbit",
   onCameraPreset,
   viewMode,
   onViewModeChange,
 }) => {
   return (
-    <div className="bg-card/70 backdrop-blur-md border border-border p-3 rounded-xl shadow-sm space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* Left: Visualization Color Mode Selector */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 shrink-0">
-            <SlidersHorizontal className="h-3.5 w-3.5 text-primary" />
-            <span>Filter Color:</span>
+    <div className="bg-card/75 backdrop-blur-md border border-border p-2.5 sm:p-3 rounded-2xl shadow-sm">
+      {/* Primary Toolbar - Smooth, Evenly Aligned Layout */}
+      <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+        {/* 1. View Mode Dropdown */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hidden sm:inline">
+            View:
           </span>
-
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {[
-              { id: "overall", label: "Overall Progress", icon: CheckCircle2 },
-              { id: "tasks", label: "Task %", icon: CheckCircle2 },
-              { id: "checklists", label: "Checklists", icon: ListTodo },
-              { id: "subtasks", label: "Subtasks", icon: Boxes },
-              { id: "overdue", label: "Overdue & Blockers", icon: AlertTriangle },
-              { id: "status", label: "Status State", icon: Layers },
-              { id: "unit_status", label: "Unit Inventory", icon: Building },
-            ].map((mode) => {
-              const Icon = mode.icon;
-              const isActive = visualizationMode === mode.id;
-              return (
-                <Button
-                  key={mode.id}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => onVisualizationModeChange(mode.id as VisualizationMode)}
-                  className={`h-8 text-xs gap-1.5 px-2.5 transition-all ${
-                    isActive
-                      ? "shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5 shrink-0" />
-                  <span>{mode.label}</span>
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right: View Mode Selector (3D Model / Geo Map / Split / 2D Grid) */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <Button
-            variant={viewMode === "3d" ? "default" : "outline"}
-            size="sm"
-            onClick={() => onViewModeChange("3d")}
-            className="h-8 text-xs gap-1.5 px-2.5"
-            title="Interactive 3D Architectural Model"
+          <Select
+            value={viewMode}
+            onValueChange={(val) => onViewModeChange(val as DigitalTwinViewMode)}
           >
-            <Box className="h-3.5 w-3.5" />
-            <span>3D Model</span>
-          </Button>
-
-          <Button
-            variant={viewMode === "map" ? "default" : "outline"}
-            size="sm"
-            onClick={() => onViewModeChange("map")}
-            className="h-8 text-xs gap-1.5 px-2.5"
-            title="Geographical 3D Map with Surrounding Roads and Terrain"
-          >
-            <MapPin className="h-3.5 w-3.5" />
-            <span>Geo 3D Map</span>
-          </Button>
-
-          <Button
-            variant={viewMode === "split" ? "default" : "outline"}
-            size="sm"
-            onClick={() => onViewModeChange("split")}
-            className="h-8 text-xs gap-1.5 px-2.5"
-            title="Side-by-Side 3D Model & Geographical Map"
-          >
-            <Split className="h-3.5 w-3.5" />
-            <span>Split View</span>
-          </Button>
-
-          <Button
-            variant={viewMode === "2d" ? "default" : "outline"}
-            size="sm"
-            onClick={() => onViewModeChange("2d")}
-            className="h-8 text-xs gap-1.5 px-2.5"
-            title="2D Matrix Elevation Grid"
-          >
-            <LayoutGrid className="h-3.5 w-3.5" />
-            <span>2D Elevation</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* 3D Viewport Controls (when in 3D or Split mode) */}
-      {(viewMode === "3d" || viewMode === "split") && (
-        <div className="flex flex-wrap items-center justify-between gap-4 pt-2.5 border-t border-border/60 text-xs">
-          {/* Tower Selector Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground shrink-0">Tower Focus:</span>
-            <Select
-              value={isolatedTowerId ? String(isolatedTowerId) : "all"}
-              onValueChange={(val) => onIsolatedTowerChange(val === "all" ? null : Number(val))}
-            >
-              <SelectTrigger className="h-7 w-36 text-xs bg-background/80">
-                <SelectValue placeholder="All Towers" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Towers</SelectItem>
-                {towers.map((t) => (
-                  <SelectItem key={t.tower.id} value={String(t.tower.id)}>
-                    {t.tower.name} ({t.floors.length} floors)
+            <SelectTrigger className="h-8 w-[140px] text-xs font-medium bg-background/80 border-border">
+              <SelectValue placeholder="View Mode" />
+            </SelectTrigger>
+            <SelectContent>
+              {VIEW_MODES.map((vm) => {
+                const Icon = vm.icon;
+                return (
+                  <SelectItem key={vm.id} value={vm.id} className="text-xs">
+                    <div className="flex items-center gap-2">
+                      <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>{vm.label}</span>
+                    </div>
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
 
-          {/* Floor Explode Slider */}
-          <div className="flex items-center gap-2.5 min-w-[200px]">
-            <div className="flex items-center gap-1 text-muted-foreground shrink-0">
-              <Split className="h-3.5 w-3.5 text-primary" />
-              <span>Explode Floors:</span>
-            </div>
-            <Slider
-              min={0}
-              max={100}
-              step={5}
-              value={[Math.round(explosionFactor * 100)]}
-              onValueChange={([val]) => onExplosionFactorChange(val / 100)}
-              className="w-24 cursor-pointer"
-            />
-            <span className="text-[11px] font-mono text-muted-foreground w-7 text-right">
-              {Math.round(explosionFactor * 100)}%
-            </span>
-          </div>
-
-          {/* X-Ray / Glass Toggle */}
-          <Button
-            variant={isXRayMode ? "secondary" : "ghost"}
-            size="sm"
-            onClick={onToggleXRay}
-            className="h-7 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
-            title="Toggle X-Ray Glass Transparency"
+        {/* 2. Color Filter Dropdown (Exact One Icon, Full Text) */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hidden sm:inline">
+            Filter:
+          </span>
+          <Select
+            value={visualizationMode}
+            onValueChange={(val) => onVisualizationModeChange(val as VisualizationMode)}
           >
-            <Eye className={`h-3.5 w-3.5 ${isXRayMode ? "text-primary" : ""}`} />
-            <span>X-Ray Walls</span>
-          </Button>
+            <SelectTrigger className="h-8 w-[170px] text-xs font-medium bg-background/80 border-border">
+              <SelectValue placeholder="Color Filter" />
+            </SelectTrigger>
+            <SelectContent>
+              {COLOR_MODES.map((mode) => {
+                const Icon = mode.icon;
+                return (
+                  <SelectItem key={mode.id} value={mode.id} className="text-xs">
+                    <div className="flex items-center gap-2">
+                      <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>{mode.label}</span>
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
 
-          {/* Camera Presets & Reset */}
-          <div className="flex items-center gap-1.5 ml-auto">
-            <span className="text-muted-foreground hidden lg:inline">Camera:</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onCameraPreset("orbit")}
-              className="h-7 px-2 text-[11px]"
-              title="Perspective 3D Orbit View"
-            >
-              3D
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onCameraPreset("top")}
-              className="h-7 px-2 text-[11px]"
-              title="Top-Down Plan View"
-            >
-              Plan
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onCameraPreset("front")}
-              className="h-7 px-2 text-[11px]"
-              title="Front Elevation View"
-            >
-              Front
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onCameraPreset("isometric")}
-              className="h-7 px-2 text-[11px]"
-              title="Isometric View"
-            >
-              Iso
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onCameraPreset("orbit")}
-              className="h-7 w-7 text-muted-foreground"
-              title="Reset Camera View"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      )}
+        {/* Subtle separator */}
+        <div className="h-4 w-px bg-border/60 mx-0.5 hidden lg:block shrink-0" />
 
-      {/* Legend Bar */}
-      <div className="flex flex-wrap items-center gap-4 pt-1.5 text-[11px] text-muted-foreground border-t border-border/40">
-        <span className="font-medium text-foreground">Color Key:</span>
-        <div className="flex items-center gap-1.5">
-          <div className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
-          <span>Completed / 100%</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="h-2.5 w-2.5 rounded-sm bg-amber-500" />
-          <span>In Progress / 50%</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="h-2.5 w-2.5 rounded-sm bg-rose-500" />
-          <span>Delayed / Blocked / Overdue</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="h-2.5 w-2.5 rounded-sm bg-slate-500" />
-          <span>Not Started / Available</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="h-2.5 w-2.5 rounded-sm bg-sky-500" />
-          <span>Selected / Highlighted</span>
+        {/* 3D-specific Controls (Visible when in 3D or Split view) */}
+        {(viewMode === "3d" || viewMode === "split") && (
+          <>
+            {/* 3. Tower Focus Dropdown */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Select
+                value={isolatedTowerId ? String(isolatedTowerId) : "all"}
+                onValueChange={(val) => onIsolatedTowerChange(val === "all" ? null : Number(val))}
+              >
+                <SelectTrigger className="h-8 w-[140px] text-xs bg-background/80 border-border">
+                  <SelectValue placeholder="All Towers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">
+                    <div className="flex items-center gap-2">
+                      <Building className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>All Towers</span>
+                    </div>
+                  </SelectItem>
+                  {towers.map((t) => (
+                    <SelectItem key={t.tower.id} value={String(t.tower.id)} className="text-xs">
+                      <div className="flex items-center gap-2">
+                        <Building className="h-3.5 w-3.5 text-primary shrink-0" />
+                        <span>{t.tower.name} ({t.floors.length} fl)</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 4. Camera Preset Dropdown */}
+            <div className="flex items-center gap-1 shrink-0">
+              <Select value={cameraPreset || "orbit"} onValueChange={(val) => onCameraPreset(val as CameraPreset)}>
+                <SelectTrigger className="h-8 w-[125px] text-xs bg-background/80 border-border" title="Select Camera Angle">
+                  <SelectValue placeholder="Camera" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="orbit" className="text-xs">
+                    <div className="flex items-center gap-2">
+                      <Compass className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>3D Orbit</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="top" className="text-xs">
+                    <div className="flex items-center gap-2">
+                      <Compass className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>Top Plan</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="front" className="text-xs">
+                    <div className="flex items-center gap-2">
+                      <Compass className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>Front View</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="isometric" className="text-xs">
+                    <div className="flex items-center gap-2">
+                      <Compass className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>Isometric</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onCameraPreset("orbit")}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
+                title="Reset Camera Angle"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+
+            {/* 5. Explode Floors Slider */}
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-background/70 border border-border text-xs shrink-0">
+              <span className="text-muted-foreground flex items-center gap-1 shrink-0">
+                <Split className="h-3 w-3 text-primary" />
+                <span>Explode:</span>
+              </span>
+              <Slider
+                min={0}
+                max={100}
+                step={5}
+                value={[Math.round(explosionFactor * 100)]}
+                onValueChange={([val]) => onExplosionFactorChange(val / 100)}
+                className="w-16 sm:w-20 cursor-pointer"
+              />
+              <span className="text-[11px] font-mono text-muted-foreground w-6 text-right">
+                {Math.round(explosionFactor * 100)}%
+              </span>
+            </div>
+
+            {/* 6. X-Ray Toggle */}
+            <Button
+              variant={isXRayMode ? "secondary" : "outline"}
+              size="sm"
+              onClick={onToggleXRay}
+              className={`h-8 text-xs gap-1.5 px-2.5 shrink-0 ${
+                isXRayMode ? "border-primary/50 text-primary font-semibold" : "text-muted-foreground"
+              }`}
+              title="Toggle X-Ray Glass Transparency"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              <span>X-Ray</span>
+            </Button>
+          </>
+        )}
+
+        {/* 7. Color Key / Legend Popover */}
+        <div className="ml-auto shrink-0">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 px-2.5 text-muted-foreground hover:text-foreground"
+                title="View Color Key Legend"
+              >
+                <Palette className="h-3.5 w-3.5 text-primary" />
+                <span>Legend</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 p-3 space-y-2 text-xs">
+              <div className="flex items-center gap-1.5 font-semibold text-foreground border-b border-border pb-1.5">
+                <Info className="h-3.5 w-3.5 text-primary" />
+                <span>Color Key Legend</span>
+              </div>
+              <div className="space-y-2 pt-1 text-[11px]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 rounded-sm bg-emerald-500 shadow-xs" />
+                    <span>Completed / 100%</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 rounded-sm bg-amber-500 shadow-xs" />
+                    <span>In Progress / 50%</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 rounded-sm bg-rose-500 shadow-xs" />
+                    <span>Delayed / Blocked / Overdue</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 rounded-sm bg-slate-500 shadow-xs" />
+                    <span>Not Started / Available</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 rounded-sm bg-sky-500 shadow-xs" />
+                    <span>Selected / Highlighted</span>
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
     </div>
