@@ -155,20 +155,42 @@ function roleBadgeClasses(role: string) {
   return "bg-gray-100 text-gray-700 dark:bg-secondary dark:text-gray-300 dark:border dark:border-border";
 }
 
-function formatLastLogin(lastLogin: string | null) {
+function formatLastLogin(lastLogin: string | null, isCurrentUser: boolean = false) {
+  if (isCurrentUser && !lastLogin) {
+    const now = new Date();
+    return {
+      datePart: "Active Now",
+      timePart: now.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }),
+      isNow: true,
+    };
+  }
+
   if (!lastLogin) return "Never";
   const date = new Date(lastLogin);
-  const datePart = date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  if (isNaN(date.getTime())) return "Never";
+
+  // Check if login happened very recently (within 10 minutes)
+  const isRecent = Math.abs(Date.now() - date.getTime()) < 10 * 60 * 1000;
+
+  const datePart = isCurrentUser || isRecent
+    ? "Active Now"
+    : date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+
   const timePart = date.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
   });
-  return { datePart, timePart };
+
+  return { datePart, timePart, isNow: isCurrentUser || isRecent };
 }
 
 // A user's row is only considered "Active" once two things are true:
@@ -184,9 +206,48 @@ function getUserActivity(user: User, invitesByEmail: Map<string, Invitation>): "
   return user.is_active ? "active" : "inactive";
 }
 
+// Helper to determine the actual project names a user is associated with
+function getResolvedProjects(user: User, projects: ApiProject[]): string[] {
+  // 1. Explicit assigned project names from user object
+  if (user.assigned_projects && user.assigned_projects.length > 0) {
+    return user.assigned_projects;
+  }
+
+  // 2. Explicit assigned project IDs resolved from loaded projects list
+  if (user.assigned_project_ids && user.assigned_project_ids.length > 0) {
+    const fromIds = user.assigned_project_ids
+      .map((id) => projects.find((p) => p.id === id)?.name)
+      .filter(Boolean) as string[];
+    if (fromIds.length > 0) return Array.from(new Set(fromIds));
+  }
+
+  // 3. Match projects linked to user's Organization / Company
+  if (user.company) {
+    const orgProjects = projects
+      .filter(
+        (p) =>
+          p.organizationId === user.company ||
+          p.companyId === user.company ||
+          (user.company_name &&
+            p.companyName?.trim().toLowerCase() === user.company_name.trim().toLowerCase())
+      )
+      .map((p) => p.name);
+    if (orgProjects.length > 0) return Array.from(new Set(orgProjects));
+  } else if (!user.is_superuser) {
+    // Primary Tenant / default projects without organization
+    const defaultProjects = projects
+      .filter((p) => !p.organizationId && !p.companyId)
+      .map((p) => p.name);
+    if (defaultProjects.length > 0) return Array.from(new Set(defaultProjects));
+  }
+
+  return [];
+}
+
 function UsersTab({ currentUser }: { currentUser: User }) {
   const [users, setUsers] = useState<User[]>([]);
   const [invitesByEmail, setInvitesByEmail] = useState<Map<string, Invitation>>(new Map());
+  const [allProjects, setAllProjects] = useState<ApiProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -205,8 +266,13 @@ function UsersTab({ currentUser }: { currentUser: User }) {
     setLoading(true);
     setError(null);
     try {
-      const [usersData, invites] = await Promise.all([usersApi.list(), invitationsApi.list()]);
+      const [usersData, invites, projs] = await Promise.all([
+        usersApi.list(),
+        invitationsApi.list(),
+        projectsApi.list().catch(() => []),
+      ]);
       setUsers(usersData);
+      setAllProjects(projs);
       const byEmail = new Map<string, Invitation>();
       invites.forEach((inv) => byEmail.set(inv.email.trim().toLowerCase(), inv));
       setInvitesByEmail(byEmail);
@@ -329,7 +395,11 @@ function UsersTab({ currentUser }: { currentUser: User }) {
             </thead>
             <tbody>
               {users.map((user, index) => {
-                const lastLogin = formatLastLogin(user.last_login);
+                const isCurrentUser =
+                  user.id === currentUser?.id ||
+                  (!!user.email && !!currentUser?.email && user.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()) ||
+                  (!!user.username && !!currentUser?.username && user.username.trim().toLowerCase() === currentUser.username.trim().toLowerCase());
+                const lastLogin = formatLastLogin(user.last_login, isCurrentUser);
                 const isToggling = togglingId === user.id;
                 const isResending = resendingId === user.id;
                 const matchingInvite = invitesByEmail.get(user.email.trim().toLowerCase());
@@ -382,29 +452,78 @@ function UsersTab({ currentUser }: { currentUser: User }) {
 
                     {/* 5. Assigned Projects */}
                     <td className="px-4 py-3">
-                      {user.assigned_projects && user.assigned_projects.length > 0 ? (
-                        <div className="flex flex-wrap gap-1 max-w-[180px]">
-                          {user.assigned_projects.slice(0, 2).map((p, pIdx) => {
-                            const name = typeof p === "string" ? p : String((p as any)?.name ?? p);
-                            return (
-                              <span
-                                key={pIdx}
-                                className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 truncate max-w-[100px]"
-                                title={name}
-                              >
-                                {name}
-                              </span>
-                            );
-                          })}
-                          {user.assigned_projects.length > 2 && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 dark:bg-secondary text-gray-600 dark:text-gray-400">
-                              +{user.assigned_projects.length - 2}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400 dark:text-gray-500 italic">All Projects</span>
-                      )}
+                      {(() => {
+                        const resolvedProjects = getResolvedProjects(user, allProjects);
+                        const isSuperAdmin = user.is_superuser || user.role?.toLowerCase().includes("super");
+
+                        if (resolvedProjects.length > 0) {
+                          return (
+                            <div className="flex flex-wrap gap-1 max-w-[240px]">
+                              {resolvedProjects.slice(0, 3).map((projName, pIdx) => (
+                                <span
+                                  key={pIdx}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60 shadow-2xs"
+                                  title={projName}
+                                >
+                                  <FolderGit2 size={11} className="text-blue-500 shrink-0" />
+                                  <span className="truncate max-w-[150px]">{projName}</span>
+                                </span>
+                              ))}
+                              {resolvedProjects.length > 3 && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 dark:bg-secondary text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-200 dark:hover:bg-muted transition-colors"
+                                  title={resolvedProjects.slice(3).join(", ")}
+                                  onClick={() => setViewingProfileUser(user)}
+                                >
+                                  +{resolvedProjects.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (isSuperAdmin) {
+                          return (
+                            <div className="flex flex-wrap gap-1 max-w-[240px]">
+                              {allProjects.length > 0 ? (
+                                allProjects.slice(0, 2).map((p) => (
+                                  <span
+                                    key={p.id}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 shadow-2xs"
+                                    title={p.name}
+                                  >
+                                    <FolderGit2 size={11} className="text-purple-500 shrink-0" />
+                                    <span className="truncate max-w-[120px]">{p.name}</span>
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50">
+                                  All Projects (SuperAdmin)
+                                </span>
+                              )}
+                              {allProjects.length > 2 && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
+                                  +{allProjects.length - 2}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-gray-400 dark:text-gray-500 italic">No Project</span>
+                            <button
+                              type="button"
+                              onClick={() => setEditingUser(user)}
+                              className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                              title="Assign projects"
+                            >
+                              + Assign
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* 6. Account Status (Active / Disabled) */}
@@ -443,10 +562,18 @@ function UsersTab({ currentUser }: { currentUser: User }) {
                     {/* 8. Last Login */}
                     <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap">
                       {typeof lastLogin === "string" ? (
-                        lastLogin
+                        <span className="text-gray-400 dark:text-gray-500 italic">{lastLogin}</span>
+                      ) : lastLogin.isNow ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                          <div>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Active Now</span>
+                            <span className="text-[10px] text-gray-400 block">{lastLogin.timePart}</span>
+                          </div>
+                        </div>
                       ) : (
                         <>
-                          <span>{lastLogin.datePart}</span>
+                          <span className="font-medium text-gray-800 dark:text-gray-200">{lastLogin.datePart}</span>
                           <span className="text-[10px] text-gray-400 block">{lastLogin.timePart}</span>
                         </>
                       )}
