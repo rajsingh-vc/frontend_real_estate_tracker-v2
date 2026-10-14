@@ -567,19 +567,28 @@ export const DigitalTwinCanvas3D: React.FC<DigitalTwinCanvas3DProps> = ({
 
             const isUnitSelected = selection.unitId === unitRollup.unit.id;
             const colorHex = getElementColor(unitRollup, visualizationMode);
+            const isWhite = colorHex.toLowerCase() === "#ffffff" || colorHex.toLowerCase() === "#fff";
+            const isRed = colorHex.toLowerCase() === DIGITAL_TWIN_COLORS.delayed.toLowerCase() || colorHex === "#ef4444";
+            const isGreen = colorHex.toLowerCase() === DIGITAL_TWIN_COLORS.completed.toLowerCase() || colorHex === "#10b981";
 
             // Modern architectural glazed unit material
             const unitGeo = new THREE.BoxGeometry(unitW, unitH, unitD);
             const unitMat = new THREE.MeshStandardMaterial({
               color: new THREE.Color(colorHex),
-              roughness: isXRayMode ? 0.15 : 0.25,
-              metalness: isXRayMode ? 0.1 : 0.65,
+              roughness: isWhite ? 0.25 : isXRayMode ? 0.15 : 0.25,
+              metalness: isWhite ? 0.05 : isXRayMode ? 0.1 : 0.45,
               transparent: isXRayMode || (selection.unitId !== null && !isUnitSelected),
-              opacity: isUnitSelected ? 1.0 : isXRayMode ? 0.35 : selection.unitId !== null ? 0.35 : 0.92,
+              opacity: isUnitSelected ? 1.0 : isXRayMode ? 0.35 : selection.unitId !== null ? 0.35 : 0.95,
               emissive: isUnitSelected
                 ? new THREE.Color(DIGITAL_TWIN_COLORS.highlight)
+                : isRed
+                ? new THREE.Color(0xef4444)
+                : isGreen
+                ? new THREE.Color(0x059669)
+                : isWhite
+                ? new THREE.Color(0xffffff)
                 : new THREE.Color(0x000000),
-              emissiveIntensity: isUnitSelected ? 0.45 : 0,
+              emissiveIntensity: isUnitSelected ? 0.45 : isRed ? 0.35 : isGreen ? 0.18 : isWhite ? 0.22 : 0,
             });
 
             const unitMesh = new THREE.Mesh(unitGeo, unitMat);
@@ -649,17 +658,26 @@ export const DigitalTwinCanvas3D: React.FC<DigitalTwinCanvas3DProps> = ({
           const floorH = floorHeight - slabThickness - 0.05;
           const floorGeo = new THREE.BoxGeometry(towerWidth - 0.3, floorH, towerDepth - 0.3);
           const colorHex = getElementColor(floorRollup, visualizationMode);
+          const isWhite = colorHex.toLowerCase() === "#ffffff" || colorHex.toLowerCase() === "#fff";
+          const isRed = colorHex.toLowerCase() === DIGITAL_TWIN_COLORS.delayed.toLowerCase() || colorHex === "#ef4444";
+          const isGreen = colorHex.toLowerCase() === DIGITAL_TWIN_COLORS.completed.toLowerCase() || colorHex === "#10b981";
 
           const floorMat = new THREE.MeshStandardMaterial({
             color: new THREE.Color(colorHex),
-            roughness: 0.45,
-            metalness: 0.3,
+            roughness: isWhite ? 0.25 : 0.45,
+            metalness: isWhite ? 0.05 : 0.3,
             transparent: isXRayMode,
-            opacity: isFloorSelected ? 1.0 : isXRayMode ? 0.35 : 0.88,
+            opacity: isFloorSelected ? 1.0 : isXRayMode ? 0.35 : 0.92,
             emissive: isFloorSelected
               ? new THREE.Color(DIGITAL_TWIN_COLORS.highlight)
+              : isRed
+              ? new THREE.Color(0xef4444)
+              : isGreen
+              ? new THREE.Color(0x059669)
+              : isWhite
+              ? new THREE.Color(0xffffff)
               : new THREE.Color(0x000000),
-            emissiveIntensity: isFloorSelected ? 0.4 : 0,
+            emissiveIntensity: isFloorSelected ? 0.4 : isRed ? 0.35 : isGreen ? 0.18 : isWhite ? 0.22 : 0,
           });
 
           const floorMesh = new THREE.Mesh(floorGeo, floorMat);

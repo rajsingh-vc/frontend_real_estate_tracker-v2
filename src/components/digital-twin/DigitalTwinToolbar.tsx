@@ -279,25 +279,25 @@ export const DigitalTwinToolbar: React.FC<DigitalTwinToolbarProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="h-3 w-3 rounded-sm bg-emerald-500 shadow-xs" />
-                    <span>Completed / 100%</span>
+                    <span>Completed (100%)</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-sm bg-amber-500 shadow-xs" />
-                    <span>In Progress / 50%</span>
+                    <div className="h-3 w-3 rounded-sm bg-white border border-slate-300 dark:border-slate-600 shadow-xs" />
+                    <span>In Progress</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="h-3 w-3 rounded-sm bg-rose-500 shadow-xs" />
-                    <span>Delayed / Blocked / Overdue</span>
+                    <span>Delayed / Blocked Task</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="h-3 w-3 rounded-sm bg-slate-500 shadow-xs" />
-                    <span>Not Started / Available</span>
+                    <span>Not Started</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">

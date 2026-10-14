@@ -39,6 +39,41 @@ type ProjectStatus = string;
 type TaskStatus = string;
 type TowerStatus = string;
 
+export const PROJECT_IMAGE_PRESETS = [
+  { label: "Prime Tower (Default)", url: "/image.png" },
+  { label: "Metropolitan", url: "/notan4.png" },
+  { label: "Grand Atrium", url: "/notan1.png" },
+  { label: "Modern Complex", url: "/notan2.png" },
+  { label: "Glass Plaza", url: "/notan3.png" },
+];
+
+export function getProjectCoverImage(project: ApiProject | null | undefined): string {
+  if (!project) return "/image.png";
+  try {
+    const saved = localStorage.getItem("project_custom_images");
+    if (saved) {
+      const map = JSON.parse(saved);
+      if (project.id && map[String(project.id)]) return map[String(project.id)];
+      if (project.name && map[project.name.trim()]) return map[project.name.trim()];
+    }
+  } catch {}
+  return "/image.png";
+}
+
+export function saveProjectCoverImage(idOrName: string | number, imageUrl: string, fallbackName?: string) {
+  try {
+    const saved = localStorage.getItem("project_custom_images");
+    const map = saved ? JSON.parse(saved) : {};
+    map[String(idOrName)] = imageUrl;
+    if (fallbackName) {
+      map[fallbackName.trim()] = imageUrl;
+    }
+    localStorage.setItem("project_custom_images", JSON.stringify(map));
+  } catch (e) {
+    console.error("Failed to save project cover image", e);
+  }
+}
+
 interface ProjectFormValues {
   name: string;
   location: string;
@@ -53,6 +88,7 @@ interface ProjectFormValues {
   companyId: string;
   entityId: string;
   hierarchyMode: "full" | "direct_task"; // ✅ NEW
+  imageUrl: string;
 }
 
 const defaultForm: ProjectFormValues = {
@@ -69,6 +105,7 @@ const defaultForm: ProjectFormValues = {
   companyId: "",
   entityId: "",
   hierarchyMode: "full", // ✅ NEW
+  imageUrl: "/image.png",
 };
 
 interface TowerFormValues {
@@ -206,6 +243,7 @@ function ProjectDialog({
       companyId: initialProject.companyId ? String(initialProject.companyId) : "",
       entityId: initialProject.entityId ? String(initialProject.entityId) : "",
       hierarchyMode: initialProject.hierarchyMode ?? "full", // ✅ NEW
+      imageUrl: getProjectCoverImage(initialProject),
     });
   }, [isOpen, initialProject]);
 
@@ -499,6 +537,47 @@ function ProjectDialog({
                 placeholder="e.g. P51900028372"
                 className="h-9"
               />
+            </div>
+          </div>
+
+          {/* Dynamic Project Cover Photo (Displayed behind card) */}
+          <div className="space-y-2 pt-2 border-t border-border/60">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold flex items-center gap-1.5">
+                <span>Project Card Background Image</span>
+                <Badge variant="outline" className="text-[10px] font-normal py-0">Behind Card Only</Badge>
+              </Label>
+              <span className="text-[11px] text-muted-foreground">Dynamic theme photo</span>
+            </div>
+
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {PROJECT_IMAGE_PRESETS.map((preset) => {
+                const isSelected = form.imageUrl === preset.url;
+                return (
+                  <button
+                    key={preset.url}
+                    type="button"
+                    onClick={() => setForm((prev) => ({ ...prev, imageUrl: preset.url }))}
+                    className={`relative h-16 rounded-xl overflow-hidden border-2 transition-all cursor-pointer group text-left ${
+                      isSelected
+                        ? "border-primary ring-2 ring-primary/30 shadow-md scale-[1.02]"
+                        : "border-border/60 hover:border-primary/50 opacity-70 hover:opacity-100"
+                    }`}
+                  >
+                    <img src={preset.url} alt={preset.label} className="w-full h-full object-cover" />
+                    {isSelected && (
+                      <div className="absolute top-1 right-1 bg-primary text-primary-foreground rounded-full p-0.5 shadow-xs">
+                        <Check className="h-3 w-3" />
+                      </div>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1">
+                      <p className="text-[9px] font-medium text-white truncate text-center leading-tight">
+                        {preset.label}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -1305,39 +1384,29 @@ function ProjectList({
               o.id === project.organizationId ||
               (project.organizationName && o.name.toLowerCase() === project.organizationName.toLowerCase())
           );
-          const orgLogoUrl = resolveImageUrl(project.organizationLogo || matchedOrg?.logo);
+          const projectCoverImg = getProjectCoverImage(project);
 
           return (
             <Card
               key={project.id}
-              className="hover:shadow-lg transition-all duration-200 cursor-pointer h-full border-border/80 group overflow-hidden"
+              className="relative overflow-hidden rounded-2xl border border-border/80 hover:border-primary/50 shadow-xs hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer h-full group bg-card"
               onClick={() => navigate(`/projects/${project.id}`)}
             >
-              <CardContent className="p-4 sm:p-5 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="relative h-14 w-14 rounded-2xl overflow-hidden shrink-0 border border-border/80 shadow-xs flex items-center justify-center bg-white dark:bg-card p-1">
-                    {orgLogoUrl ? (
-                      <img
-                        src={orgLogoUrl}
-                        alt={project.organizationName || matchedOrg?.name || project.name}
-                        className="h-full w-full object-contain"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLElement).style.display = "none";
-                          const fallback = e.currentTarget.parentElement?.querySelector(".fallback-icon");
-                          if (fallback) (fallback as HTMLElement).style.display = "flex";
-                        }}
-                      />
-                    ) : null}
-                    <div
-                      className={`fallback-icon h-full w-full rounded-xl bg-primary/10 flex items-center justify-center ${
-                        orgLogoUrl ? "hidden" : "flex"
-                      }`}
-                    >
-                      <Building2 className="h-7 w-7 text-primary" />
-                    </div>
-                  </div>
+              {/* Dynamic Photo displayed behind the cards only */}
+              <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                <img
+                  src={projectCoverImg}
+                  alt={project.name}
+                  className="w-full h-full object-cover object-center transform group-hover:scale-105 transition-transform duration-700 ease-out"
+                />
+                {/* Translucent glass backdrop overlay for crystal clear contrast & text readability */}
+                <div className="absolute inset-0 bg-background/88 dark:bg-background/90 backdrop-blur-[2px] transition-colors group-hover:bg-background/82 dark:group-hover:bg-background/85" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-90" />
+              </div>
 
-                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+              <CardContent className="relative z-10 p-4 sm:p-5 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <Badge
                       variant={
                         project.status === "active"
@@ -1346,19 +1415,22 @@ function ProjectList({
                           ? "secondary"
                           : "outline"
                       }
-                      className="capitalize font-semibold text-xs"
+                      className="capitalize font-semibold text-xs shadow-xs"
                     >
                       {project.status.replace("_", " ")}
                     </Badge>
                     {project.hierarchyMode === "direct_task" && (
-                      <Badge variant="outline" className="text-[10px] font-semibold border-primary/40 text-primary">
+                      <Badge variant="outline" className="text-[10px] font-semibold border-primary/40 text-primary bg-background/70 backdrop-blur-xs">
                         Direct
                       </Badge>
                     )}
+                  </div>
+
+                  <div className="flex items-center gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground bg-background/60 hover:bg-background/90 backdrop-blur-xs rounded-lg transition-colors"
                       onClick={(event) => {
                         event.stopPropagation();
                         onEdit(project);
@@ -1369,7 +1441,7 @@ function ProjectList({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive bg-background/60 hover:bg-background/90 backdrop-blur-xs rounded-lg transition-colors"
                       onClick={(event) => {
                         event.stopPropagation();
                         onDelete(project);
@@ -1390,7 +1462,7 @@ function ProjectList({
                   </p>
                   {(project.organizationName || matchedOrg?.name || project.companyName) && (
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 truncate max-w-full">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 backdrop-blur-xs truncate max-w-full">
                         🏢 {[project.organizationName || matchedOrg?.name, project.companyName].filter(Boolean).join(" · ")}
                       </span>
                     </div>
@@ -1398,15 +1470,15 @@ function ProjectList({
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-lg bg-muted/50 p-2">
+                  <div className="rounded-lg bg-background/70 dark:bg-card/70 backdrop-blur-xs border border-border/50 p-2 shadow-2xs">
                     <p className="text-lg font-display font-bold">{pTowers.length}</p>
                     <p className="text-[10px] text-muted-foreground uppercase font-semibold">Towers</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-2">
+                  <div className="rounded-lg bg-background/70 dark:bg-card/70 backdrop-blur-xs border border-border/50 p-2 shadow-2xs">
                     <p className="text-lg font-display font-bold">{project.totalUnits}</p>
                     <p className="text-[10px] text-muted-foreground uppercase font-semibold">Units</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-2">
+                  <div className="rounded-lg bg-background/70 dark:bg-card/70 backdrop-blur-xs border border-border/50 p-2 shadow-2xs">
                     <p className="text-lg font-display font-bold">{pTasks.length}</p>
                     <p className="text-[10px] text-muted-foreground uppercase font-semibold">Tasks</p>
                   </div>
@@ -1797,47 +1869,24 @@ function ProjectDetail({
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-start gap-4">
-          <div className="relative h-16 w-16 rounded-2xl overflow-hidden shrink-0 border border-border/80 shadow-xs flex items-center justify-center bg-white dark:bg-card p-1">
-            {detailOrgLogo ? (
-              <img
-                src={detailOrgLogo}
-                alt={project.organizationName || "Organization"}
-                className="h-full w-full object-contain"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = "none";
-                  const fallback = e.currentTarget.parentElement?.querySelector(".detail-fallback-icon");
-                  if (fallback) (fallback as HTMLElement).style.display = "flex";
-                }}
-              />
-            ) : null}
-            <div
-              className={`detail-fallback-icon h-full w-full rounded-xl bg-primary/10 flex items-center justify-center ${
-                detailOrgLogo ? "hidden" : "flex"
-              }`}
-            >
-              <Building2 className="h-8 w-8 text-primary" />
-            </div>
-          </div>
-          <div>
-            <h1 className="font-display text-2xl md:text-3xl font-bold">{project.name}</h1>
-            <p className="text-muted-foreground flex items-center gap-1 mt-1 text-sm">
-              <MapPin className="h-4 w-4 shrink-0 text-primary" />
-              <span>{project.location} · RERA: {project.reraNumber || "NA"}</span>
+        <div>
+          <h1 className="font-display text-2xl md:text-3xl font-bold">{project.name}</h1>
+          <p className="text-muted-foreground flex items-center gap-1 mt-1 text-sm">
+            <MapPin className="h-4 w-4 shrink-0 text-primary" />
+            <span>{project.location} · RERA: {project.reraNumber || "NA"}</span>
+          </p>
+          {(project.organizationName || matchedOrg?.name || project.companyName) && (
+            <p className="text-xs font-semibold text-primary mt-1">
+              {[project.organizationName || matchedOrg?.name, project.companyName].filter(Boolean).join(" · ")}
             </p>
-            {(project.organizationName || matchedOrg?.name || project.companyName) && (
-              <p className="text-xs font-semibold text-primary mt-1">
-                {[project.organizationName || matchedOrg?.name, project.companyName].filter(Boolean).join(" · ")}
-              </p>
-            )}
-            {project.createdAt && (
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Created {new Date(project.createdAt).toLocaleString(undefined, {
-                  day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
-                })}
-              </p>
-            )}
-          </div>
+          )}
+          {project.createdAt && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Created {new Date(project.createdAt).toLocaleString(undefined, {
+                day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+              })}
+            </p>
+          )}
         </div>
         <Badge variant={project.status === "active" ? "default" : "secondary"} className="capitalize self-start sm:self-center">
           {project.status.replace("_", " ")}
@@ -4263,9 +4312,21 @@ const Projects = () => {
     };
 
     if (editingProject) {
+      if (values.imageUrl) {
+        saveProjectCoverImage(editingProject.id, values.imageUrl, values.name);
+      }
       updateMutation.mutate({ id: editingProject.id, data: payload });
     } else {
-      createMutation.mutate(payload);
+      if (values.imageUrl) {
+        saveProjectCoverImage(values.name, values.imageUrl);
+      }
+      createMutation.mutate(payload, {
+        onSuccess: (newProj) => {
+          if (values.imageUrl && newProj?.id) {
+            saveProjectCoverImage(newProj.id, values.imageUrl, values.name);
+          }
+        },
+      });
     }
     setDialogOpen(false);
     setEditingProject(null);

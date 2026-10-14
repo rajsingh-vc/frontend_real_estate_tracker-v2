@@ -149,6 +149,7 @@ export const DigitalTwin2DElevation: React.FC<DigitalTwin2DElevationProps> = ({
                             {floorRollup.units.map((unitRollup) => {
                               const isUnitSelected = selection.unitId === unitRollup.unit.id;
                               const unitColor = getElementColor(unitRollup, visualizationMode);
+                              const isWhite = unitColor.toLowerCase() === "#ffffff" || unitColor.toLowerCase() === "#fff";
 
                               return (
                                 <button
@@ -170,8 +171,8 @@ export const DigitalTwin2DElevation: React.FC<DigitalTwin2DElevationProps> = ({
                                       : "border-slate-800 hover:border-slate-600 hover:scale-[1.02]"
                                   }`}
                                   style={{
-                                    backgroundColor: `${unitColor}22`,
-                                    borderColor: isUnitSelected ? "#38bdf8" : `${unitColor}66`,
+                                    backgroundColor: isWhite ? "rgba(255, 255, 255, 0.15)" : `${unitColor}22`,
+                                    borderColor: isUnitSelected ? "#38bdf8" : isWhite ? "rgba(255, 255, 255, 0.85)" : `${unitColor}66`,
                                   }}
                                   title={`Unit ${unitRollup.unit.unitNumber || unitRollup.unit.id}: ${unitRollup.progress}%`}
                                 >

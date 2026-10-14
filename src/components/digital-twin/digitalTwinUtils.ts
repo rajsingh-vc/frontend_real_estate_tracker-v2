@@ -303,15 +303,16 @@ export function buildProjectRollup(
 
 /**
  * Visual Colors definition for materials and badges
+ * Red for Delayed/Blocked, White for In Progress, Green for Completed
  */
 export const DIGITAL_TWIN_COLORS = {
-  completed: "#10b981",    // Emerald-500
+  completed: "#10b981",    // Emerald Green (Completed)
   completedDark: "#059669",
-  inProgress: "#f59e0b",   // Amber-500
-  inProgressDark: "#d97706",
-  delayed: "#ef4444",      // Red-500
+  inProgress: "#ffffff",   // Pure White (In Progress - per user requirement)
+  inProgressDark: "#f1f5f9",
+  delayed: "#ef4444",      // Vibrant Red (Delayed - per user requirement)
   delayedDark: "#b91c1c",
-  notStarted: "#64748b",   // Slate-500
+  notStarted: "#475569",   // Slate-600 (Not Started / Idle)
   notStartedDark: "#334155",
   neutralGlass: "#94a3b8", // Slate-400
   highlight: "#38bdf8",    // Sky-400
@@ -319,11 +320,15 @@ export const DIGITAL_TWIN_COLORS = {
   accentGold: "#eab308",   // Yellow-500
   availableUnit: "#10b981",
   soldUnit: "#3b82f6",
-  blockedUnit: "#f43f5e",
+  blockedUnit: "#ef4444",
 };
 
 /**
  * Get color hex string for a given element based on current visualization mode
+ * Rule:
+ * 1. Delayed task -> Red (#ef4444)
+ * 2. In progress -> White (#ffffff)
+ * 3. Completed -> Green (#10b981)
  */
 export function getElementColor(
   item: {
@@ -332,83 +337,91 @@ export function getElementColor(
     totalTasks?: number;
     completedTasks?: number;
     overdueTasks?: number;
+    tasks?: ApiTask[];
+    allTasks?: ApiTask[];
     checklists?: ApiChecklist[];
     subtasks?: ApiSubTask[];
     hasBlockers?: boolean;
     unit?: ApiUnit;
   },
-  mode: VisualizationMode
+  mode: VisualizationMode = "overall"
 ): string {
-  switch (mode) {
-    case "overall": {
-      const p = item.progress;
-      if (p === 100) return DIGITAL_TWIN_COLORS.completed;
-      if (p >= 75) return "#34d399"; // light emerald
-      if (p >= 50) return DIGITAL_TWIN_COLORS.inProgress;
-      if (p >= 25) return "#fb923c"; // orange
-      if (p > 0) return "#f87171";  // coral red
-      return DIGITAL_TWIN_COLORS.notStarted;
-    }
-
-    case "tasks": {
-      const total = item.totalTasks ?? 0;
-      if (total === 0) return DIGITAL_TWIN_COLORS.notStarted;
-      const completed = item.completedTasks ?? 0;
-      const ratio = completed / total;
-      if (ratio === 1) return DIGITAL_TWIN_COLORS.completed;
-      if (ratio >= 0.5) return DIGITAL_TWIN_COLORS.inProgress;
-      if (ratio > 0) return "#fb923c";
-      return "#f87171";
-    }
-
-    case "checklists": {
-      const lists = item.checklists ?? [];
-      if (lists.length === 0) return DIGITAL_TWIN_COLORS.notStarted;
-      const comp = lists.filter(isChecklistCompleted).length;
-      const ratio = comp / lists.length;
-      if (ratio === 1) return DIGITAL_TWIN_COLORS.completed;
-      if (ratio >= 0.5) return DIGITAL_TWIN_COLORS.inProgress;
-      if (ratio > 0) return "#fb923c";
-      return "#f87171";
-    }
-
-    case "subtasks": {
-      const subs = item.subtasks ?? [];
-      if (subs.length === 0) return DIGITAL_TWIN_COLORS.notStarted;
-      const comp = subs.filter(isSubTaskCompleted).length;
-      const ratio = comp / subs.length;
-      if (ratio === 1) return DIGITAL_TWIN_COLORS.completed;
-      if (ratio >= 0.5) return DIGITAL_TWIN_COLORS.inProgress;
-      if (ratio > 0) return "#fb923c";
-      return "#f87171";
-    }
-
-    case "overdue": {
-      if (item.hasBlockers || (item.overdueTasks ?? 0) > 0) {
-        return DIGITAL_TWIN_COLORS.delayed;
-      }
-      if (item.status === "completed") return DIGITAL_TWIN_COLORS.completed;
-      if (item.status === "in_progress") return "#38bdf8"; // serene sky blue (on track)
-      return DIGITAL_TWIN_COLORS.notStarted;
-    }
-
-    case "status": {
-      const s = normalizeStatus(item.status);
-      if (s === "completed") return DIGITAL_TWIN_COLORS.completed;
-      if (s === "in_progress") return DIGITAL_TWIN_COLORS.inProgress;
-      if (s === "delayed") return DIGITAL_TWIN_COLORS.delayed;
-      return DIGITAL_TWIN_COLORS.notStarted;
-    }
-
-    case "unit_status": {
-      const uStatus = item.unit?.status?.toLowerCase();
-      if (uStatus === "sold") return DIGITAL_TWIN_COLORS.soldUnit;
-      if (uStatus === "blocked") return DIGITAL_TWIN_COLORS.blockedUnit;
-      if (uStatus === "available") return DIGITAL_TWIN_COLORS.availableUnit;
-      return DIGITAL_TWIN_COLORS.notStarted;
-    }
-
-    default:
-      return DIGITAL_TWIN_COLORS.notStarted;
+  // Unit inventory sales state override if explicitly in unit_status mode
+  if (mode === "unit_status") {
+    const uStatus = item.unit?.status?.toLowerCase();
+    if (uStatus === "sold") return DIGITAL_TWIN_COLORS.soldUnit;
+    if (uStatus === "blocked") return DIGITAL_TWIN_COLORS.blockedUnit;
+    if (uStatus === "available") return DIGITAL_TWIN_COLORS.availableUnit;
   }
+
+  // 1. Any delayed / overdue / blocked task -> RED
+  const hasDelay =
+    Boolean(item.hasBlockers) ||
+    (item.overdueTasks ?? 0) > 0 ||
+    item.status === "delayed" ||
+    item.status === "blocked" ||
+    Boolean(
+      item.tasks &&
+        item.tasks.some(
+          (t) =>
+            isTaskOverdue(t) ||
+            t.status === "delayed" ||
+            t.status === "blocked" ||
+            (t.delayDays && t.delayDays > 0)
+        )
+    ) ||
+    Boolean(
+      item.allTasks &&
+        item.allTasks.some(
+          (t) =>
+            isTaskOverdue(t) ||
+            t.status === "delayed" ||
+            t.status === "blocked" ||
+            (t.delayDays && t.delayDays > 0)
+        )
+    );
+
+  if (hasDelay) {
+    return DIGITAL_TWIN_COLORS.delayed; // RED
+  }
+
+  // 2. Check completed -> GREEN
+  const total = item.totalTasks ?? 0;
+  const completed = item.completedTasks ?? 0;
+  const isCompleted =
+    item.status === "completed" ||
+    item.progress === 100 ||
+    (total > 0 && completed === total);
+
+  if (isCompleted) {
+    return DIGITAL_TWIN_COLORS.completed; // GREEN
+  }
+
+  // 3. Check in progress -> WHITE
+  const isInProgress =
+    item.status === "in_progress" ||
+    (item.progress > 0 && item.progress < 100) ||
+    (total > 0 && completed < total) ||
+    Boolean(
+      item.tasks &&
+        item.tasks.some((t) => t.status === "in_progress" || (t.progress > 0 && t.progress < 100))
+    ) ||
+    Boolean(
+      item.allTasks &&
+        item.allTasks.some((t) => t.status === "in_progress" || (t.progress > 0 && t.progress < 100))
+    ) ||
+    Boolean(
+      item.checklists &&
+        item.checklists.some((c) => c.progress > 0 && c.progress < 100)
+    ) ||
+    Boolean(
+      item.subtasks &&
+        item.subtasks.some((s) => s.progress > 0 && s.progress < 100)
+    );
+
+  if (isInProgress) {
+    return DIGITAL_TWIN_COLORS.inProgress; // WHITE
+  }
+
+  return DIGITAL_TWIN_COLORS.notStarted;
 }

@@ -141,18 +141,30 @@ export function AppSidebar() {
                 }
               }}
               className="flex items-center gap-2.5 min-w-0 flex-1 text-left group cursor-pointer focus:outline-none"
-              title={collapsed ? "Maximize sidebar" : "Real Estate Tracker"}
+              title={collapsed ? "Maximize sidebar" : "Notandas Realty"}
             >
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shrink-0 shadow-xs group-hover:opacity-90 transition-opacity">
-                <Building2 className="h-5 w-5" />
+              <div className="relative flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden shrink-0 shadow-xs border border-sidebar-border/80 bg-sidebar-primary/20 group-hover:scale-105 transition-all">
+                <img
+                  src="/image.png"
+                  alt="Notandas Realty"
+                  className="h-full w-full object-cover object-center"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = "none";
+                    const fallback = e.currentTarget.parentElement?.querySelector(".sidebar-fallback-icon");
+                    if (fallback) (fallback as HTMLElement).style.display = "flex";
+                  }}
+                />
+                <div className="sidebar-fallback-icon hidden h-full w-full items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground">
+                  <Building2 className="h-5 w-5" />
+                </div>
               </div>
               {!collapsed && (
                 <div className="flex flex-col min-w-0">
-                  <span className="font-display font-bold text-sm text-sidebar-foreground truncate">
-                    Real Estate Tracker
+                  <span className="font-display font-bold text-sm text-sidebar-foreground truncate tracking-tight">
+                    Notandas Realty
                   </span>
-                  <span className="text-[10px] text-sidebar-foreground/50 uppercase tracking-widest truncate">
-                    Project Management
+                  <span className="text-[10px] text-sidebar-foreground/60 uppercase tracking-wider truncate font-medium">
+                    Konstruct Tracker
                   </span>
                 </div>
               )}
