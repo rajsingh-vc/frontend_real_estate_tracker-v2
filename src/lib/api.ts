@@ -587,7 +587,7 @@ function normalizeDepartment(raw: any): Department {
 
 function normalizeInvitation(raw: any): Invitation {
   const token = raw.token ?? "";
-  const origin = typeof window !== "undefined" ? window.location.origin : "https://rst.vibesandbox.live";
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://track.konstruct.world";
   const acceptUrl = raw.accept_url ?? raw.acceptUrl ?? (token ? `${origin}/accept-invite?token=${token}` : "");
   return {
     id: raw.id,
@@ -1234,7 +1234,7 @@ function normalizeInvitationPreview(raw: any): InvitationPreview {
 export const invitationsApi = {
   list: async () => (await apiList<any>("/invitations/")).map(normalizeInvitation),
   create: async (payload: InvitationPayload) => {
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://rst.vibesandbox.live";
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://track.konstruct.world";
     const body = {
       accept_base_url: `${origin}/accept-invite`,
       ...payload,
