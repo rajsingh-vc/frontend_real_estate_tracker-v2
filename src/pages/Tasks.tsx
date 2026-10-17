@@ -1814,14 +1814,21 @@ const Tasks = () => {
   // page), so the matching task's detail dialog opens automatically.
   const openTaskId = (location.state as { openTaskId?: number } | null)?.openTaskId;
   const incomingStatusFilter = (location.state as { statusFilter?: string } | null)?.statusFilter;
+  const incomingProjectFilter = (location.state as { projectId?: number | string; projectFilter?: string } | null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(incomingStatusFilter ?? "all");
-  const [deptFilter, setDeptFilter] = useState<string>("");
+  const [projectFilter, setProjectFilter] = useState<string>(
+    incomingProjectFilter?.projectFilter ?? (incomingProjectFilter?.projectId ? String(incomingProjectFilter.projectId) : "all")
+  );
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
 
   const { data: allTasks, isLoading, isError, error } = useQuery({
     queryKey: ["tasks"],
     queryFn: tasksApi.list,
+  });
+  const { data: projects = [] } = useQuery({
+    queryKey: ["projects"],
+    queryFn: projectsApi.list,
   });
   const taskStatuses = useTaskStatuses();
 
@@ -1885,14 +1892,10 @@ const Tasks = () => {
   // (subtasks) are accessed directly inside their parent task module.
   const topLevelTasks = tasks.filter((t) => !t.parentId);
 
-  // Department is matched as a case-insensitive substring instead of an
-  // exact equality check, since the filter field is free text — typing
-  // "civ" should match a task with department "Civil" without requiring
-  // the exact casing/spelling.
   const filtered = topLevelTasks.filter(t => {
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
-    if (deptFilter.trim() && !t.department?.toLowerCase().includes(deptFilter.trim().toLowerCase())) return false;
+    if (projectFilter !== 'all' && String(t.projectId) !== String(projectFilter)) return false;
     if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
     return true;
   });
@@ -1902,7 +1905,11 @@ const Tasks = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Execution Tasks</h1>
-          <p className="text-muted-foreground mt-1 text-sm">{topLevelTasks.length} tasks across all projects</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {projectFilter === "all"
+              ? `${topLevelTasks.length} tasks across all projects`
+              : `${filtered.length} task${filtered.length === 1 ? "" : "s"} in selected project`}
+          </p>
         </div>
         <NewTaskDialog onCreated={handleCreated} />
       </div>
@@ -1912,6 +1919,17 @@ const Tasks = () => {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search tasks..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 w-full" />
         </div>
+        <Select value={projectFilter} onValueChange={setProjectFilter}>
+          <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Projects" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Projects</SelectItem>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
@@ -1919,14 +1937,6 @@ const Tasks = () => {
             {taskStatuses.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
           </SelectContent>
         </Select>
-        {/* Department filter is free text instead of a dropdown driven by
-            whatever departments happen to exist across current tasks. */}
-        <Input
-          placeholder="Filter by department..."
-          value={deptFilter}
-          onChange={(e) => setDeptFilter(e.target.value)}
-          className="w-full sm:w-[180px]"
-        />
         {/* "Critical" removed — only High / Medium / Low remain. */}
         <Select value={priorityFilter} onValueChange={setPriorityFilter}>
           <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Priority" /></SelectTrigger>

@@ -1562,6 +1562,7 @@ function ProjectDetail({
   const [activeUnitId, setActiveUnitId] = useState<number | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
   const [activeChecklistId, setActiveChecklistId] = useState<number | null>(null);
+  const [activeSubTaskId, setActiveSubTaskId] = useState<number | null>(null);
 
   // Flow View Mode & Expandable Tree states
   const [flowMode, setFlowMode] = useState<"cascading" | "tree">("cascading");
@@ -1634,11 +1635,30 @@ function ProjectDetail({
     [selectedFloorUnits, activeUnitId]
   );
 
-  // 4. Auto-sync Active Task
+  // 4. Auto-sync Active Task:
+  // If unit selected, search unit tasks; otherwise search floor tasks; fallback to tower tasks.
+  // Prioritizes parent tasks (tasks with subtasks or top-level tasks) so main work packages appear first.
   const selectedUnitTasks = useMemo(() => {
-    if (!selectedUnit) return [];
-    return tasks.filter((t) => t.unitId === selectedUnit.id);
-  }, [tasks, selectedUnit]);
+    let list: ApiTask[] = [];
+    if (selectedUnit) {
+      const uTasks = tasks.filter((t) => t.unitId === selectedUnit.id);
+      if (uTasks.length > 0) list = uTasks;
+    }
+    if (list.length === 0 && selectedFloor) {
+      list = tasks.filter((t) => t.floorId === selectedFloor.id);
+    }
+    if (list.length === 0 && selectedTower) {
+      list = tasks.filter((t) => t.towerId === selectedTower.id);
+    }
+
+    return [...list].sort((a, b) => {
+      const aSubCount = (a.subtasks?.length || 0) + tasks.filter((t) => t.parentId === a.id).length;
+      const bSubCount = (b.subtasks?.length || 0) + tasks.filter((t) => t.parentId === b.id).length;
+      if (aSubCount > 0 && bSubCount === 0) return -1;
+      if (bSubCount > 0 && aSubCount === 0) return 1;
+      return a.id - b.id;
+    });
+  }, [tasks, selectedUnit, selectedFloor, selectedTower]);
 
   useEffect(() => {
     if (selectedUnitTasks.length > 0) {
@@ -1655,11 +1675,61 @@ function ProjectDetail({
     [selectedUnitTasks, activeTaskId]
   );
 
-  // 5. Auto-sync Active Checklist
+  // 5. Auto-sync Active Checklist:
+  // Combines custom checklists from checklistsApi AND automated task inspection items on the task
   const selectedTaskChecklists = useMemo(() => {
     if (!selectedTask) return [];
-    return checklists.filter((c) => c.taskId === selectedTask.id);
-  }, [checklists, selectedTask]);
+
+    const map = new Map<number, any>();
+
+    // 1. Checklists from checklistsApi table (for this task or its parent task)
+    checklists
+      .filter((c) => c.taskId === selectedTask.id || (selectedTask.parentId && c.taskId === selectedTask.parentId))
+      .forEach((c) => map.set(c.id, c));
+
+    // 2. Inspection checklist items directly on the task
+    (selectedTask.checklist || []).forEach((ci: any, idx: number) => {
+      const id = ci.id ? -Math.abs(ci.id) : -(idx + 1000);
+      map.set(id, {
+        id,
+        name: ci.title,
+        status: ci.completed ? "completed" : "pending",
+        progress: ci.completed ? 100 : 0,
+        taskId: selectedTask.id,
+        unitId: selectedTask.unitId,
+        floorId: selectedTask.floorId,
+        towerId: selectedTask.towerId,
+        projectId: selectedTask.projectId,
+        isTaskChecklistItem: true,
+        rawItem: ci,
+      });
+    });
+
+    // 3. Fallback to parent task's checklist items if leaf task has none
+    if (map.size === 0 && selectedTask.parentId) {
+      const parentTask = tasks.find((t) => t.id === selectedTask.parentId);
+      if (parentTask && parentTask.checklist?.length) {
+        parentTask.checklist.forEach((ci: any, idx: number) => {
+          const id = ci.id ? -Math.abs(ci.id) : -(idx + 2000);
+          map.set(id, {
+            id,
+            name: ci.title,
+            status: ci.completed ? "completed" : "pending",
+            progress: ci.completed ? 100 : 0,
+            taskId: parentTask.id,
+            unitId: parentTask.unitId,
+            floorId: parentTask.floorId,
+            towerId: parentTask.towerId,
+            projectId: parentTask.projectId,
+            isTaskChecklistItem: true,
+            rawItem: ci,
+          });
+        });
+      }
+    }
+
+    return Array.from(map.values());
+  }, [checklists, selectedTask, tasks]);
 
   useEffect(() => {
     if (selectedTaskChecklists.length > 0) {
@@ -1676,11 +1746,85 @@ function ProjectDetail({
     [selectedTaskChecklists, activeChecklistId]
   );
 
-  // 6. SubTasks under Active Checklist
+  // 6. SubTasks under Active Task & Checklist:
+  // Subtasks are selected directly from the task OR from the checklist (if checklist is selected)
+  // Even if no checklist is selected, subtasks are ALWAYS selected from the task
   const selectedChecklistSubTasks = useMemo(() => {
-    if (!selectedChecklist) return [];
-    return subTasks.filter((s) => s.checklistId === selectedChecklist.id);
-  }, [subTasks, selectedChecklist]);
+    if (!selectedTask) return [];
+
+    const map = new Map<number, any>();
+
+    const addSubTask = (item: any, parentTaskId: number) => {
+      map.set(item.id, {
+        id: item.id,
+        name: item.title || item.name,
+        status: item.status || "not_started",
+        progress: item.progress ?? 0,
+        priority: item.priority || "medium",
+        startDate: item.startDate || item.start_date,
+        endDate: item.endDate || item.end_date,
+        taskId: parentTaskId,
+        checklistId: item.checklistId ?? null,
+        unitId: item.unitId,
+        floorId: item.floorId,
+        towerId: item.towerId,
+        projectId: item.projectId,
+      });
+    };
+
+    // 1. Direct subtasks on the task object (from TaskSerializer / MPP schedule)
+    (selectedTask.subtasks || []).forEach((st: any) => addSubTask(st, selectedTask.id));
+
+    // 2. Child tasks in tasks list where parentId === selectedTask.id
+    tasks
+      .filter((t) => t.parentId === selectedTask.id)
+      .forEach((ct: any) => addSubTask(ct, selectedTask.id));
+
+    // 3. Subtasks from subTasks API table matching this task
+    subTasks
+      .filter((s) => s.taskId === selectedTask.id)
+      .forEach((s) => map.set(s.id, s));
+
+    // 4. If a specific checklist is selected, also query subtasks by checklistId
+    if (selectedChecklist && !selectedChecklist.isTaskChecklistItem) {
+      subTasks
+        .filter((s) => s.checklistId === selectedChecklist.id)
+        .forEach((s) => map.set(s.id, s));
+    }
+
+    // 5. Fallback for leaf tasks: if selectedTask itself has 0 child tasks but has a parent task,
+    // load the parent task's subtasks (the sibling work items in this slab / package)
+    if (map.size === 0 && selectedTask.parentId) {
+      const parentTask = tasks.find((t) => t.id === selectedTask.parentId);
+      if (parentTask) {
+        (parentTask.subtasks || []).forEach((st: any) => addSubTask(st, parentTask.id));
+        tasks
+          .filter((t) => t.parentId === parentTask.id)
+          .forEach((ct: any) => addSubTask(ct, parentTask.id));
+        subTasks
+          .filter((s) => s.taskId === parentTask.id)
+          .forEach((s) => map.set(s.id, s));
+      }
+    }
+
+    return Array.from(map.values());
+  }, [selectedTask, tasks, subTasks, selectedChecklist]);
+
+  // 7. Auto-sync Active SubTask
+  useEffect(() => {
+    if (selectedChecklistSubTasks.length > 0) {
+      if (!activeSubTaskId || !selectedChecklistSubTasks.some((s) => s.id === activeSubTaskId)) {
+        setActiveSubTaskId(selectedChecklistSubTasks[0].id);
+      }
+    } else {
+      setActiveSubTaskId(null);
+    }
+  }, [selectedChecklistSubTasks, activeSubTaskId]);
+
+  const selectedSubTask = useMemo(
+    () => selectedChecklistSubTasks.find((s) => s.id === activeSubTaskId) || selectedChecklistSubTasks[0],
+    [selectedChecklistSubTasks, activeSubTaskId]
+  );
 
   // Tree Expand / Collapse Toggles
   const toggleExpandTower = (id: number) => {
@@ -1708,23 +1852,30 @@ function ProjectDetail({
   };
 
   // Dynamic SubTask Toggle
-  const handleToggleSubTask = async (st: ApiSubTask) => {
+  const handleToggleSubTask = async (st: any) => {
     setUpdatingSubTaskId(st.id);
     const isCompleted = st.status === "completed";
     const nextStatus = isCompleted ? "pending" : "completed";
     const nextProgress = isCompleted ? 0 : 100;
     try {
-      await subTasksApi.update(st.id, {
-        name: st.name,
-        status: nextStatus,
-        progress: nextProgress,
-        checklistId: st.checklistId,
-        taskId: st.taskId,
-        unitId: st.unitId,
-        floorId: st.floorId,
-        towerId: st.towerId,
-        projectId: st.projectId,
-      });
+      if (tasks.some((t) => t.id === st.id)) {
+        await tasksApi.update(st.id, {
+          status: isCompleted ? "not_started" : "completed",
+          progress: nextProgress,
+        });
+      } else {
+        await subTasksApi.update(st.id, {
+          name: st.name,
+          status: nextStatus,
+          progress: nextProgress,
+          checklistId: st.checklistId,
+          taskId: st.taskId,
+          unitId: st.unitId,
+          floorId: st.floorId,
+          towerId: st.towerId,
+          projectId: st.projectId,
+        });
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["subtasks"] }),
         queryClient.invalidateQueries({ queryKey: ["checklists"] }),
@@ -1779,12 +1930,12 @@ function ProjectDetail({
 
   // Dynamic Quick Add SubTask
   const handleQuickAddSubTask = async () => {
-    if (!newSubTaskName.trim() || !selectedChecklist) return;
+    if (!newSubTaskName.trim()) return;
     setCreatingSubTask(true);
     try {
       await subTasksApi.create({
         name: newSubTaskName.trim(),
-        checklistId: selectedChecklist.id,
+        checklistId: selectedChecklist && !selectedChecklist.isTaskChecklistItem ? selectedChecklist.id : undefined,
         taskId: selectedTask?.id,
         unitId: selectedUnit?.id,
         floorId: selectedFloor?.id,
@@ -1795,9 +1946,10 @@ function ProjectDetail({
       });
       setNewSubTaskName("");
       await queryClient.invalidateQueries({ queryKey: ["subtasks"] });
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
       toast({
         title: "Sub Task Created",
-        description: `Added "${newSubTaskName.trim()}" to checklist ${selectedChecklist.name}`,
+        description: `Added "${newSubTaskName.trim()}" to task ${selectedTask?.title}`,
       });
     } catch (err: any) {
       toast({
@@ -1811,7 +1963,14 @@ function ProjectDetail({
   };
 
   // Dynamic Delete Checklist
-  const handleDeleteChecklistInFlow = async (chk: ApiChecklist) => {
+  const handleDeleteChecklistInFlow = async (chk: any) => {
+    if (chk.isTaskChecklistItem) {
+      toast({
+        title: "Task Inspection Checkpoint",
+        description: "This checkpoint is generated from the task schedule inspection scope.",
+      });
+      return;
+    }
     if (!window.confirm(`Delete checklist "${chk.name}" and all its sub tasks?`)) return;
     try {
       await checklistsApi.remove(chk.id);
@@ -1833,11 +1992,16 @@ function ProjectDetail({
   };
 
   // Dynamic Delete SubTask
-  const handleDeleteSubTaskInFlow = async (st: ApiSubTask) => {
+  const handleDeleteSubTaskInFlow = async (st: any) => {
     if (!window.confirm(`Delete sub task "${st.name}"?`)) return;
     try {
-      await subTasksApi.remove(st.id);
-      await queryClient.invalidateQueries({ queryKey: ["subtasks"] });
+      if (tasks.some((t) => t.id === st.id)) {
+        await tasksApi.remove(st.id);
+        await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      } else {
+        await subTasksApi.remove(st.id);
+        await queryClient.invalidateQueries({ queryKey: ["subtasks"] });
+      }
       toast({
         title: "Sub Task Deleted",
         description: `Removed "${st.name}"`,
@@ -1849,6 +2013,158 @@ function ProjectDetail({
         description: err?.message || "Could not delete sub task",
       });
     }
+  };
+
+  // Tree mode helper to render any task branch (used for both floor-level and unit-level tasks)
+  const renderTreeTaskBranch = (task: any) => {
+    const isTaskExpanded = expandedTasks[task.id] ?? false;
+    const taskChecklistsList = checklists.filter((c) => c.taskId === task.id);
+    const taskDirectSubTasks = [
+      ...(task.subtasks || []).map((st: any) => ({
+        id: st.id,
+        name: st.title || st.name,
+        status: st.status || "not_started",
+      })),
+      ...tasks.filter((t) => t.parentId === task.id).map((ct) => ({
+        id: ct.id,
+        name: ct.title,
+        status: ct.status || "not_started",
+      })),
+    ];
+    const totalSubItemsCount = taskChecklistsList.length + taskDirectSubTasks.length;
+
+    return (
+      <div key={task.id} className="border-l-2 border-indigo-500/30 pl-3 ml-2 space-y-1.5 py-0.5">
+        <div
+          className="flex items-center justify-between p-1.5 rounded-md bg-muted/40 hover:bg-muted/60 cursor-pointer transition-colors text-xs"
+          onClick={() => toggleExpandTask(task.id)}
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Button variant="ghost" size="icon" className="h-4 w-4 p-0 text-muted-foreground shrink-0">
+              {isTaskExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            </Button>
+            <CheckSquare className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+            <span className="font-semibold text-foreground truncate max-w-[200px] sm:max-w-xs">
+              {task.title}
+            </span>
+          </div>
+          <Badge variant="outline" className="text-[9px] h-3.5 shrink-0">
+            {taskChecklistsList.length > 0 ? `${taskChecklistsList.length} checklists` : `${taskDirectSubTasks.length} sub tasks`}
+          </Badge>
+        </div>
+
+        {/* Nested Checklists and Subtasks Branch */}
+        {isTaskExpanded && (
+          <div className="border-l-2 border-indigo-500/40 pl-3 ml-2 space-y-1.5 pt-1">
+            {totalSubItemsCount === 0 ? (
+              <p className="text-[11px] text-muted-foreground py-0.5">
+                No checklists or sub tasks in this task.
+              </p>
+            ) : (
+              <>
+                {taskChecklistsList.map((chk) => {
+                  const isChkExpanded = expandedChecklists[chk.id] ?? false;
+                  const chkSubTasksList = subTasks.filter((s) => s.checklistId === chk.id);
+
+                  return (
+                    <div key={chk.id} className="border-l-2 border-violet-500/30 pl-3 ml-2 space-y-1 py-0.5">
+                      <div
+                        className="flex items-center justify-between p-1.5 rounded bg-background border border-border/80 cursor-pointer hover:border-violet-500/40 transition-colors text-xs"
+                        onClick={() => toggleExpandChecklist(chk.id)}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Button variant="ghost" size="icon" className="h-4 w-4 p-0 text-muted-foreground">
+                            {isChkExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                          </Button>
+                          <ListChecks className="h-3.5 w-3.5 text-violet-500" />
+                          <span className="font-medium text-foreground">{chk.name}</span>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">
+                          {chkSubTasksList.length} sub tasks
+                        </span>
+                      </div>
+
+                      {isChkExpanded && (
+                        <div className="border-l-2 border-violet-500/40 pl-3 ml-2 space-y-1 pt-1">
+                          {chkSubTasksList.length === 0 ? (
+                            <p className="text-[10px] text-muted-foreground py-0.5">No sub tasks.</p>
+                          ) : (
+                            chkSubTasksList.map((st) => {
+                              const isDone = st.status === "completed";
+                              return (
+                                <div
+                                  key={st.id}
+                                  className="flex items-center justify-between p-1.5 rounded bg-card border border-border/60 text-xs"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleSubTask(st)}
+                                      className={`h-4 w-4 rounded border flex items-center justify-center cursor-pointer transition-colors ${
+                                        isDone
+                                          ? "bg-emerald-500 border-emerald-500 text-white"
+                                          : "border-border hover:border-violet-500 bg-background"
+                                      }`}
+                                    >
+                                      {isDone && <Check className="h-3 w-3 stroke-[3]" />}
+                                    </button>
+                                    <span className={isDone ? "line-through text-muted-foreground" : "text-foreground"}>
+                                      {st.name}
+                                    </span>
+                                  </div>
+                                  <Badge variant={isDone ? "default" : "outline"} className="text-[9px] h-3.5">
+                                    {st.status || "Pending"}
+                                  </Badge>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Direct Schedule Subtasks from MPP */}
+                {taskDirectSubTasks.length > 0 && (
+                  <div className="space-y-1 pt-0.5">
+                    {taskDirectSubTasks.map((st) => {
+                      const isDone = st.status === "completed";
+                      return (
+                        <div
+                          key={st.id}
+                          className="flex items-center justify-between p-1.5 rounded bg-card border border-border/60 text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSubTask(st)}
+                              className={`h-4 w-4 rounded border flex items-center justify-center cursor-pointer transition-colors ${
+                                isDone
+                                  ? "bg-emerald-500 border-emerald-500 text-white"
+                                  : "border-border hover:border-violet-500 bg-background"
+                              }`}
+                            >
+                              {isDone && <Check className="h-3 w-3 stroke-[3]" />}
+                            </button>
+                            <span className={isDone ? "line-through text-muted-foreground" : "text-foreground"}>
+                              {st.name}
+                            </span>
+                          </div>
+                          <Badge variant={isDone ? "default" : "outline"} className="text-[9px] h-3.5">
+                            {st.status || "Pending"}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const matchedOrg = organizations?.find(
@@ -2053,7 +2369,7 @@ function ProjectDetail({
                   title="Click to jump to Units"
                 >
                   <Boxes className="h-3.5 w-3.5" />
-                  <span>{selectedUnit ? `Unit ${selectedUnit.unitNumber}` : "Select Unit"}</span>
+                  <span>{selectedUnit ? `Unit ${selectedUnit.unitNumber}` : selectedFloorUnits.length > 0 ? "Select Unit" : "Floor Scope"}</span>
                   <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-primary/30">
                     {selectedFloorUnits.length}
                   </Badge>
@@ -2093,7 +2409,7 @@ function ProjectDetail({
                   title="Click to jump to Checklists"
                 >
                   <ListChecks className="h-3.5 w-3.5" />
-                  <span>{selectedChecklist ? selectedChecklist.name : "Select Checklist"}</span>
+                  <span>{selectedChecklist ? selectedChecklist.name : selectedTaskChecklists.length > 0 ? "Select Checklist" : "Task Scope"}</span>
                   <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-indigo-500/30">
                     {selectedTaskChecklists.length}
                   </Badge>
@@ -2106,14 +2422,17 @@ function ProjectDetail({
                   type="button"
                   onClick={() => scrollToStage("flow-stage-subtasks")}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shrink-0 transition-all font-medium cursor-pointer ${
-                    selectedChecklistSubTasks.length > 0
+                    selectedSubTask
                       ? "bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-400 font-semibold shadow-2xs hover:bg-violet-500/15"
                       : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/60"
                   }`}
                   title="Click to jump to Sub Tasks"
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>{selectedChecklistSubTasks.length} Sub Tasks</span>
+                  <span>{selectedSubTask ? selectedSubTask.name : `${selectedChecklistSubTasks.length} Sub Tasks`}</span>
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-violet-500/30">
+                    {selectedChecklistSubTasks.length}
+                  </Badge>
                 </button>
               </div>
             </div>
@@ -2359,9 +2678,17 @@ function ProjectDetail({
                     </div>
 
                     {selectedFloorUnits.length === 0 ? (
-                      <Card className="bg-muted/30">
-                        <CardContent className="p-6 text-sm text-muted-foreground text-center">
-                          No units mapped yet on {selectedFloor.name}.
+                      <Card className="bg-muted/20 border-dashed border-border/80">
+                        <CardContent className="p-4 text-xs text-muted-foreground flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Layers className="h-4 w-4 text-primary shrink-0" />
+                            <span>
+                              <strong>{selectedFloor.name}</strong> is an open structural level ({selectedUnitTasks.length} tasks). No residential units are partitioned on this level.
+                            </span>
+                          </div>
+                          <Badge variant="outline" className="text-[10px] shrink-0 border-primary/30 text-primary">
+                            Direct Floor Scope
+                          </Badge>
                         </CardContent>
                       </Card>
                     ) : (
@@ -2431,19 +2758,19 @@ function ProjectDetail({
                 )}
 
                 {/* Animated Flow Connector Arrow */}
-                {selectedUnit && (
+                {(selectedUnit || (selectedFloor && selectedFloorUnits.length === 0)) && (
                   <div className="flex items-center justify-center gap-2 py-1 animate-in fade-in zoom-in duration-300">
                     <div className="h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent flex-1" />
                     <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-semibold shadow-2xs">
                       <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
-                      <span>Flowing into Unit {selectedUnit.unitNumber} Tasks</span>
+                      <span>Flowing into {selectedUnit ? `Unit ${selectedUnit.unitNumber}` : selectedFloor?.name} Tasks</span>
                     </div>
                     <div className="h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent flex-1" />
                   </div>
                 )}
 
                 {/* ================= LEVEL 4: TASKS ================= */}
-                {selectedUnit && (
+                {(selectedUnit || selectedFloor) && (
                   <div id="flow-stage-tasks" className="space-y-3 animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -2451,7 +2778,7 @@ function ProjectDetail({
                           4
                         </div>
                         <h4 className="font-display font-bold text-sm text-foreground">
-                          Tasks under Unit {selectedUnit.unitNumber}
+                          Tasks {selectedUnit ? `under Unit ${selectedUnit.unitNumber}` : `on ${selectedFloor?.name || "Floor"}`}
                         </h4>
                         <Badge variant="secondary" className="text-[10px]">
                           {selectedUnitTasks.length} Tasks
@@ -2474,10 +2801,10 @@ function ProjectDetail({
                     {selectedUnitTasks.length === 0 ? (
                       <Card className="bg-muted/30">
                         <CardContent className="p-6 text-sm text-muted-foreground text-center space-y-2">
-                          <p>No tasks directly mapped to Unit {selectedUnit.unitNumber} yet.</p>
+                          <p>No tasks directly mapped to {selectedUnit ? `Unit ${selectedUnit.unitNumber}` : selectedFloor?.name} yet.</p>
                           <NewTaskDialog
                             lockedProjectId={project.id}
-                            trigger={<Button size="sm">+ Create First Task for this Unit</Button>}
+                            trigger={<Button size="sm">+ Create First Task</Button>}
                             onCreated={() => queryClient.invalidateQueries({ queryKey: ["tasks"] })}
                           />
                         </CardContent>
@@ -2547,9 +2874,13 @@ function ProjectDetail({
                                     className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      navigate(
-                                        `/projects/${project.id}/towers/${selectedTower.id}/floors/${selectedFloor.id}/units/${selectedUnit.id}/tasks/${task.id}`
-                                      );
+                                      if (selectedUnit) {
+                                        navigate(
+                                          `/projects/${project.id}/towers/${selectedTower.id}/floors/${selectedFloor.id}/units/${selectedUnit.id}/tasks/${task.id}`
+                                        );
+                                      } else {
+                                        navigate(`/tasks`);
+                                      }
                                     }}
                                   >
                                     Open Page ↗
@@ -2689,9 +3020,16 @@ function ProjectDetail({
                                       className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        navigate(
-                                          `/projects/${project.id}/towers/${selectedTower.id}/floors/${selectedFloor.id}/units/${selectedUnit.id}/tasks/${selectedTask.id}/checklists/${chk.id}`
-                                        );
+                                        if (selectedUnit) {
+                                          navigate(
+                                            `/projects/${project.id}/towers/${selectedTower.id}/floors/${selectedFloor.id}/units/${selectedUnit.id}/tasks/${selectedTask.id}/checklists/${chk.id}`
+                                          );
+                                        } else {
+                                          toast({
+                                            title: chk.name,
+                                            description: `Checklist for ${selectedTask.title}`,
+                                          });
+                                        }
                                       }}
                                     >
                                       Open ↗
@@ -2708,29 +3046,48 @@ function ProjectDetail({
                 )}
 
                 {/* Animated Flow Connector Arrow */}
-                {selectedChecklist && (
+                {(selectedTask || selectedChecklist) && selectedChecklistSubTasks.length > 0 && (
                   <div className="flex items-center justify-center gap-2 py-1 animate-in fade-in zoom-in duration-300">
                     <div className="h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent flex-1" />
                     <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-500/10 border border-violet-500/30 text-violet-600 dark:text-violet-400 text-xs font-semibold shadow-2xs">
                       <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
-                      <span>Flowing into "{selectedChecklist.name}" Sub Tasks</span>
+                      <span>Flowing into "{selectedTask?.title}" Sub Tasks</span>
                     </div>
                     <div className="h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent flex-1" />
                   </div>
                 )}
 
                 {/* ================= LEVEL 6: SUB TASKS ================= */}
-                {selectedChecklist && (
+                {(selectedTask || selectedChecklist) && (
                   <div id="flow-stage-subtasks" className="space-y-3 animate-in fade-in-50 slide-in-from-bottom-2 duration-300">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <div className="h-6 w-6 rounded-lg bg-violet-500/15 text-violet-600 dark:text-violet-400 flex items-center justify-center text-xs font-bold">
                           6
                         </div>
-                        <h4 className="font-display font-bold text-sm text-foreground">
-                          Sub Tasks under "{selectedChecklist.name}"
-                        </h4>
-                        <Badge variant="secondary" className="text-[10px]">
+                        <div>
+                          <h4 className="font-display font-bold text-sm text-foreground">
+                            Sub Tasks for "{selectedTask?.title}"
+                            {selectedChecklist && !selectedChecklist.isTaskChecklistItem && (
+                              <span className="text-muted-foreground font-normal text-xs ml-2">({selectedChecklist.name})</span>
+                            )}
+                          </h4>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>
+                              {selectedChecklist ? `Filtered by: "${selectedChecklist.name}"` : "Directly selected from Task work package"}
+                            </span>
+                            {selectedChecklist && (
+                              <button
+                                type="button"
+                                onClick={() => setActiveChecklistId(null)}
+                                className="text-primary hover:underline text-[11px] font-medium cursor-pointer"
+                              >
+                                (Show All Task Sub Tasks)
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <Badge variant="secondary" className="text-[10px] ml-auto sm:ml-0">
                           {selectedChecklistSubTasks.filter((s) => s.status === "completed").length} / {selectedChecklistSubTasks.length} Completed
                         </Badge>
                       </div>
@@ -2764,7 +3121,7 @@ function ProjectDetail({
                     {selectedChecklistSubTasks.length === 0 ? (
                       <Card className="bg-muted/30">
                         <CardContent className="p-6 text-sm text-muted-foreground text-center">
-                          No sub tasks in this checklist yet. Type a name above and click <strong>Add Sub Task</strong> to begin tracking individual checklist items!
+                          No sub tasks mapped for this task yet. Type a name above and click <strong>Add Sub Task</strong> to track individual items!
                         </CardContent>
                       </Card>
                     ) : (
@@ -2772,12 +3129,16 @@ function ProjectDetail({
                         {selectedChecklistSubTasks.map((st, idx) => {
                           const isDone = st.status === "completed";
                           const isUpdating = updatingSubTaskId === st.id;
+                          const isSubTaskActive = selectedSubTask?.id === st.id;
                           return (
                             <div
                               key={st.id}
-                              className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all duration-200 animate-in fade-in-50 slide-in-from-bottom-2 ${
-                                isDone
-                                  ? "bg-muted/30 border-border/60 text-muted-foreground"
+                              onClick={() => setActiveSubTaskId(st.id)}
+                              className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all duration-200 cursor-pointer animate-in fade-in-50 slide-in-from-bottom-2 ${
+                                isSubTaskActive
+                                  ? "ring-2 ring-violet-500 border-violet-500 bg-violet-500/5 shadow-xs"
+                                  : isDone
+                                  ? "bg-muted/30 border-border/60 text-muted-foreground hover:border-violet-500/30"
                                   : "bg-card border-border hover:border-violet-500/40 shadow-2xs"
                               }`}
                               style={{ animationDelay: `${idx * 30}ms` }}
@@ -2787,7 +3148,10 @@ function ProjectDetail({
                                 <button
                                   type="button"
                                   disabled={isUpdating}
-                                  onClick={() => handleToggleSubTask(st)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleSubTask(st);
+                                  }}
                                   className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                                     isDone
                                       ? "bg-emerald-500 border-emerald-500 text-white"
@@ -2799,8 +3163,7 @@ function ProjectDetail({
                                 </button>
 
                                 <span
-                                  onClick={() => handleToggleSubTask(st)}
-                                  className={`text-sm cursor-pointer select-none truncate ${
+                                  className={`text-sm select-none truncate ${
                                     isDone ? "line-through text-muted-foreground" : "font-medium text-foreground"
                                   }`}
                                 >
@@ -2809,6 +3172,11 @@ function ProjectDetail({
                               </div>
 
                               <div className="flex items-center gap-2 shrink-0">
+                                {isSubTaskActive && (
+                                  <Badge variant="outline" className="text-[10px] border-violet-500/40 text-violet-600 dark:text-violet-400">
+                                    Selected ✓
+                                  </Badge>
+                                )}
                                 <Badge
                                   variant={isDone ? "default" : "outline"}
                                   className={`text-[10px] capitalize ${
@@ -2824,7 +3192,10 @@ function ProjectDetail({
                                   variant="ghost"
                                   size="icon"
                                   className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                                  onClick={() => handleDeleteSubTaskInFlow(st)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteSubTaskInFlow(st);
+                                  }}
                                   title="Delete Sub Task"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -2927,7 +3298,7 @@ function ProjectDetail({
                                           {floor.name || `Floor ${floor.number}`}
                                         </span>
                                         <Badge variant="outline" className="text-[10px] h-4">
-                                          {floorUnitsList.length} Units
+                                          {floorUnitsList.length > 0 ? `${floorUnitsList.length} Units` : `${tasks.filter((t) => t.floorId === floor.id).length} Tasks`}
                                         </Badge>
                                       </div>
 
@@ -2937,13 +3308,29 @@ function ProjectDetail({
                                       </div>
                                     </div>
 
-                                    {/* Nested Units Branch */}
+                                    {/* Nested Units or Floor Tasks Branch */}
                                     {isFloorExpanded && (
                                       <div className="border-l-2 border-border/80 pl-4 ml-4 space-y-2 pt-1">
                                         {floorUnitsList.length === 0 ? (
-                                          <p className="text-xs text-muted-foreground py-1">
-                                            No units mapped on this floor.
-                                          </p>
+                                          (() => {
+                                            const floorTasksList = tasks.filter((t) => t.floorId === floor.id);
+                                            if (floorTasksList.length === 0) {
+                                              return (
+                                                <p className="text-xs text-muted-foreground py-1">
+                                                  No units or tasks mapped on this floor.
+                                                </p>
+                                              );
+                                            }
+                                            return (
+                                              <div className="space-y-1.5 pt-1">
+                                                <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground pb-1">
+                                                  <CheckSquare className="h-3.5 w-3.5 text-emerald-500" />
+                                                  <span>Floor Level Tasks ({floorTasksList.length})</span>
+                                                </div>
+                                                {floorTasksList.map((task) => renderTreeTaskBranch(task))}
+                                              </div>
+                                            );
+                                          })()
                                         ) : (
                                           floorUnitsList.map((unit) => {
                                             const isUnitExpanded = expandedUnits[unit.id] ?? false;
@@ -2983,117 +3370,7 @@ function ProjectDetail({
                                                         No tasks mapped to this unit.
                                                       </p>
                                                     ) : (
-                                                      unitTasksList.map((task) => {
-                                                        const isTaskExpanded = expandedTasks[task.id] ?? false;
-                                                        const taskChecklistsList = checklists.filter((c) => c.taskId === task.id);
-
-                                                        return (
-                                                          <div
-                                                            key={task.id}
-                                                            className="border-l-2 border-indigo-500/30 pl-3 ml-2 space-y-1.5 py-0.5"
-                                                          >
-                                                            <div
-                                                              className="flex items-center justify-between p-1.5 rounded-md bg-muted/40 hover:bg-muted/60 cursor-pointer transition-colors text-xs"
-                                                              onClick={() => toggleExpandTask(task.id)}
-                                                            >
-                                                              <div className="flex items-center gap-1.5">
-                                                                <Button variant="ghost" size="icon" className="h-4 w-4 p-0 text-muted-foreground">
-                                                                  {isTaskExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                                                </Button>
-                                                                <CheckSquare className="h-3.5 w-3.5 text-indigo-500" />
-                                                                <span className="font-semibold text-foreground truncate max-w-[150px] sm:max-w-xs">
-                                                                  {task.title}
-                                                                </span>
-                                                              </div>
-                                                              <Badge variant="outline" className="text-[9px] h-3.5">
-                                                                {taskChecklistsList.length} checklists
-                                                              </Badge>
-                                                            </div>
-
-                                                            {/* Nested Checklists Branch */}
-                                                            {isTaskExpanded && (
-                                                              <div className="border-l-2 border-indigo-500/40 pl-3 ml-2 space-y-1.5 pt-1">
-                                                                {taskChecklistsList.length === 0 ? (
-                                                                  <p className="text-[11px] text-muted-foreground py-0.5">
-                                                                    No checklists in this task.
-                                                                  </p>
-                                                                ) : (
-                                                                  taskChecklistsList.map((chk) => {
-                                                                    const isChkExpanded = expandedChecklists[chk.id] ?? false;
-                                                                    const chkSubTasksList = subTasks.filter((s) => s.checklistId === chk.id);
-
-                                                                    return (
-                                                                      <div
-                                                                        key={chk.id}
-                                                                        className="border-l-2 border-violet-500/30 pl-3 ml-2 space-y-1 py-0.5"
-                                                                      >
-                                                                        <div
-                                                                          className="flex items-center justify-between p-1.5 rounded bg-background border border-border/80 cursor-pointer hover:border-violet-500/40 transition-colors text-xs"
-                                                                          onClick={() => toggleExpandChecklist(chk.id)}
-                                                                        >
-                                                                          <div className="flex items-center gap-1.5">
-                                                                            <Button variant="ghost" size="icon" className="h-4 w-4 p-0 text-muted-foreground">
-                                                                              {isChkExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                                                            </Button>
-                                                                            <ListChecks className="h-3.5 w-3.5 text-violet-500" />
-                                                                            <span className="font-medium text-foreground">
-                                                                              {chk.name}
-                                                                            </span>
-                                                                          </div>
-                                                                          <span className="text-[10px] text-muted-foreground">
-                                                                            {chkSubTasksList.length} sub tasks
-                                                                          </span>
-                                                                        </div>
-
-                                                                        {/* Nested Sub Tasks Branch with interactive checkboxes */}
-                                                                        {isChkExpanded && (
-                                                                          <div className="border-l-2 border-violet-500/40 pl-3 ml-2 space-y-1 pt-1">
-                                                                            {chkSubTasksList.length === 0 ? (
-                                                                              <p className="text-[10px] text-muted-foreground py-0.5">
-                                                                                No sub tasks.
-                                                                              </p>
-                                                                            ) : (
-                                                                              chkSubTasksList.map((st) => {
-                                                                                const isDone = st.status === "completed";
-                                                                                return (
-                                                                                  <div
-                                                                                    key={st.id}
-                                                                                    className="flex items-center justify-between p-1.5 rounded bg-card border border-border/60 text-xs"
-                                                                                  >
-                                                                                    <div className="flex items-center gap-2">
-                                                                                      <button
-                                                                                        type="button"
-                                                                                        onClick={() => handleToggleSubTask(st)}
-                                                                                        className={`h-4 w-4 rounded border flex items-center justify-center cursor-pointer transition-colors ${
-                                                                                          isDone
-                                                                                            ? "bg-emerald-500 border-emerald-500 text-white"
-                                                                                            : "border-border hover:border-violet-500 bg-background"
-                                                                                        }`}
-                                                                                      >
-                                                                                        {isDone && <Check className="h-3 w-3 stroke-[3]" />}
-                                                                                      </button>
-                                                                                      <span className={isDone ? "line-through text-muted-foreground" : "text-foreground"}>
-                                                                                        {st.name}
-                                                                                      </span>
-                                                                                    </div>
-                                                                                    <Badge variant={isDone ? "default" : "outline"} className="text-[9px] h-3.5">
-                                                                                      {st.status || "Pending"}
-                                                                                    </Badge>
-                                                                                  </div>
-                                                                                );
-                                                                              })
-                                                                            )}
-                                                                          </div>
-                                                                        )}
-                                                                      </div>
-                                                                    );
-                                                                  })
-                                                                )}
-                                                              </div>
-                                                            )}
-                                                          </div>
-                                                        );
-                                                      })
+                                                      unitTasksList.map((task) => renderTreeTaskBranch(task))
                                                     )}
                                                   </div>
                                                 )}

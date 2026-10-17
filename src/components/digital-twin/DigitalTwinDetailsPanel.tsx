@@ -33,7 +33,11 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  FileCode,
+  Sparkles,
+  Link2,
 } from "lucide-react";
+import { ScheduleMappingModal } from "./ScheduleMappingModal";
 
 interface DigitalTwinDetailsPanelProps {
   projectRollup: ProjectRollup;
@@ -57,8 +61,10 @@ export const DigitalTwinDetailsPanel: React.FC<DigitalTwinDetailsPanelProps> = (
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
-  const [editProgressVal, setEditProgressVal] = useState<number>(0);
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<number>>(new Set());
+  const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
+  const [scheduleSearch, setScheduleSearch] = useState("");
+  const [scheduleFilterOnlyMilestones, setScheduleFilterOnlyMilestones] = useState(false);
 
   // Find active entity objects
   const activeTower = useMemo(
@@ -317,20 +323,67 @@ export const DigitalTwinDetailsPanel: React.FC<DigitalTwinDetailsPanelProps> = (
             </p>
           </div>
         </div>
+
+        {/* Quick Action Bar for Schedule & 3D Mapping */}
+        <div className="flex items-center gap-2 pt-2 border-t border-border/60">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setIsMappingModalOpen(true)}
+            className="flex-1 h-8 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
+          >
+            <Link2 className="h-3.5 w-3.5" />
+            <span>Map Schedule to 3D</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => navigate(`/timeline`)}
+            className="h-8 text-xs gap-1 text-muted-foreground hover:text-foreground"
+          >
+            <span>Timeline</span>
+            <ExternalLink className="h-3 w-3" />
+          </Button>
+        </div>
       </CardHeader>
 
       {/* Tabs for Work Items */}
       <Tabs defaultValue="tasks" className="flex-1 flex flex-col min-h-0">
-        <div className="px-4 pt-2 border-b border-border">
-          <TabsList className="grid grid-cols-3 w-full h-9 bg-muted/60">
-            <TabsTrigger value="tasks" className="text-xs gap-1.5">
-              <span>Tasks ({currentScopeData.tasks.length})</span>
+        <div className="px-2.5 py-2 border-b border-border/70 bg-muted/15">
+          <TabsList className="grid grid-cols-4 w-full h-8.5 p-1 bg-muted/70 rounded-lg gap-1.5">
+            <TabsTrigger
+              value="tasks"
+              className="h-7 px-1 text-[11px] font-medium gap-1 rounded-md flex items-center justify-center min-w-0 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs transition-all"
+            >
+              <span className="truncate">Tasks</span>
+              <span className="text-[10px] px-1 py-0.2 rounded-full bg-muted-foreground/15 text-muted-foreground font-semibold leading-none shrink-0">
+                {currentScopeData.tasks.length}
+              </span>
             </TabsTrigger>
-            <TabsTrigger value="checklists" className="text-xs gap-1.5">
-              <span>Checklists ({currentScopeData.checklists.length})</span>
+            <TabsTrigger
+              value="schedule"
+              className="h-7 px-1 text-[11px] font-medium gap-1 rounded-md flex items-center justify-center min-w-0 text-purple-600 dark:text-purple-400 data-[state=active]:bg-background data-[state=active]:shadow-xs transition-all"
+            >
+              <FileCode className="h-3 w-3 shrink-0" />
+              <span className="truncate">Schedule</span>
             </TabsTrigger>
-            <TabsTrigger value="subtasks" className="text-xs gap-1.5">
-              <span>Subtasks ({currentScopeData.subtasks.length})</span>
+            <TabsTrigger
+              value="checklists"
+              className="h-7 px-1 text-[11px] font-medium gap-1 rounded-md flex items-center justify-center min-w-0 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs transition-all"
+            >
+              <span className="truncate">Checklists</span>
+              <span className="text-[10px] px-1 py-0.2 rounded-full bg-muted-foreground/15 text-muted-foreground font-semibold leading-none shrink-0">
+                {currentScopeData.checklists.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="subtasks"
+              className="h-7 px-1 text-[11px] font-medium gap-1 rounded-md flex items-center justify-center min-w-0 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs transition-all"
+            >
+              <span className="truncate">Subtasks</span>
+              <span className="text-[10px] px-1 py-0.2 rounded-full bg-muted-foreground/15 text-muted-foreground font-semibold leading-none shrink-0">
+                {currentScopeData.subtasks.length}
+              </span>
             </TabsTrigger>
           </TabsList>
         </div>
@@ -664,7 +717,172 @@ export const DigitalTwinDetailsPanel: React.FC<DigitalTwinDetailsPanelProps> = (
             ))
           )}
         </TabsContent>
+
+        {/* 4. SCHEDULE & WBS HIERARCHY TAB */}
+        <TabsContent value="schedule" className="flex-1 flex flex-col p-4 space-y-3 min-h-0 overflow-hidden m-0">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <Input
+                placeholder="Search schedule WBS, tasks..."
+                value={scheduleSearch}
+                onChange={(e) => setScheduleSearch(e.target.value)}
+                className="h-8 text-xs pl-8 bg-background/80"
+              />
+            </div>
+            <Button
+              variant={scheduleFilterOnlyMilestones ? "default" : "outline"}
+              size="sm"
+              onClick={() => setScheduleFilterOnlyMilestones((v) => !v)}
+              className="h-8 text-[11px] shrink-0 px-2"
+            >
+              Milestones
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+            {currentScopeData.tasks.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-xs space-y-2">
+                <FileCode className="h-8 w-8 mx-auto text-muted-foreground/40" />
+                <p>No schedule tasks found for this scope.</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsMappingModalOpen(true)}
+                  className="text-xs mt-1"
+                >
+                  <Link2 className="h-3.5 w-3.5 mr-1" />
+                  Map Imported Schedule Tasks
+                </Button>
+              </div>
+            ) : (
+              currentScopeData.tasks
+                .filter((t) => {
+                  if (scheduleFilterOnlyMilestones && !t.isMilestone) return false;
+                  if (scheduleSearch.trim()) {
+                    const q = scheduleSearch.toLowerCase();
+                    return (
+                      t.title.toLowerCase().includes(q) ||
+                      t.wbsCode?.toLowerCase().includes(q) ||
+                      t.department?.toLowerCase().includes(q)
+                    );
+                  }
+                  return true;
+                })
+                .map((task) => {
+                  const isOverdue =
+                    task.status !== "completed" &&
+                    (task.status === "delayed" ||
+                      task.status === "blocked" ||
+                      Boolean(task.delayDays && task.delayDays > 0) ||
+                      (task.endDate && new Date(task.endDate) < new Date()));
+
+                  return (
+                    <div
+                      key={task.id}
+                      className="p-3 rounded-xl border border-border/70 bg-card hover:border-primary/40 transition-colors space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {task.wbsCode && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                {task.wbsCode}
+                              </span>
+                            )}
+                            <span className="font-semibold text-xs text-foreground truncate">
+                              {task.title}
+                            </span>
+                            {task.isMilestone && (
+                              <Badge className="text-[9px] px-1 py-0 h-4 bg-primary/10 text-primary border-primary/20">
+                                Milestone
+                              </Badge>
+                            )}
+                            {task.criticalPath && (
+                              <Badge className="text-[9px] px-1 py-0 h-4 bg-destructive/10 text-destructive border-destructive/20">
+                                Critical
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {task.department || "General"} • {task.durationDays || 1}d
+                          </p>
+                        </div>
+
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] capitalize shrink-0 ${
+                            task.status === "completed"
+                              ? "border-emerald-500 text-emerald-600 bg-emerald-500/10"
+                              : isOverdue
+                              ? "border-rose-500 text-rose-600 bg-rose-500/10"
+                              : "border-border text-foreground"
+                          }`}
+                        >
+                          {task.status.replace("_", " ")}
+                        </Badge>
+                      </div>
+
+                      {/* Planned vs Actual Dates */}
+                      <div className="grid grid-cols-2 gap-2 text-[10px] bg-muted/30 p-2 rounded-lg">
+                        <div>
+                          <span className="text-muted-foreground">Start: </span>
+                          <span className="font-medium text-foreground">{task.startDate || "TBD"}</span>
+                          {task.baselineStartDate && task.baselineStartDate !== task.startDate && (
+                            <span className="text-muted-foreground/80 block text-[9px]">
+                              Base: {task.baselineStartDate}
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Finish: </span>
+                          <span className="font-medium text-foreground">{task.endDate || "TBD"}</span>
+                          {task.baselineEndDate && task.baselineEndDate !== task.endDate && (
+                            <span className="text-muted-foreground/80 block text-[9px]">
+                              Base: {task.baselineEndDate}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Predecessors / Dependencies */}
+                      {task.predecessors && task.predecessors.length > 0 && (
+                        <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium text-foreground">Depends on:</span>
+                          {task.predecessors.map((p, idx) => (
+                            <span key={idx} className="bg-muted px-1.5 py-0.5 rounded font-mono">
+                              Task #{p.predecessorId} ({p.type}{p.lagDays ? `+${p.lagDays}d` : ""})
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Progress Bar */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-muted-foreground">Progress</span>
+                          <span className="font-medium">{task.progress}%</span>
+                        </div>
+                        <Progress value={task.progress} className="h-1.5" />
+                      </div>
+                    </div>
+                  );
+                })
+            )}
+          </div>
+        </TabsContent>
       </Tabs>
+
+      {/* Schedule Mapping Modal */}
+      <ScheduleMappingModal
+        projectId={projectRollup.project.id}
+        open={isMappingModalOpen}
+        onOpenChange={setIsMappingModalOpen}
+        tasks={projectRollup.allTasks}
+        towers={projectRollup.towers.map((t) => t.tower)}
+        floors={projectRollup.allFloors}
+        units={projectRollup.allUnits}
+      />
     </Card>
   );
 };

@@ -725,6 +725,180 @@ function ProjectDrillDown({ project, onBack, onDrillTower, onDrillTask, tasks, t
           </CardContent>
         </Card>
       )}
+
+      {/* Schedule Baseline & Milestone Tracking Section */}
+      <Card className="border-border/80">
+        <CardHeader className="pb-3 border-b border-border/50">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg font-display flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                Schedule Baseline & Milestone Analytics
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Calculated directly from imported schedule WBS, baselines, and execution checklists.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const milestones = projectTasks.filter(t => t.isMilestone || t.criticalPath);
+                exportToCSV(
+                  `${project.name}_Schedule_Milestones`,
+                  ['WBS', 'Milestone', 'Planned Finish', 'Baseline Finish', 'Status', 'Progress %', 'Critical Path'],
+                  milestones.map(m => [
+                    m.wbsCode || '',
+                    m.title,
+                    m.endDate || '',
+                    m.baselineEndDate || m.endDate || '',
+                    statusLabels[m.status] || m.status,
+                    String(m.progress),
+                    m.criticalPath ? 'Yes' : 'No',
+                  ])
+                );
+              }}
+              className="text-xs h-8"
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Export Milestones CSV
+            </Button>
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-4 sm:p-6 space-y-5">
+          {/* Schedule KPI stats */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
+              <span className="text-[11px] font-medium text-muted-foreground">Milestones Completed</span>
+              <p className="text-xl font-bold mt-1 text-purple-700 dark:text-purple-300">
+                {projectTasks.filter(t => t.isMilestone && t.status === 'completed').length} / {projectTasks.filter(t => t.isMilestone).length || 0}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {projectTasks.filter(t => t.isMilestone).length > 0
+                  ? `${Math.round((projectTasks.filter(t => t.isMilestone && t.status === 'completed').length / projectTasks.filter(t => t.isMilestone).length) * 100)}% achieved`
+                  : 'No milestones flagged'}
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-card border border-border">
+              <span className="text-[11px] font-medium text-muted-foreground">Critical Path Items</span>
+              <p className="text-xl font-bold mt-1 text-destructive">
+                {projectTasks.filter(t => t.criticalPath).length}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Zero float activities</p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-card border border-border">
+              <span className="text-[11px] font-medium text-muted-foreground">Total Schedule Tasks</span>
+              <p className="text-xl font-bold mt-1 text-foreground">
+                {projectTasks.length}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {projectTasks.filter(t => t.wbsCode).length} mapped to WBS
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+              <span className="text-[11px] font-medium text-muted-foreground">Checklist Completion</span>
+              {(() => {
+                const totalChk = projectTasks.reduce((sum, t) => sum + (t.checklist?.length || 0), 0);
+                const doneChk = projectTasks.reduce((sum, t) => sum + (t.checklist?.filter(c => c.completed).length || 0), 0);
+                return (
+                  <>
+                    <p className="text-xl font-bold mt-1 text-emerald-600 dark:text-emerald-400">
+                      {doneChk} / {totalChk}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {totalChk > 0 ? `${Math.round((doneChk / totalChk) * 100)}% verified` : '0 items'}
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Key Milestones and Activities Table */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
+              Project Milestones & Critical Sequence
+            </h4>
+            <div className="border border-border rounded-xl overflow-hidden overflow-x-auto bg-card/40">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50 text-[11px]">
+                    <TableHead className="w-20">WBS</TableHead>
+                    <TableHead>Milestone / Activity</TableHead>
+                    <TableHead>Planned End</TableHead>
+                    <TableHead>Baseline</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Progress</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {projectTasks
+                    .filter(t => t.isMilestone || t.criticalPath || t.wbsCode)
+                    .slice(0, 15)
+                    .map(task => {
+                      const varianceDays = task.delayDays || 0;
+                      return (
+                        <TableRow
+                          key={task.id}
+                          className="text-xs cursor-pointer hover:bg-muted/40"
+                          onClick={() => onDrillTask(task)}
+                        >
+                          <TableCell className="font-mono text-[11px] text-muted-foreground">
+                            {task.wbsCode || `#${task.id}`}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-medium text-foreground">{task.title}</span>
+                              {task.isMilestone && (
+                                <Badge className="text-[9px] px-1 py-0 h-4 bg-purple-500/10 text-purple-600 border-purple-500/20">
+                                  Milestone
+                                </Badge>
+                              )}
+                              {task.criticalPath && (
+                                <Badge className="text-[9px] px-1 py-0 h-4 bg-destructive/10 text-destructive border-destructive/20">
+                                  Critical
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-[11px]">
+                            {task.endDate || "TBD"}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-[11px]">
+                            {task.baselineEndDate || task.endDate || "TBD"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={`${statusColors[task.status] || 'bg-muted'} text-[10px]`}>
+                              {statusLabels[task.status] || task.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Progress value={task.progress} className="h-1.5 w-14" />
+                              <span className="text-[11px] font-medium">{task.progress}%</span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+
+                  {projectTasks.filter(t => t.isMilestone || t.criticalPath || t.wbsCode).length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-6 text-muted-foreground text-xs">
+                        No milestone tasks recorded for this project yet. Import an MPP schedule to populate milestones automatically.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

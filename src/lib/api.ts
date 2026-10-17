@@ -315,9 +315,21 @@ export interface ApiTask {
     endDate?: string | null;
     createdAt?: string | null;
   }>;
-  // Read by Tasks.tsx (created/updated timestamps shown on task rows and
-  // the detail dialog). Optional since older records or a list endpoint
-  // variant might omit them.
+  baselineStartDate?: string | null;
+  baselineEndDate?: string | null;
+  durationDays?: number | null;
+  isMilestone?: boolean;
+  wbsCode?: string;
+  sourceRef?: string;
+  sourceDocument?: number | null;
+  predecessors?: Array<{
+    id: number;
+    predecessorId: number;
+    predecessorTitle: string;
+    type: "FS" | "SS" | "FF" | "SF";
+    lagDays: number;
+    sourceExpression?: string;
+  }>;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -863,16 +875,122 @@ export const societyApi = {
 export interface ApiDocument {
   id: number;
   name: string;
+  originalFilename?: string;
   file: string;
   type: string;
+  mimeType?: string;
   category: string;
+  description?: string;
+  tags?: string[];
+  version?: number;
+  parentDocument?: number | null;
+  processingStatus?: "ready" | "queued" | "processing" | "completed" | "failed";
   project: number;
   projectName: string;
-  task: number | null;
   compliance: number | null;
   handover: number | null;
+  uploadedBy?: number | null;
+  uploadedByName?: string | null;
   date: string;
   size: string;
+  isSchedule?: boolean;
+  latestScheduleImportId?: number | null;
+  versionsCount?: number;
+}
+
+export interface ApiScheduleSummary {
+  projectName: string;
+  startDate: string | null;
+  finishDate: string | null;
+  author: string;
+  company: string;
+  totalTasks: number;
+  summaryTasksCount: number;
+  subtasksCount: number;
+  milestonesCount: number;
+  criticalTasksCount: number;
+  warnings: string[];
+}
+
+export interface ApiScheduleTaskItem {
+  id: number;
+  uniqueId: number;
+  name: string;
+  wbs: string;
+  outlineNumber: string;
+  outlineLevel: number;
+  durationDays: number;
+  startDate: string | null;
+  finishDate: string | null;
+  actualStartDate: string | null;
+  actualFinishDate: string | null;
+  baselineStartDate: string | null;
+  baselineFinishDate: string | null;
+  percentComplete: number;
+  isMilestone: boolean;
+  isSummary: boolean;
+  critical: boolean;
+  notes: string;
+  parentUniqueId: number | null;
+  predecessors: Array<{
+    predecessorUniqueId: number;
+    type: string;
+    lagDays: number;
+  }>;
+  resources: string[];
+}
+
+export interface ApiScheduleComparison {
+  hasExistingSchedule: boolean;
+  existingTasksCount: number;
+  addedCount: number;
+  modifiedCount: number;
+  unchangedCount: number;
+  removedCount: number;
+  added: Array<any>;
+  modified: Array<any>;
+  removed: Array<any>;
+}
+
+export interface ApiStructureSync {
+  towerId: number;
+  towerName: string;
+  totalFloors: number;
+  detectedFloorsCount: number;
+  mappedTasksCount: number;
+  totalTasksCount: number;
+}
+
+export interface ApiSchedulePreviewResponse {
+  scheduleImportId: number;
+  status: string;
+  summary: ApiScheduleSummary;
+  tasksCount: number;
+  tasks?: ApiScheduleTaskItem[];
+  tasksPreview?: ApiScheduleTaskItem[];
+  comparison: ApiScheduleComparison;
+  structureSync?: ApiStructureSync;
+}
+
+export interface ApiDigitalTwinMapping {
+  id: number;
+  task: number;
+  taskTitle: string;
+  taskWbs: string;
+  taskStatus: string;
+  taskProgress: number;
+  taskStartDate: string | null;
+  taskEndDate: string | null;
+  project: number;
+  tower: number | null;
+  towerName?: string | null;
+  floor: number | null;
+  floorName?: string | null;
+  unit: number | null;
+  unitName?: string | null;
+  zoneName?: string;
+  elementIdentifier?: string;
+  createdAt: string;
 }
 
 export const documentsApi = {
@@ -903,12 +1021,49 @@ export const documentsApi = {
     return apiList<ApiDocument>(path).then(result => result || []);
   },
 
-  upload: (data: { name: string; category: string; project: number; file: File }) => {
+  validateFile: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiPost<{
+      valid: boolean;
+      extension?: string;
+      mimeType?: string;
+      sizeBytes?: number;
+      formatDescription?: string;
+      isSchedule?: boolean;
+      error?: string;
+    }>("/documents/validate-file/", formData);
+  },
+
+  parseSchedule: (id: number): Promise<ApiSchedulePreviewResponse> =>
+    apiPost(`/documents/${id}/parse-schedule/`),
+
+  getSchedulePreview: (id: number): Promise<ApiSchedulePreviewResponse> =>
+    apiGet(`/documents/${id}/schedule-preview/`),
+
+  confirmScheduleImport: (
+    id: number,
+    payload: { mode: "create_new_version" | "update_existing"; versionLabel?: string }
+  ) =>
+    apiPost<{
+      status: string;
+      versionNumber: number;
+      versionName: string;
+      importedTasksCount: number;
+      projectProgress: number;
+    }>(`/documents/${id}/confirm-schedule-import/`, payload),
+
+  getVersions: (id: number): Promise<ApiDocument[]> =>
+    apiGet(`/documents/${id}/versions/`),
+
+  upload: (data: { name: string; category: string; project: number; file: File; description?: string; tags?: string[] }) => {
     const formData = new FormData();
     formData.append("name", data.name);
     formData.append("category", data.category);
     formData.append("project", String(data.project));
     formData.append("file", data.file);
+    if (data.description) formData.append("description", data.description);
+    if (data.tags) formData.append("tags", JSON.stringify(data.tags));
     return apiPost<ApiDocument>("/documents/", formData);
   },
 
@@ -917,6 +1072,8 @@ export const documentsApi = {
     category: string;
     project: number;
     file: File;
+    description?: string;
+    tags?: string[];
     complianceId?: number;
   }) => {
     const formData = new FormData();
@@ -924,6 +1081,7 @@ export const documentsApi = {
     formData.append("category", data.category);
     formData.append("project", String(data.project));
     formData.append("file", data.file);
+    if (data.description) formData.append("description", data.description);
     if (data.complianceId) formData.append("compliance", String(data.complianceId));
     return apiPost<ApiDocument>("/documents/", formData);
   },
@@ -977,6 +1135,31 @@ export const documentsApi = {
   },
 
   remove: (id: number) => apiDelete(`/documents/${id}/`),
+};
+
+export const digitalTwinMappingsApi = {
+  list: (filters?: { project?: number; tower?: number; floor?: number; unit?: number }): Promise<ApiDigitalTwinMapping[]> => {
+    let path = "/digital-twin-mappings/";
+    if (filters) {
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([k, v]) => {
+        if (v !== undefined && v !== null) params.append(k, String(v));
+      });
+      const qs = params.toString();
+      if (qs) path += `?${qs}`;
+    }
+    return apiList<ApiDigitalTwinMapping>(path).then(res => res || []);
+  },
+  bulkMap: (data: {
+    taskIds: number[];
+    projectId: number;
+    towerId?: number | null;
+    floorId?: number | null;
+    unitId?: number | null;
+    zoneName?: string;
+    elementIdentifier?: string;
+  }) => apiPost<{ status: string; mappedCount: number; newlyCreated: number }>("/digital-twin-mappings/bulk-map/", data),
+  remove: (id: number) => apiDelete(`/digital-twin-mappings/${id}/`),
 };
 
 export interface ApiDepartmentStat {
