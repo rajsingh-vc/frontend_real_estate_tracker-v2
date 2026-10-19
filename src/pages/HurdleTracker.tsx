@@ -328,15 +328,7 @@ const HurdleTracker = () => {
                             isUpdatingStatus={statusMutation.isPending}
                           />
                         </Dialog>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive"
-                          onClick={() => deleteMutation.mutate(hurdle.id)}
-                          disabled={deleteMutation.isPending}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">

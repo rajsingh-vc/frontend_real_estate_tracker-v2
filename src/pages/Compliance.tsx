@@ -141,15 +141,7 @@ function ComplianceAttachment({ item }: { item: ApiComplianceItem }) {
                 <Download className="h-3 w-3" />
               </a>
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-5 w-5 text-destructive"
-              onClick={() => deleteMutation.mutate(doc.id)}
-              disabled={deleteMutation.isPending}
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
+
           </span>
         ))
       )}
@@ -201,9 +193,7 @@ function ComplianceRow({
             <p className="font-medium text-sm">{item.name}</p>
             <p className="text-xs text-muted-foreground">{item.projectName} · Due: {item.dueDate || "NA"}</p>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onDelete} disabled={deleting}>
-            <Trash2 className="h-4 w-4" />
-          </Button>
+
         </div>
 
         <div className="grid md:grid-cols-[180px_1fr_120px] gap-3 items-center">

@@ -108,37 +108,40 @@ function TopSearch() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<"all" | SearchResultType>("all");
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Same query keys used on the Dashboard, so this shares React Query's
-  // cache — if the Dashboard has already loaded this data, search opens
-  // instantly with no extra network call. `enabled: isOpen` means a page
-  // that never touches search never fetches this data at all.
+  // Stale time 0 ensures deleted projects or updated items disappear instantly from search
   const { data: projects = [], isLoading: projectsLoading } = useQuery({
     queryKey: ["projects"],
     queryFn: projectsApi.list,
     enabled: isOpen,
+    staleTime: 0,
   });
   const { data: towers = [], isLoading: towersLoading } = useQuery({
     queryKey: ["towers"],
     queryFn: towersApi.list,
     enabled: isOpen,
+    staleTime: 0,
   });
   const { data: floors = [], isLoading: floorsLoading } = useQuery({
     queryKey: ["floors"],
     queryFn: floorsApi.list,
     enabled: isOpen,
+    staleTime: 0,
   });
   const { data: tasks = [], isLoading: tasksLoading } = useQuery({
     queryKey: ["tasks"],
     queryFn: tasksApi.list,
     enabled: isOpen,
+    staleTime: 0,
   });
   const { data: hurdles = [], isLoading: hurdlesLoading } = useQuery({
     queryKey: ["hurdles"],
     queryFn: hurdlesApi.list,
     enabled: isOpen,
+    staleTime: 0,
   });
 
   const isLoading = projectsLoading || towersLoading || floorsLoading || tasksLoading || hurdlesLoading;
@@ -150,59 +153,107 @@ function TopSearch() {
     const q = query.trim().toLowerCase();
     if (!q) return [] as SearchResult[];
 
-    const matches = (...fields: (string | null | undefined)[]) =>
-      fields.some(f => f && f.toLowerCase().includes(q));
+    const scoreMatch = (title: string, subtitle?: string | null): number => {
+      const t = title.toLowerCase();
+      const s = (subtitle || "").toLowerCase();
+      if (t === q) return 1000;
+      if (t.startsWith(q)) return 800;
+      if (t.split(/\s+/).some((w) => w.startsWith(q))) return 600;
+      if (t.includes(q)) return 400;
+      if (s.startsWith(q)) return 300;
+      if (s.includes(q)) return 200;
+      return 0;
+    };
 
-    const projectResults: SearchResult[] = projects
-      .filter((p: ApiProject) => matches(p.name, p.location, p.reraNumber))
-      .slice(0, MAX_PER_GROUP)
-      .map((p: ApiProject) => ({ type: "project" as const, id: p.id, title: p.name, subtitle: p.location }));
+    const projectResults: (SearchResult & { score: number })[] = projects
+      .map((p: ApiProject) => ({
+        type: "project" as const,
+        id: p.id,
+        title: p.name,
+        subtitle: p.location,
+        score: Math.max(scoreMatch(p.name, p.location), scoreMatch(p.reraNumber || "", p.location)),
+      }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_PER_GROUP);
 
-    const towerResults: SearchResult[] = towers
-      .filter((t: ApiTower) => matches(t.name))
-      .slice(0, MAX_PER_GROUP)
-      .map((t: ApiTower) => ({
-        type: "tower" as const,
-        id: t.id,
-        title: t.name,
-        subtitle: projectById.get(t.projectId)?.name,
-        projectId: t.projectId,
-      }));
+    const towerResults: (SearchResult & { score: number })[] = towers
+      .map((t: ApiTower) => {
+        const projName = projectById.get(t.projectId)?.name;
+        return {
+          type: "tower" as const,
+          id: t.id,
+          title: t.name,
+          subtitle: projName,
+          projectId: t.projectId,
+          score: scoreMatch(t.name, projName),
+        };
+      })
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_PER_GROUP);
 
-    const floorResults: SearchResult[] = floors
-      .filter((f: ApiFloor) => matches(f.name))
-      .slice(0, MAX_PER_GROUP)
-      .map((f: ApiFloor) => ({
-        type: "floor" as const,
-        id: f.id,
-        title: f.name,
-        subtitle: towerById.get(f.towerId)?.name,
-        projectId: f.projectId,
-        towerId: f.towerId,
-      }));
+    const floorResults: (SearchResult & { score: number })[] = floors
+      .map((f: ApiFloor) => {
+        const towerName = towerById.get(f.towerId)?.name;
+        return {
+          type: "floor" as const,
+          id: f.id,
+          title: f.name,
+          subtitle: towerName,
+          projectId: f.projectId,
+          towerId: f.towerId,
+          score: scoreMatch(f.name, towerName),
+        };
+      })
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_PER_GROUP);
 
-    const taskResults: SearchResult[] = tasks
-      .filter((t: ApiTask) => matches(t.title, t.department, t.phase))
-      .slice(0, MAX_PER_GROUP)
-      .map((t: ApiTask) => ({
-        type: "task" as const,
-        id: t.id,
-        title: t.title,
-        subtitle: [t.department, t.phase].filter(Boolean).join(" · "),
-      }));
+    const taskResults: (SearchResult & { score: number })[] = tasks
+      .map((t: ApiTask) => {
+        const subtitle = [t.department, t.phase].filter(Boolean).join(" · ");
+        return {
+          type: "task" as const,
+          id: t.id,
+          title: t.title,
+          subtitle,
+          score: Math.max(scoreMatch(t.title, subtitle), scoreMatch(t.department || "", t.phase)),
+        };
+      })
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_PER_GROUP);
 
-    const hurdleResults: SearchResult[] = hurdles
-      .filter((h: ApiHurdle) => matches(h.title, h.affectedTower, h.type, h.responsibleDepartment))
-      .slice(0, MAX_PER_GROUP)
+    const hurdleResults: (SearchResult & { score: number })[] = hurdles
       .map((h: ApiHurdle) => ({
         type: "hurdle" as const,
         id: h.id,
         title: h.title,
         subtitle: h.affectedTower,
-      }));
+        score: Math.max(
+          scoreMatch(h.title, h.affectedTower),
+          scoreMatch(h.type || "", h.responsibleDepartment)
+        ),
+      }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_PER_GROUP);
 
-    return [...projectResults, ...towerResults, ...floorResults, ...taskResults, ...hurdleResults];
-  }, [query, projects, towers, floors, tasks, hurdles, projectById, towerById]);
+    let all = [
+      ...projectResults,
+      ...towerResults,
+      ...floorResults,
+      ...taskResults,
+      ...hurdleResults,
+    ];
+
+    if (categoryFilter !== "all") {
+      all = all.filter((r) => r.type === categoryFilter);
+    }
+
+    return all;
+  }, [query, projects, towers, floors, tasks, hurdles, projectById, towerById, categoryFilter]);
 
   const grouped = useMemo(() => {
     const groups: Partial<Record<SearchResultType, SearchResult[]>> = {};
@@ -302,13 +353,31 @@ function TopSearch() {
       )}
 
       {showDropdown && (
-        <div className="absolute top-full mt-2 w-full max-h-[420px] overflow-y-auto rounded-lg border bg-popover shadow-lg z-50">
+        <div className="absolute top-full mt-2 w-full max-h-[460px] overflow-y-auto rounded-lg border bg-popover shadow-lg z-50">
+          {/* Configurable category pills */}
+          <div className="flex items-center gap-1.5 p-2 border-b border-border/60 bg-muted/30 overflow-x-auto text-xs">
+            {(["all", "project", "tower", "floor", "task", "hurdle"] as const).map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setCategoryFilter(cat)}
+                className={`px-2 py-0.5 rounded-full text-xs font-medium transition-colors shrink-0 ${
+                  categoryFilter === cat
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {cat === "all" ? "All" : RESULT_LABEL[cat] + "s"}
+              </button>
+            ))}
+          </div>
+
           {isLoading && (
             <p className="text-sm text-muted-foreground text-center py-6">Searching…</p>
           )}
           {!isLoading && !hasResults && (
             <p className="text-sm text-muted-foreground text-center py-6">
-              No results for "{query}"
+              No results for "{query}" {categoryFilter !== "all" ? `in ${RESULT_LABEL[categoryFilter]}s` : ""}
             </p>
           )}
           {!isLoading && hasResults && (

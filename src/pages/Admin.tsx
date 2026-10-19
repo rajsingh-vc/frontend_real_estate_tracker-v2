@@ -23,6 +23,8 @@ import {
   RotateCw,
   AlertTriangle,
   FolderGit2,
+  Sliders,
+  LayoutGrid,
 } from "lucide-react";
 import {
   usersApi,
@@ -50,11 +52,14 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { UserProfileModal } from "@/components/layout/UserProfileModal";
+import { UserModuleConfigModal } from "@/components/admin/UserModuleConfigModal";
+import { ModuleManagementTab } from "@/components/admin/ModuleManagementTab";
 
-type TabKey = "users" | "escalation" | "settings";
+type TabKey = "users" | "modules" | "escalation" | "settings";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "users", label: "Users" },
+  { key: "modules", label: "Module Visibility" },
   { key: "escalation", label: "Escalation Matrix" },
   { key: "settings", label: "Settings" },
 ];
@@ -104,11 +109,13 @@ function Admin() {
         {/* Tab content */}
         <div className="bg-white dark:bg-card border border-gray-100 dark:border-border rounded-2xl shadow-sm dark:shadow-none p-4 sm:p-6">
           {activeTab === "users" && <UsersTab currentUser={user!} />}
+          {activeTab === "modules" && <ModuleManagementTab />}
           {activeTab === "escalation" && <EscalationMatrixTab />}
           {activeTab === "settings" && (
             <SettingsTab
               onOpenGeneralSettings={() => setShowGeneralSettings(true)}
               onOpenRolesPermissions={() => setShowRolesPermissions(true)}
+              onOpenModules={() => setActiveTab("modules")}
             />
           )}
         </div>
@@ -208,6 +215,12 @@ function getUserActivity(user: User, invitesByEmail: Map<string, Invitation>): "
 
 // Helper to determine the actual project names a user is associated with
 function getResolvedProjects(user: User, projects: ApiProject[]): string[] {
+  // SuperAdmin has full access to all projects by default
+  if (user.is_superuser || user.role?.toLowerCase().includes("super")) {
+    if (projects.length > 0) return projects.map((p) => p.name);
+    return ["All Projects"];
+  }
+
   // 1. Explicit assigned project names from user object
   if (user.assigned_projects && user.assigned_projects.length > 0) {
     return user.assigned_projects;
@@ -257,6 +270,27 @@ function UsersTab({ currentUser }: { currentUser: User }) {
   const [viewingProfileUser, setViewingProfileUser] = useState<User | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [resendingId, setResendingId] = useState<number | null>(null);
+  const [moduleConfigUser, setModuleConfigUser] = useState<User | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
+  const [bulkConfigOpen, setBulkConfigOpen] = useState(false);
+
+  const toggleSelectUser = (id: number) => {
+    setSelectedUserIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const selectableUsers = users.filter((u) => !u.is_superuser);
+    if (selectableUsers.length > 0 && selectedUserIds.size === selectableUsers.length) {
+      setSelectedUserIds(new Set());
+    } else {
+      setSelectedUserIds(new Set(selectableUsers.map((u) => u.id)));
+    }
+  };
 
   // Only SuperAdmin or an Admin whose Role actually carries
   // 'can_manage_users' may invite people
@@ -383,9 +417,6 @@ function UsersTab({ currentUser }: { currentUser: User }) {
                   Account Status
                 </th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Invitation
-                </th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Last Login
                 </th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 text-right">
@@ -446,84 +477,69 @@ function UsersTab({ currentUser }: { currentUser: User }) {
                     </td>
 
                     {/* 4. Organization */}
-                    <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
-                      {user.company_name || "Primary Tenant"}
+                    <td className="px-4 py-3 text-xs">
+                      {user.is_superuser ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                          All Access (Global)
+                        </span>
+                      ) : (
+                        <span className="text-gray-600 dark:text-gray-300">
+                          {user.company_name || "Primary Tenant"}
+                        </span>
+                      )}
                     </td>
 
                     {/* 5. Assigned Projects */}
                     <td className="px-4 py-3">
-                      {(() => {
-                        const resolvedProjects = getResolvedProjects(user, allProjects);
-                        const isSuperAdmin = user.is_superuser || user.role?.toLowerCase().includes("super");
-
-                        if (resolvedProjects.length > 0) {
-                          return (
-                            <div className="flex flex-wrap gap-1 max-w-[240px]">
-                              {resolvedProjects.slice(0, 3).map((projName, pIdx) => (
-                                <span
-                                  key={pIdx}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60 shadow-2xs"
-                                  title={projName}
-                                >
-                                  <FolderGit2 size={11} className="text-blue-500 shrink-0" />
-                                  <span className="truncate max-w-[150px]">{projName}</span>
-                                </span>
-                              ))}
-                              {resolvedProjects.length > 3 && (
-                                <span
-                                  className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 dark:bg-secondary text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-200 dark:hover:bg-muted transition-colors"
-                                  title={resolvedProjects.slice(3).join(", ")}
-                                  onClick={() => setViewingProfileUser(user)}
-                                >
-                                  +{resolvedProjects.length - 3}
-                                </span>
-                              )}
-                            </div>
-                          );
-                        }
-
-                        if (isSuperAdmin) {
-                          return (
-                            <div className="flex flex-wrap gap-1 max-w-[240px]">
-                              {allProjects.length > 0 ? (
-                                allProjects.slice(0, 2).map((p) => (
+                      {user.is_superuser ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 shadow-2xs">
+                          <FolderGit2 size={12} className="text-purple-600 dark:text-purple-400 shrink-0" />
+                          <span>All Projects (Full Access)</span>
+                        </span>
+                      ) : (
+                        (() => {
+                          const resolvedProjects = getResolvedProjects(user, allProjects);
+                          if (resolvedProjects.length > 0) {
+                            return (
+                              <div className="flex flex-wrap gap-1 max-w-[240px]">
+                                {resolvedProjects.slice(0, 3).map((projName, pIdx) => (
                                   <span
-                                    key={p.id}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 shadow-2xs"
-                                    title={p.name}
+                                    key={pIdx}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60 shadow-2xs"
+                                    title={projName}
                                   >
-                                    <FolderGit2 size={11} className="text-purple-500 shrink-0" />
-                                    <span className="truncate max-w-[120px]">{p.name}</span>
+                                    <FolderGit2 size={11} className="text-blue-500 shrink-0" />
+                                    <span className="truncate max-w-[150px]">{projName}</span>
                                   </span>
-                                ))
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50">
-                                  All Projects (SuperAdmin)
-                                </span>
-                              )}
-                              {allProjects.length > 2 && (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
-                                  +{allProjects.length - 2}
-                                </span>
-                              )}
+                                ))}
+                                {resolvedProjects.length > 3 && (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 dark:bg-secondary text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-200 dark:hover:bg-muted transition-colors"
+                                    title={resolvedProjects.slice(3).join(", ")}
+                                    onClick={() => setViewingProfileUser(user)}
+                                  >
+                                    +{resolvedProjects.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-gray-400 dark:text-gray-500 italic">No Project</span>
+                              <button
+                                type="button"
+                                onClick={() => setEditingUser(user)}
+                                className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                                title="Assign projects"
+                              >
+                                + Assign
+                              </button>
                             </div>
                           );
-                        }
-
-                        return (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-gray-400 dark:text-gray-500 italic">No Project</span>
-                            <button
-                              type="button"
-                              onClick={() => setEditingUser(user)}
-                              className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
-                              title="Assign projects"
-                            >
-                              + Assign
-                            </button>
-                          </div>
-                        );
-                      })()}
+                        })()
+                      )}
                     </td>
 
                     {/* 6. Account Status (Active / Disabled) */}
@@ -544,22 +560,7 @@ function UsersTab({ currentUser }: { currentUser: User }) {
                       </span>
                     </td>
 
-                    {/* 7. Invitation Status */}
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded text-[11px] font-medium capitalize ${
-                          inviteStatus === "accepted"
-                            ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                            : inviteStatus === "pending"
-                            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
-                            : "bg-gray-100 text-gray-600 dark:bg-secondary dark:text-gray-400"
-                        }`}
-                      >
-                        {inviteStatus}
-                      </span>
-                    </td>
-
-                    {/* 8. Last Login */}
+                    {/* 7. Last Login */}
                     <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap">
                       {typeof lastLogin === "string" ? (
                         <span className="text-gray-400 dark:text-gray-500 italic">{lastLogin}</span>
@@ -579,7 +580,7 @@ function UsersTab({ currentUser }: { currentUser: User }) {
                       )}
                     </td>
 
-                    {/* 9. Action Buttons */}
+                    {/* 8. Action Buttons */}
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         {/* View Profile */}
@@ -604,21 +605,36 @@ function UsersTab({ currentUser }: { currentUser: User }) {
                           <Pencil size={14} />
                         </button>
 
-                        {/* Toggle Disable / Enable Account */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleActive(user)}
-                          disabled={isToggling}
-                          className={`p-1.5 rounded-md border transition-colors disabled:opacity-50 ${
-                            user.is_active
-                              ? "border-green-200 dark:border-emerald-800/60 text-green-600 dark:text-emerald-400 hover:bg-green-50 dark:hover:bg-emerald-950/60"
-                              : "border-gray-200 dark:border-border text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-muted"
-                          }`}
-                          title={user.is_active ? "Disable user access" : "Re-enable user access"}
-                          aria-label={user.is_active ? `Disable ${user.name}` : `Enable ${user.name}`}
-                        >
-                          {user.is_active ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                        </button>
+                        {/* Configure Module Visibility & Access (Non-superadmins only) */}
+                        {!user.is_superuser && (
+                          <button
+                            type="button"
+                            onClick={() => setModuleConfigUser(user)}
+                            className="p-1.5 rounded-md border border-purple-200 dark:border-purple-800/60 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/60 transition-colors"
+                            title="Configure Module Visibility & Access"
+                            aria-label={`Configure modules for ${user.name}`}
+                          >
+                            <Sliders size={14} />
+                          </button>
+                        )}
+
+                        {/* Toggle Disable / Enable Account (Non-superadmins only) */}
+                        {!user.is_superuser && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(user)}
+                            disabled={isToggling}
+                            className={`p-1.5 rounded-md border transition-colors disabled:opacity-50 ${
+                              user.is_active
+                                ? "border-green-200 dark:border-emerald-800/60 text-green-600 dark:text-emerald-400 hover:bg-green-50 dark:hover:bg-emerald-950/60"
+                                : "border-gray-200 dark:border-border text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-muted"
+                            }`}
+                            title={user.is_active ? "Disable user access" : "Re-enable user access"}
+                            aria-label={user.is_active ? `Disable ${user.name}` : `Enable ${user.name}`}
+                          >
+                            {user.is_active ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                          </button>
+                        )}
 
                         {/* Resend Invitation (if pending) */}
                         {isPendingInvite && matchingInvite && (
@@ -634,16 +650,18 @@ function UsersTab({ currentUser }: { currentUser: User }) {
                           </button>
                         )}
 
-                        {/* Delete User */}
-                        <button
-                          type="button"
-                          onClick={() => setDeletingUser(user)}
-                          className="p-1.5 rounded-md border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/60 transition-colors"
-                          title="Delete / Deactivate User"
-                          aria-label={`Delete ${user.name}`}
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        {/* Delete User (Non-superadmins only) */}
+                        {!user.is_superuser && (
+                          <button
+                            type="button"
+                            onClick={() => setDeletingUser(user)}
+                            className="p-1.5 rounded-md border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/60 transition-colors"
+                            title="Delete / Deactivate User"
+                            aria-label={`Delete ${user.name}`}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -698,6 +716,24 @@ function UsersTab({ currentUser }: { currentUser: User }) {
           open={!!viewingProfileUser}
           onOpenChange={(open) => {
             if (!open) setViewingProfileUser(null);
+          }}
+        />
+      )}
+
+      {/* User / Bulk Module Access Configuration Modal */}
+      {(Boolean(moduleConfigUser) || bulkConfigOpen) && (
+        <UserModuleConfigModal
+          user={moduleConfigUser}
+          users={bulkConfigOpen ? users.filter((u) => selectedUserIds.has(u.id)) : undefined}
+          allProjects={allProjects}
+          open={Boolean(moduleConfigUser) || bulkConfigOpen}
+          onClose={() => {
+            setModuleConfigUser(null);
+            setBulkConfigOpen(false);
+          }}
+          onSuccess={() => {
+            loadUsers();
+            setActionSuccess("Module configuration applied successfully.");
           }}
         />
       )}
@@ -1555,9 +1591,11 @@ function EscalationRuleDialog({
 function SettingsTab({
   onOpenGeneralSettings,
   onOpenRolesPermissions,
+  onOpenModules,
 }: {
   onOpenGeneralSettings: () => void;
   onOpenRolesPermissions: () => void;
+  onOpenModules?: () => void;
 }) {
   const [summary, setSummary] = useState<{ orgs: number } | null>(null);
 
@@ -1597,17 +1635,24 @@ function SettingsTab({
       onClick: onOpenGeneralSettings,
     },
     {
-      icon: Bell,
-      title: "Notifications",
-      description: "Not wired to a backend yet",
-      disabled: true,
+      icon: LayoutGrid,
+      title: "Module Visibility",
+      description: "Manage registered modules, global states, and role policies",
+      disabled: false,
+      onClick: onOpenModules,
     },
     {
       icon: UsersIcon,
       title: "Roles & Permissions",
-      description: "Review invited users",
+      description: "Review invited users and roles",
       disabled: false,
       onClick: onOpenRolesPermissions,
+    },
+    {
+      icon: Bell,
+      title: "Notifications",
+      description: "Not wired to a backend yet",
+      disabled: true,
     },
     {
       icon: Shield,

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Building2, AlertTriangle, CheckCircle2, Clock, TrendingUp, ArrowUpRight,
   ArrowLeft, ChevronRight, Download, Layers, FileSpreadsheet, Bot, Sparkles,
+  Boxes, Home, CheckSquare, ListChecks,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
@@ -15,16 +16,15 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  projectsApi, towersApi, floorsApi, tasksApi, hurdlesApi, organizationApi, resolveImageUrl,
-  type ApiProject, type ApiTower, type ApiFloor, type ApiTask, type ApiHurdle, type Organization,
+  projectsApi, towersApi, floorsApi, unitsApi, tasksApi, subTasksApi, hurdlesApi, organizationApi, resolveImageUrl,
+  type ApiProject, type ApiTower, type ApiFloor, type ApiUnit, type ApiTask, type ApiSubTask, type ApiHurdle, type Organization,
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { AIAssistantWidget } from "@/components/ai/AIAssistantWidget";
+import { HierarchicalBreadcrumb } from "@/components/navigation/HierarchicalBreadcrumb";
+import { getFloorType, getFloorDisplayName, getFloorSubtitle, getFloorSortRank, getFloorIcon, getFloorIconColorClass, countProperFloors } from "@/lib/floorUtils";
 
 // ===== STATUS LABEL / COLOR HELPERS =====
-// These used to live in a static demo-data file. Real task statuses can
-// vary (new ones may get introduced elsewhere in the app), so we fall back
-// gracefully instead of assuming a fixed set of 7 statuses.
 const statusLabels: Record<string, string> = {
   completed: "Completed",
   in_progress: "In Progress",
@@ -227,14 +227,26 @@ function ActivityTable({ taskList, title, onDrillTask }: { taskList: ApiTask[]; 
   );
 }
 
-// ===== TASK DRILL-DOWN =====
-function TaskDrillDown({ task, project, tower, onBack }: {
-  task: ApiTask; project: ApiProject | undefined; tower: ApiTower | undefined; onBack: () => void;
+// ===== 6. TASK DRILL-DOWN =====
+function TaskDrillDown({
+  task,
+  project,
+  tower,
+  floor,
+  unit,
+  allSubTasks = [],
+  onBack,
+  onNavigateCrumb,
+}: {
+  task: ApiTask;
+  project?: ApiProject;
+  tower?: ApiTower;
+  floor?: ApiFloor;
+  unit?: ApiUnit;
+  allSubTasks?: ApiSubTask[];
+  onBack: () => void;
+  onNavigateCrumb: (level: 'portfolio' | 'project' | 'tower' | 'floor' | 'unit') => void;
 }) {
-  // FIX: some tasks come back from the API without a checklist/comments array
-  // (e.g. no checklist template applied, or no comments yet). Defaulting to
-  // [] here prevents "Cannot read properties of undefined (reading 'length')"
-  // from unmounting the whole dashboard when drilling into such a task.
   const checklist = task.checklist ?? [];
   const comments = task.comments ?? [];
 
@@ -244,7 +256,8 @@ function TaskDrillDown({ task, project, tower, onBack }: {
       ['Field', 'Value'],
       [
         ['Task', task.title], ['Description', task.description], ['Project', project?.name || ''],
-        ['Tower', tower?.name || ''], ['Department', task.department], ['Phase', task.phase],
+        ['Tower', tower?.name || ''], ['Floor', floor?.name || ''], ['Unit', unit ? unit.unitNumber : ''],
+        ['Department', task.department], ['Phase', task.phase],
         ['Status', getStatusLabel(task.status)], ['Priority', task.priority], ['Progress', `${task.progress}%`],
         ['Start Date', task.startDate || ''], ['End Date', task.endDate || ''],
         ['Actual Start', task.actualStartDate || ''], ['Actual End', task.actualEndDate || ''],
@@ -256,22 +269,37 @@ function TaskDrillDown({ task, project, tower, onBack }: {
     );
   };
 
+  const breadcrumbs = [
+    { label: "Dashboard", icon: <Building2 className="h-4 w-4" />, onClick: () => onNavigateCrumb('portfolio') },
+    ...(project ? [{ label: project.name, icon: <Building2 className="h-4 w-4" />, onClick: () => onNavigateCrumb('project') }] : []),
+    ...(tower ? [{ label: tower.name, icon: <Boxes className="h-4 w-4" />, onClick: () => onNavigateCrumb('tower') }] : []),
+    ...(floor ? [{ label: floor.name, icon: <Layers className="h-4 w-4" />, onClick: () => onNavigateCrumb('floor') }] : []),
+    ...(unit ? [{ label: `Unit ${unit.unitNumber}`, icon: <Home className="h-4 w-4" />, onClick: () => onNavigateCrumb('unit') }] : []),
+    { label: task.title, icon: <CheckSquare className="h-4 w-4" />, active: true },
+  ];
+
+  const backLabel = unit ? `Unit ${unit.unitNumber}` : (floor ? floor.name : (tower ? tower.name : (project ? project.name : "Dashboard")));
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      <HierarchicalBreadcrumb
+        items={breadcrumbs}
+        onBack={onBack}
+        backLabel={backLabel}
+        actions={
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download className="h-4 w-4 mr-2" />Export Task
+          </Button>
+        }
+      />
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4 shrink-0" /></Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
-              <span>Dashboard</span><ChevronRight className="h-3 w-3 shrink-0" />
-              <span>{project?.name}</span><ChevronRight className="h-3 w-3 shrink-0" />
-              <span>{tower?.name}</span><ChevronRight className="h-3 w-3 shrink-0" />
-              <span className="text-foreground font-medium truncate">{task.title}</span>
-            </div>
-            <h1 className="font-display text-2xl font-bold mt-1 truncate">Task Detail</h1>
-          </div>
+        <div>
+          <h1 className="font-display text-2xl font-bold truncate">{task.title}</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {project?.name} {tower ? `· ${tower.name}` : ""} {floor ? `· ${floor.name}` : ""} {unit ? `· Unit ${unit.unitNumber}` : ""}
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport} className="w-full sm:w-auto"><Download className="h-4 w-4 mr-2" />Export</Button>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -283,8 +311,7 @@ function TaskDrillDown({ task, project, tower, onBack }: {
               <Badge variant="outline" className="capitalize">{task.priority}</Badge>
               {task.criticalPath && <Badge variant="destructive">Critical Path</Badge>}
             </div>
-            <h3 className="font-display font-bold text-xl">{task.title}</h3>
-            <p className="text-sm text-muted-foreground">{task.description}</p>
+            <p className="text-sm text-muted-foreground">{task.description || "No description provided."}</p>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div><span className="text-muted-foreground">Department:</span> <span className="font-medium">{task.department}</span></div>
               <div><span className="text-muted-foreground">Phase:</span> <span className="font-medium">{task.phase}</span></div>
@@ -315,7 +342,7 @@ function TaskDrillDown({ task, project, tower, onBack }: {
                 <span className="text-sm font-medium text-success">No delays recorded</span>
               </div>
             )}
-            {checklist.length > 0 && (
+            {checklist.length > 0 ? (
               <div>
                 <h4 className="font-medium text-sm mb-2">Checklist ({checklist.filter(c => c.completed).length}/{checklist.length})</h4>
                 <div className="space-y-1.5">
@@ -329,7 +356,35 @@ function TaskDrillDown({ task, project, tower, onBack }: {
                   ))}
                 </div>
               </div>
-            )}
+            ) : allSubTasks.filter(s => s.taskId === task.id).length > 0 ? (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium text-sm flex items-center gap-1.5">
+                    <ListChecks className="h-4 w-4 text-primary" />
+                    Direct Subtasks ({allSubTasks.filter(s => s.taskId === task.id && (s.status === 'Completed' || s.status === 'completed' || s.progress === 100)).length}/{allSubTasks.filter(s => s.taskId === task.id).length})
+                  </h4>
+                  <Badge variant="secondary" className="text-[10px]">No Checklists Configured</Badge>
+                </div>
+                <div className="space-y-1.5">
+                  {allSubTasks.filter(s => s.taskId === task.id).map(s => {
+                    const isDone = s.status === 'Completed' || s.status === 'completed' || s.progress === 100;
+                    return (
+                      <div key={s.id} className="flex items-center justify-between p-2 rounded-lg border bg-card/60 text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${isDone ? 'bg-success border-success text-success-foreground' : 'border-border'}`}>
+                            {isDone && <CheckCircle2 className="h-3 w-3" />}
+                          </div>
+                          <span className={`truncate ${isDone ? 'line-through text-muted-foreground' : 'font-medium'}`}>{s.name}</span>
+                        </div>
+                        <Badge variant={isDone ? "default" : "outline"} className="text-[10px] capitalize shrink-0 ml-2">
+                          {s.status || "Pending"}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             {comments.length > 0 && (
               <div>
                 <h4 className="font-medium text-sm mb-2">Activity Log</h4>
@@ -348,12 +403,336 @@ function TaskDrillDown({ task, project, tower, onBack }: {
   );
 }
 
-// ===== FLOOR DRILL-DOWN (Tower -> Floors -> Tasks) =====
-function FloorDrillDown({ tower, project, allFloors, allTasks, onBack, onDrillTask }: {
-  tower: ApiTower; project: ApiProject; allFloors: ApiFloor[]; allTasks: ApiTask[];
-  onBack: () => void; onDrillTask: (task: ApiTask) => void;
+// ===== 5. UNIT DRILL-DOWN =====
+function UnitDrillDown({
+  unit,
+  floor,
+  tower,
+  project,
+  allTasks,
+  onBack,
+  onDrillTask,
+  onNavigateCrumb,
+}: {
+  unit: ApiUnit;
+  floor: ApiFloor;
+  tower: ApiTower;
+  project: ApiProject;
+  allTasks: ApiTask[];
+  onBack: () => void;
+  onDrillTask: (task: ApiTask) => void;
+  onNavigateCrumb: (level: 'portfolio' | 'project' | 'tower' | 'floor') => void;
 }) {
-  const [selectedFloorId, setSelectedFloorId] = useState<number | null>(null);
+  const unitTasks = useMemo(() => {
+    return allTasks.filter(t => t.unitId === unit.id || (t.floorId === unit.floorId && t.towerId === unit.towerId && (t as any).unitNumber === unit.unitNumber));
+  }, [allTasks, unit]);
+
+  const completed = unitTasks.filter(t => t.status === 'completed').length;
+  const delayed = unitTasks.filter(t => t.delayDays > 0 || t.status === 'delayed').length;
+  const totalDelay = unitTasks.reduce((a, t) => a + t.delayDays, 0);
+
+  const handleExport = () => {
+    exportToCSV(
+      `${project.name}_${tower.name}_Floor_${floor.number}_Unit_${unit.unitNumber}_Tasks`,
+      ['Task', 'Department', 'Phase', 'Status', 'Progress %', 'Delay Days', 'Delay Reason', 'Priority'],
+      unitTasks.map(t => [t.title, t.department, t.phase, getStatusLabel(t.status), String(t.progress), String(t.delayDays), t.delayReason || '', t.priority])
+    );
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      <HierarchicalBreadcrumb
+        items={[
+          { label: "Dashboard", icon: <Building2 className="h-4 w-4" />, onClick: () => onNavigateCrumb('portfolio') },
+          { label: project.name, icon: <Building2 className="h-4 w-4" />, onClick: () => onNavigateCrumb('project') },
+          { label: tower.name, icon: <Boxes className="h-4 w-4" />, onClick: () => onNavigateCrumb('tower') },
+          { label: floor.name, icon: <Layers className="h-4 w-4" />, onClick: () => onNavigateCrumb('floor') },
+          { label: `Unit ${unit.unitNumber}`, icon: <Home className="h-4 w-4" />, active: true },
+        ]}
+        onBack={onBack}
+        backLabel={floor.name}
+        actions={
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download className="h-4 w-4 mr-2" />Export Unit
+          </Button>
+        }
+      />
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-bold truncate">Unit {unit.unitNumber} — Activity Analytics</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {project.name} · {tower.name} · {floor.name} · Type: {unit.type || "Standard"} · Area: {unit.areaSqFt ? `${unit.areaSqFt} sq ft` : "N/A"}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        <StatCard label="Total Tasks" value={unitTasks.length} icon={<div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center"><CheckSquare className="h-5 w-5 text-primary" /></div>} />
+        <StatCard label="Completed" value={completed} icon={<div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center"><CheckCircle2 className="h-5 w-5 text-success" /></div>} subtitle={<Progress value={unitTasks.length > 0 ? (completed / unitTasks.length) * 100 : 0} className="h-1.5" />} />
+        <StatCard label="Delayed Tasks" value={delayed} icon={<div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center"><AlertTriangle className="h-5 w-5 text-destructive" /></div>} />
+        <StatCard label="Delay Impact" value={`${totalDelay}d`} icon={<div className="h-10 w-10 rounded-xl bg-warning/10 flex items-center justify-center"><Clock className="h-5 w-5 text-warning" /></div>} />
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Task Status</CardTitle></CardHeader>
+          <CardContent>
+            {unitTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No tasks recorded for this unit.</p>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={getStatusPieData(unitTasks)} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
+                      {getStatusPieData(unitTasks).map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="grid grid-cols-2 gap-1 mt-2">
+                  {getStatusPieData(unitTasks).map(item => (
+                    <div key={item.name} className="flex items-center gap-1.5 text-xs">
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-muted-foreground">{item.name}</span>
+                      <span className="font-medium ml-auto">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Department Breakdown</CardTitle></CardHeader>
+          <CardContent>
+            {unitTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No department activity yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={getDeptBreakdown(unitTasks)} layout="vertical" margin={{ left: 10 }}>
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={70} />
+                  <Tooltip cursor={false} content={<ChartTooltip />} />
+                  <Bar dataKey="completed" stackId="a" fill="hsl(152, 60%, 42%)" name="Completed" />
+                  <Bar dataKey="inProgress" stackId="a" fill="hsl(38, 92%, 50%)" name="In Progress" />
+                  <Bar dataKey="delayed" stackId="a" fill="hsl(0, 72%, 51%)" radius={[0, 4, 4, 0]} name="Delayed" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <ActivityTable taskList={unitTasks} title={`Unit ${unit.unitNumber} — All Activities`} onDrillTask={onDrillTask} />
+    </div>
+  );
+}
+
+// ===== 4. FLOOR DRILL-DOWN =====
+function FloorDrillDown({
+  floor,
+  tower,
+  project,
+  allUnits,
+  allTasks,
+  onBack,
+  onDrillUnit,
+  onDrillTask,
+  onNavigateCrumb,
+}: {
+  floor: ApiFloor;
+  tower: ApiTower;
+  project: ApiProject;
+  allUnits: ApiUnit[];
+  allTasks: ApiTask[];
+  onBack: () => void;
+  onDrillUnit: (unit: ApiUnit) => void;
+  onDrillTask: (task: ApiTask) => void;
+  onNavigateCrumb: (level: 'portfolio' | 'project' | 'tower') => void;
+}) {
+  const floorUnits = useMemo(() => allUnits.filter(u => u.floorId === floor.id), [allUnits, floor.id]);
+  const floorTasks = useMemo(() => allTasks.filter(t => t.floorId === floor.id), [allTasks, floor.id]);
+
+  const completed = floorTasks.filter(t => t.status === 'completed').length;
+  const delayed = floorTasks.filter(t => t.delayDays > 0 || t.status === 'delayed').length;
+  const totalDelay = floorTasks.reduce((a, t) => a + t.delayDays, 0);
+
+  const handleExport = () => {
+    exportToCSV(
+      `${project.name}_${tower.name}_Floor_${floor.number}_Overview`,
+      ['Unit / Task', 'Department', 'Phase', 'Status', 'Progress %', 'Delay Days', 'Delay Reason', 'Priority'],
+      floorTasks.map(t => [t.title, t.department, t.phase, getStatusLabel(t.status), String(t.progress), String(t.delayDays), t.delayReason || '', t.priority])
+    );
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      <HierarchicalBreadcrumb
+        items={[
+          { label: "Dashboard", icon: <Building2 className="h-4 w-4" />, onClick: () => onNavigateCrumb('portfolio') },
+          { label: project.name, icon: <Building2 className="h-4 w-4" />, onClick: () => onNavigateCrumb('project') },
+          { label: tower.name, icon: <Boxes className="h-4 w-4" />, onClick: () => onNavigateCrumb('tower') },
+          { label: getFloorDisplayName(floor), icon: getFloorIcon(floor, "h-4 w-4"), active: true },
+        ]}
+        onBack={onBack}
+        backLabel={tower.name}
+        actions={
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download className="h-4 w-4 mr-2" />Export Floor
+          </Button>
+        }
+      />
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-bold truncate">{getFloorDisplayName(floor)} — Unit & Activity Analytics</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {project.name} · {tower.name} · {getFloorSubtitle(floor)}{floorUnits.length > 0 ? ` · ${floorUnits.length} Units Mapped` : ""}
+          </p>
+        </div>
+      </div>
+
+      <div className={`grid grid-cols-2 ${floorUnits.length > 0 ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-2.5 sm:gap-4`}>
+        <StatCard label="Total Tasks" value={floorTasks.length} icon={<div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center"><Layers className="h-5 w-5 text-primary" /></div>} />
+        {floorUnits.length > 0 && (
+          <StatCard label="Units Mapped" value={floorUnits.length} icon={<div className="h-10 w-10 rounded-xl bg-info/10 flex items-center justify-center"><Home className="h-5 w-5 text-info" /></div>} />
+        )}
+        <StatCard label="Completed Tasks" value={completed} icon={<div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center"><CheckCircle2 className="h-5 w-5 text-success" /></div>} subtitle={<Progress value={floorTasks.length > 0 ? (completed / floorTasks.length) * 100 : 0} className="h-1.5" />} />
+        <StatCard label="Total Delay" value={`${totalDelay}d`} icon={<div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center"><Clock className="h-5 w-5 text-destructive" /></div>} />
+      </div>
+
+      {/* Units Grid */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-display">Units on {floor.name} <span className="text-xs text-muted-foreground font-normal ml-2">Click any unit to drill down →</span></CardTitle>
+        </CardHeader>
+        <CardContent>
+          {floorUnits.length === 0 ? (
+            <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 space-y-1">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="h-4 w-4 text-primary" />
+                <p className="text-sm font-semibold text-foreground">No units configured for this floor</p>
+                <Badge variant="secondary" className="text-[10px]">Dynamic Tasks View</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground pl-6">
+                Floor tasks and activities appear dynamically below — click any task to drill into details.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {floorUnits.map(unit => {
+                const uTasks = allTasks.filter(t => t.unitId === unit.id);
+                return (
+                  <div
+                    key={unit.id}
+                    onClick={() => onDrillUnit(unit)}
+                    className="p-3.5 rounded-lg border hover:border-primary/50 hover:bg-muted/30 cursor-pointer transition-all space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center">
+                          <Home className="h-4 w-4 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm">Unit {unit.unitNumber}</p>
+                          <p className="text-[11px] text-muted-foreground">{unit.type || "Standard"}</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] capitalize">{unit.status || "Planned"}</Badge>
+                    </div>
+                    <Progress value={unit.progress || 0} className="h-1.5" />
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{unit.progress || 0}% progress</span>
+                      <span>{uTasks.length} tasks</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Status Distribution</CardTitle></CardHeader>
+          <CardContent>
+            {floorTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No tasks recorded for this floor.</p>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={getStatusPieData(floorTasks)} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
+                      {getStatusPieData(floorTasks).map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="grid grid-cols-2 gap-1 mt-2">
+                  {getStatusPieData(floorTasks).map(item => (
+                    <div key={item.name} className="flex items-center gap-1.5 text-xs">
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-muted-foreground">{item.name}</span>
+                      <span className="font-medium ml-auto">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Department Breakdown</CardTitle></CardHeader>
+          <CardContent>
+            {floorTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No department activity yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={getDeptBreakdown(floorTasks)} layout="vertical" margin={{ left: 10 }}>
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={70} />
+                  <Tooltip cursor={false} content={<ChartTooltip />} />
+                  <Bar dataKey="completed" stackId="a" fill="hsl(152, 60%, 42%)" name="Completed" />
+                  <Bar dataKey="inProgress" stackId="a" fill="hsl(38, 92%, 50%)" name="In Progress" />
+                  <Bar dataKey="delayed" stackId="a" fill="hsl(0, 72%, 51%)" radius={[0, 4, 4, 0]} name="Delayed" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <ActivityTable taskList={floorTasks} title={`${floor.name} — All Activities`} onDrillTask={onDrillTask} />
+    </div>
+  );
+}
+
+// ===== 3. TOWER DRILL-DOWN =====
+function TowerDrillDown({
+  tower,
+  project,
+  allFloors,
+  allUnits,
+  allTasks,
+  onBack,
+  onDrillFloor,
+  onDrillTask,
+  onNavigateCrumb,
+}: {
+  tower: ApiTower;
+  project: ApiProject;
+  allFloors: ApiFloor[];
+  allUnits: ApiUnit[];
+  allTasks: ApiTask[];
+  onBack: () => void;
+  onDrillFloor: (floor: ApiFloor) => void;
+  onDrillTask: (task: ApiTask) => void;
+  onNavigateCrumb: (level: 'portfolio' | 'project') => void;
+}) {
   const towerFloors = useMemo(() => allFloors.filter(f => f.towerId === tower.id), [allFloors, tower.id]);
   const towerTasks = useMemo(() => allTasks.filter(t => t.towerId === tower.id), [allTasks, tower.id]);
 
@@ -361,7 +740,8 @@ function FloorDrillDown({ tower, project, allFloors, allTasks, onBack, onDrillTa
     const fTasks = allTasks.filter(t => t.floorId === f.id);
     const completed = fTasks.filter(t => t.status === 'completed').length;
     const delayed = fTasks.filter(t => t.status === 'delayed' || t.delayDays > 0).length;
-    return { ...f, taskCount: fTasks.length, completed, delayed, progress: fTasks.length > 0 ? Math.round((completed / fTasks.length) * 100) : 0 };
+    const fUnits = allUnits.filter(u => u.floorId === f.id);
+    return { ...f, taskCount: fTasks.length, unitCount: fUnits.length, completed, delayed, progress: fTasks.length > 0 ? Math.round((completed / fTasks.length) * 100) : 0 };
   });
 
   const handleExportTower = () => {
@@ -375,93 +755,30 @@ function FloorDrillDown({ tower, project, allFloors, allTasks, onBack, onDrillTa
     );
   };
 
-  if (selectedFloorId !== null) {
-    const floor = towerFloors.find(f => f.id === selectedFloorId)!;
-    const floorTasks = allTasks.filter(t => t.floorId === selectedFloorId);
-    return (
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => setSelectedFloorId(null)}><ArrowLeft className="h-4 w-4 shrink-0" /></Button>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
-                <span>Dashboard</span><ChevronRight className="h-3 w-3 shrink-0" />
-                <span>{project.name}</span><ChevronRight className="h-3 w-3 shrink-0" />
-                <span>{tower.name}</span><ChevronRight className="h-3 w-3 shrink-0" />
-                <span className="text-foreground font-medium truncate">{floor.name}</span>
-              </div>
-              <h1 className="font-display text-2xl font-bold mt-1 truncate">{floor.name} — Activity Analytics</h1>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-          <StatCard label="Total Tasks" value={floorTasks.length} icon={<div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center"><Layers className="h-5 w-5 text-primary" /></div>} />
-          <StatCard label="Completed" value={floorTasks.filter(t => t.status === 'completed').length} icon={<div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center"><CheckCircle2 className="h-5 w-5 text-success" /></div>} />
-          <StatCard label="Delayed" value={floorTasks.filter(t => t.delayDays > 0).length} icon={<div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center"><AlertTriangle className="h-5 w-5 text-destructive" /></div>} />
-          <StatCard label="Total Delay" value={`${floorTasks.reduce((a, t) => a + t.delayDays, 0)}d`} icon={<div className="h-10 w-10 rounded-xl bg-warning/10 flex items-center justify-center"><Clock className="h-5 w-5 text-warning" /></div>} />
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Status Distribution</CardTitle></CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie data={getStatusPieData(floorTasks)} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
-                    {getStatusPieData(floorTasks).map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip content={<ChartTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="grid grid-cols-2 gap-1 mt-2">
-                {getStatusPieData(floorTasks).map(item => (
-                  <div key={item.name} className="flex items-center gap-1.5 text-xs">
-                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                    <span className="text-muted-foreground">{item.name}</span>
-                    <span className="font-medium ml-auto">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Department Breakdown</CardTitle></CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={getDeptBreakdown(floorTasks)} layout="vertical" margin={{ left: 10 }}>
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={70} />
-                  <Tooltip cursor={false} content={<ChartTooltip />} />
-                  <Bar dataKey="completed" stackId="a" fill="hsl(152, 60%, 42%)" name="Completed" />
-                  <Bar dataKey="inProgress" stackId="a" fill="hsl(38, 92%, 50%)" name="In Progress" />
-                  <Bar dataKey="delayed" stackId="a" fill="hsl(0, 72%, 51%)" radius={[0, 4, 4, 0]} name="Delayed" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
-
-        <ActivityTable taskList={floorTasks} title={`${floor.name} — All Activities`} onDrillTask={onDrillTask} />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      <HierarchicalBreadcrumb
+        items={[
+          { label: "Dashboard", icon: <Building2 className="h-4 w-4" />, onClick: () => onNavigateCrumb('portfolio') },
+          { label: project.name, icon: <Building2 className="h-4 w-4" />, onClick: () => onNavigateCrumb('project') },
+          { label: tower.name, icon: <Boxes className="h-4 w-4" />, active: true },
+        ]}
+        onBack={onBack}
+        backLabel={project.name}
+        actions={
+          <Button variant="outline" size="sm" onClick={handleExportTower}>
+            <Download className="h-4 w-4 mr-2" />Export Tower
+          </Button>
+        }
+      />
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4 shrink-0" /></Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
-              <span>Dashboard</span><ChevronRight className="h-3 w-3 shrink-0" />
-              <span>{project.name}</span><ChevronRight className="h-3 w-3 shrink-0" />
-              <span className="text-foreground font-medium truncate">{tower.name}</span>
-            </div>
-            <h1 className="font-display text-2xl font-bold mt-1 truncate">{tower.name} — Floor Analytics</h1>
-          </div>
+        <div>
+          <h1 className="font-display text-2xl font-bold truncate">{tower.name} — Floor Analytics</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {project.name} · {countProperFloors(towerFloors)} Planned Floors · {towerFloors.length} Active Levels
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExportTower} className="w-full sm:w-auto"><Download className="h-4 w-4 mr-2" />Export All</Button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
@@ -475,60 +792,72 @@ function FloorDrillDown({ tower, project, allFloors, allTasks, onBack, onDrillTa
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Task Status</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={getStatusPieData(towerTasks)} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
-                  {getStatusPieData(towerTasks).map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                </Pie>
-                <Tooltip content={<ChartTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="grid grid-cols-2 gap-1 mt-2">
-              {getStatusPieData(towerTasks).map(item => (
-                <div key={item.name} className="flex items-center gap-1.5 text-xs">
-                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-muted-foreground">{item.name}</span>
-                  <span className="font-medium ml-auto">{item.value}</span>
+            {towerTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No tasks recorded for this tower.</p>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={getStatusPieData(towerTasks)} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
+                      {getStatusPieData(towerTasks).map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="grid grid-cols-2 gap-1 mt-2">
+                  {getStatusPieData(towerTasks).map(item => (
+                    <div key={item.name} className="flex items-center gap-1.5 text-xs">
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-muted-foreground">{item.name}</span>
+                      <span className="font-medium ml-auto">{item.value}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Department Performance</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={getDeptBreakdown(towerTasks)} layout="vertical" margin={{ left: 10 }}>
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={70} />
-                <Tooltip cursor={false} content={<ChartTooltip />} />
-                <Bar dataKey="completed" stackId="a" fill="hsl(152, 60%, 42%)" name="Completed" />
-                <Bar dataKey="inProgress" stackId="a" fill="hsl(38, 92%, 50%)" name="In Progress" />
-                <Bar dataKey="delayed" stackId="a" fill="hsl(0, 72%, 51%)" radius={[0, 4, 4, 0]} name="Delayed" />
-              </BarChart>
-            </ResponsiveContainer>
+            {towerTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No department activity yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={getDeptBreakdown(towerTasks)} layout="vertical" margin={{ left: 10 }}>
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={70} />
+                  <Tooltip cursor={false} content={<ChartTooltip />} />
+                  <Bar dataKey="completed" stackId="a" fill="hsl(152, 60%, 42%)" name="Completed" />
+                  <Bar dataKey="inProgress" stackId="a" fill="hsl(38, 92%, 50%)" name="In Progress" />
+                  <Bar dataKey="delayed" stackId="a" fill="hsl(0, 72%, 51%)" radius={[0, 4, 4, 0]} name="Delayed" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Floors</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-display">Floors <span className="text-xs text-muted-foreground font-normal ml-2">Click any floor to view units & tasks →</span></CardTitle>
+        </CardHeader>
         <CardContent>
           {floorStats.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4">No floors mapped yet for this tower.</p>
           ) : (
             <div className="space-y-2">
-              {floorStats.sort((a, b) => b.number - a.number).map(floor => (
+              {floorStats.sort((a, b) => getFloorSortRank(a) - getFloorSortRank(b)).map(floor => (
                 <div key={floor.id}
-                  onClick={() => setSelectedFloorId(floor.id)}
+                  onClick={() => onDrillFloor(floor)}
                   className="flex items-center gap-4 p-4 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors"
                 >
-                  <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Layers className="h-5 w-5 text-primary" />
+                  <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${getFloorIconColorClass(floor)}`}>
+                    {getFloorIcon(floor, "h-5 w-5")}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">{floor.name}</p>
-                    <p className="text-xs text-muted-foreground">{floor.taskCount} tasks · {floor.completed} done</p>
+                    <p className="font-medium text-sm">{getFloorDisplayName(floor)}</p>
+                    <p className="text-xs text-muted-foreground">{getFloorSubtitle(floor)}{floor.unitCount > 0 ? ` · ${floor.unitCount} units` : ""} · {floor.taskCount} tasks · {floor.completed} done</p>
                   </div>
                   <Progress value={floor.progress} className="h-1.5 w-20 hidden md:flex" />
                   <span className="text-xs font-medium w-8 text-right">{floor.progress}%</span>
@@ -546,10 +875,25 @@ function FloorDrillDown({ tower, project, allFloors, allTasks, onBack, onDrillTa
   );
 }
 
-// ===== PROJECT DRILL-DOWN (Project -> Towers -> Tasks) =====
-function ProjectDrillDown({ project, allTowers, allTasks, allHurdles, onBack, onDrillTower, onDrillTask }: {
-  project: ApiProject; allTowers: ApiTower[]; allTasks: ApiTask[]; allHurdles: ApiHurdle[];
-  onBack: () => void; onDrillTower: (tower: ApiTower) => void; onDrillTask?: (task: ApiTask) => void;
+// ===== 2. PROJECT DRILL-DOWN =====
+function ProjectDrillDown({
+  project,
+  allTowers,
+  allTasks,
+  allHurdles,
+  onBack,
+  onDrillTower,
+  onDrillTask,
+  onNavigateCrumb,
+}: {
+  project: ApiProject;
+  allTowers: ApiTower[];
+  allTasks: ApiTask[];
+  allHurdles: ApiHurdle[];
+  onBack: () => void;
+  onDrillTower: (tower: ApiTower) => void;
+  onDrillTask?: (task: ApiTask) => void;
+  onNavigateCrumb: (level: 'portfolio') => void;
 }) {
   const projectTasks = useMemo(() => allTasks.filter(t => t.projectId === project.id), [allTasks, project.id]);
   const projectTowers = useMemo(() => allTowers.filter(t => t.projectId === project.id), [allTowers, project.id]);
@@ -567,20 +911,26 @@ function ProjectDrillDown({ project, allTowers, allTasks, allHurdles, onBack, on
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      <HierarchicalBreadcrumb
+        items={[
+          { label: "Dashboard", icon: <Building2 className="h-4 w-4" />, onClick: () => onNavigateCrumb('portfolio') },
+          { label: project.name, icon: <Building2 className="h-4 w-4" />, active: true },
+        ]}
+        onBack={onBack}
+        backLabel="Dashboard"
+        actions={
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download className="h-4 w-4 mr-2" />Export Project
+          </Button>
+        }
+      />
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4 shrink-0" /></Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
-              <span>Dashboard</span><ChevronRight className="h-3 w-3 shrink-0" />
-              <span className="text-foreground font-medium truncate">{project.name}</span>
-            </div>
-            <h1 className="font-display text-2xl font-bold mt-1 truncate">{project.name}</h1>
-            <p className="text-sm text-muted-foreground truncate">{project.location} · RERA: {project.reraNumber || 'NA'}</p>
-          </div>
+        <div>
+          <h1 className="font-display text-2xl font-bold truncate">{project.name}</h1>
+          <p className="text-sm text-muted-foreground truncate mt-1">{project.location} · RERA: {project.reraNumber || 'NA'}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport} className="w-full sm:w-auto"><Download className="h-4 w-4 mr-2" />Export</Button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
@@ -594,44 +944,56 @@ function ProjectDrillDown({ project, allTowers, allTasks, allHurdles, onBack, on
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Task Status Distribution</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={getStatusPieData(projectTasks)} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
-                  {getStatusPieData(projectTasks).map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                </Pie>
-                <Tooltip content={<ChartTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="grid grid-cols-2 gap-1 mt-2">
-              {getStatusPieData(projectTasks).map(item => (
-                <div key={item.name} className="flex items-center gap-1.5 text-xs">
-                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-muted-foreground">{item.name}</span>
-                  <span className="font-medium ml-auto">{item.value}</span>
+            {projectTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No tasks recorded for this project.</p>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={getStatusPieData(projectTasks)} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
+                      {getStatusPieData(projectTasks).map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="grid grid-cols-2 gap-1 mt-2">
+                  {getStatusPieData(projectTasks).map(item => (
+                    <div key={item.name} className="flex items-center gap-1.5 text-xs">
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-muted-foreground">{item.name}</span>
+                      <span className="font-medium ml-auto">{item.value}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Department Performance</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={getDeptBreakdown(projectTasks)} layout="vertical" margin={{ left: 10 }}>
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={70} />
-                <Tooltip cursor={false} content={<ChartTooltip />} />
-                <Bar dataKey="completed" stackId="a" fill="hsl(152, 60%, 42%)" name="Completed" />
-                <Bar dataKey="inProgress" stackId="a" fill="hsl(38, 92%, 50%)" name="In Progress" />
-                <Bar dataKey="delayed" stackId="a" fill="hsl(0, 72%, 51%)" radius={[0, 4, 4, 0]} name="Delayed" />
-              </BarChart>
-            </ResponsiveContainer>
+            {projectTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No department activity yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={getDeptBreakdown(projectTasks)} layout="vertical" margin={{ left: 10 }}>
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={70} />
+                  <Tooltip cursor={false} content={<ChartTooltip />} />
+                  <Bar dataKey="completed" stackId="a" fill="hsl(152, 60%, 42%)" name="Completed" />
+                  <Bar dataKey="inProgress" stackId="a" fill="hsl(38, 92%, 50%)" name="In Progress" />
+                  <Bar dataKey="delayed" stackId="a" fill="hsl(0, 72%, 51%)" radius={[0, 4, 4, 0]} name="Delayed" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Tower Breakdown</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-display">Towers <span className="text-xs text-muted-foreground font-normal ml-2">Click any tower to view floors →</span></CardTitle>
+        </CardHeader>
         <CardContent>
           {projectTowers.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4">No towers mapped yet for this project. Add one from the Projects page.</p>
@@ -703,9 +1065,20 @@ function ProjectDrillDown({ project, allTowers, allTasks, allHurdles, onBack, on
 }
 
 // ===== DEPARTMENT DRILL-DOWN =====
-function DepartmentDrillDown({ department, allTasks, allProjects, onBack, onDrillTask }: {
-  department: string; allTasks: ApiTask[]; allProjects: ApiProject[];
-  onBack: () => void; onDrillTask: (task: ApiTask) => void;
+function DepartmentDrillDown({
+  department,
+  allTasks,
+  allProjects,
+  onBack,
+  onDrillTask,
+  onNavigateCrumb,
+}: {
+  department: string;
+  allTasks: ApiTask[];
+  allProjects: ApiProject[];
+  onBack: () => void;
+  onDrillTask: (task: ApiTask) => void;
+  onNavigateCrumb: (level: 'portfolio') => void;
 }) {
   const deptTasks = useMemo(() => allTasks.filter(t => t.department === department), [allTasks, department]);
   const completed = deptTasks.filter(t => t.status === 'completed').length;
@@ -734,20 +1107,26 @@ function DepartmentDrillDown({ department, allTasks, allProjects, onBack, onDril
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      <HierarchicalBreadcrumb
+        items={[
+          { label: "Dashboard", icon: <Building2 className="h-4 w-4" />, onClick: () => onNavigateCrumb('portfolio') },
+          { label: `${department} Department`, icon: <Layers className="h-4 w-4" />, active: true },
+        ]}
+        onBack={onBack}
+        backLabel="Dashboard"
+        actions={
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download className="h-4 w-4 mr-2" />Export CSV
+          </Button>
+        }
+      />
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4 shrink-0" /></Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
-              <span>Dashboard</span><ChevronRight className="h-3 w-3 shrink-0" />
-              <span className="text-foreground font-medium truncate">{department} Department</span>
-            </div>
-            <h1 className="font-display text-2xl font-bold mt-1 truncate">{department} – Performance Analytics</h1>
-            <p className="text-sm text-muted-foreground truncate">{deptTasks.length} total tasks across all projects</p>
-          </div>
+        <div>
+          <h1 className="font-display text-2xl font-bold truncate">{department} – Performance Analytics</h1>
+          <p className="text-sm text-muted-foreground truncate mt-1">{deptTasks.length} total tasks across all projects</p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport} className="w-full sm:w-auto"><Download className="h-4 w-4 mr-2" />Export CSV</Button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
@@ -761,39 +1140,49 @@ function DepartmentDrillDown({ department, allTasks, allProjects, onBack, onDril
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Status Distribution</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={getStatusPieData(deptTasks)} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
-                  {getStatusPieData(deptTasks).map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                </Pie>
-                <Tooltip content={<ChartTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="grid grid-cols-2 gap-1 mt-2">
-              {getStatusPieData(deptTasks).map(item => (
-                <div key={item.name} className="flex items-center gap-1.5 text-xs">
-                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-muted-foreground">{item.name}</span>
-                  <span className="font-medium ml-auto">{item.value}</span>
+            {deptTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No tasks recorded for this department.</p>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={getStatusPieData(deptTasks)} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
+                      {getStatusPieData(deptTasks).map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="grid grid-cols-2 gap-1 mt-2">
+                  {getStatusPieData(deptTasks).map(item => (
+                    <div key={item.name} className="flex items-center gap-1.5 text-xs">
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-muted-foreground">{item.name}</span>
+                      <span className="font-medium ml-auto">{item.value}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-lg font-display">Tasks per Project</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={projectBreakdown} layout="vertical" margin={{ left: 10 }}>
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={100} />
-                <Tooltip cursor={false} content={<ChartTooltip />} />
-                <Bar dataKey="completed" stackId="a" fill="hsl(152, 60%, 42%)" name="Completed" />
-                <Bar dataKey="inProgress" stackId="a" fill="hsl(38, 92%, 50%)" name="In Progress" />
-                <Bar dataKey="delayed" stackId="a" fill="hsl(0, 72%, 51%)" radius={[0, 4, 4, 0]} name="Delayed" />
-              </BarChart>
-            </ResponsiveContainer>
+            {projectBreakdown.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No project breakdown available.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={projectBreakdown} layout="vertical" margin={{ left: 10 }}>
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={100} />
+                  <Tooltip cursor={false} content={<ChartTooltip />} />
+                  <Bar dataKey="completed" stackId="a" fill="hsl(152, 60%, 42%)" name="Completed" />
+                  <Bar dataKey="inProgress" stackId="a" fill="hsl(38, 92%, 50%)" name="In Progress" />
+                  <Bar dataKey="delayed" stackId="a" fill="hsl(0, 72%, 51%)" radius={[0, 4, 4, 0]} name="Delayed" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -869,18 +1258,19 @@ function StackedBarWithHoverTooltip({ data, onClick }: { data: any[]; onClick?: 
 }
 
 // ===== MAIN DASHBOARD =====
+type DrillLevel = 'portfolio' | 'project' | 'tower' | 'floor' | 'unit' | 'task' | 'department';
+
 const Dashboard = () => {
-  const [drillLevel, setDrillLevel] = useState<'portfolio' | 'project' | 'tower' | 'task' | 'department'>('portfolio');
+  const [drillLevel, setDrillLevel] = useState<DrillLevel>('portfolio');
   const [selectedProject, setSelectedProject] = useState<ApiProject | null>(null);
   const [selectedTower, setSelectedTower] = useState<ApiTower | null>(null);
+  const [selectedFloor, setSelectedFloor] = useState<ApiFloor | null>(null);
+  const [selectedUnit, setSelectedUnit] = useState<ApiUnit | null>(null);
   const [selectedTask, setSelectedTask] = useState<ApiTask | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const { user } = useAuth();
 
-  // Same query keys as Projects.tsx, so React Query shares one cache: the
-  // moment a tower/project/task is created, edited, or deleted there, this
-  // dashboard's data is invalidated and refetched automatically too.
   const { data: projects = [], isLoading: projectsLoading, isError: projectsError } = useQuery({
     queryKey: ["projects"],
     queryFn: projectsApi.list,
@@ -892,6 +1282,14 @@ const Dashboard = () => {
   const { data: floors = [], isLoading: floorsLoading } = useQuery({
     queryKey: ["floors"],
     queryFn: floorsApi.list,
+  });
+  const { data: units = [], isLoading: unitsLoading } = useQuery({
+    queryKey: ["units"],
+    queryFn: unitsApi.list,
+  });
+  const { data: subTasks = [] } = useQuery({
+    queryKey: ["subtasks"],
+    queryFn: subTasksApi.list,
   });
   const { data: tasks = [], isLoading: tasksLoading } = useQuery({
     queryKey: ["tasks"],
@@ -908,8 +1306,13 @@ const Dashboard = () => {
 
   const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
   const towerById = useMemo(() => new Map(towers.map(t => [t.id, t])), [towers]);
-  const getProjectById = (id: number | null) => (id != null ? projectById.get(id) : undefined);
-  const getTowerById = (id: number | null) => (id != null ? towerById.get(id) : undefined);
+  const floorById = useMemo(() => new Map(floors.map(f => [f.id, f])), [floors]);
+  const unitById = useMemo(() => new Map(units.map(u => [u.id, u])), [units]);
+
+  const getProjectById = (id: number | null | undefined) => (id != null ? projectById.get(id) : undefined);
+  const getTowerById = (id: number | null | undefined) => (id != null ? towerById.get(id) : undefined);
+  const getFloorById = (id: number | null | undefined) => (id != null ? floorById.get(id) : undefined);
+  const getUnitById = (id: number | null | undefined) => (id != null ? unitById.get(id) : undefined);
 
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter(t => t.status === 'completed').length;
@@ -920,9 +1323,7 @@ const Dashboard = () => {
   const departmentStats = useMemo(() => getDeptBreakdown(tasks), [tasks]);
   const delayedTasks = useMemo(() => tasks.filter(t => t.delayDays > 0), [tasks]);
 
-  // Dynamically resolve organization assigned to the project(s)
   const organizationName = useMemo(() => {
-    // 1. If currently drilled down into a specific project, show its assigned organization
     if (selectedProject) {
       const org =
         selectedProject.organizationName ||
@@ -937,7 +1338,6 @@ const Dashboard = () => {
       if (org && org.trim()) return org.trim();
     }
 
-    // 2. Scan projects in the portfolio to find assigned organizations
     const uniqueOrgNames: string[] = [];
     for (const p of projects) {
       const org =
@@ -955,31 +1355,63 @@ const Dashboard = () => {
       }
     }
 
-    if (uniqueOrgNames.length === 1) {
-      return uniqueOrgNames[0];
-    }
-    if (uniqueOrgNames.length === 2) {
-      return `${uniqueOrgNames[0]} & ${uniqueOrgNames[1]}`;
-    }
-    if (uniqueOrgNames.length > 2) {
-      return `${uniqueOrgNames[0]} & others`;
-    }
-
-    // 3. Fallback to registered organizations if projects have no explicit organization yet
-    if (organizations.length > 0 && organizations[0].name?.trim()) {
-      return organizations[0].name.trim();
-    }
-
-    // 4. Fallback to user organization or company if distinct from default
+    if (uniqueOrgNames.length === 1) return uniqueOrgNames[0];
+    if (uniqueOrgNames.length === 2) return `${uniqueOrgNames[0]} & ${uniqueOrgNames[1]}`;
+    if (uniqueOrgNames.length > 2) return `${uniqueOrgNames[0]} & others`;
+    if (organizations.length > 0 && organizations[0].name?.trim()) return organizations[0].name.trim();
     if ((user as any)?.organization_name?.trim()) return (user as any).organization_name.trim();
     if ((user as any)?.organizationName?.trim()) return (user as any).organizationName.trim();
     if (user?.company_name && user.company_name !== "Vibe Group") return user.company_name;
-
-    // 5. Default fallback
     return "Vibe Group";
   }, [selectedProject, projects, organizations, user]);
 
-  const isLoading = projectsLoading || towersLoading || floorsLoading || tasksLoading || hurdlesLoading;
+  const dashboardTitle = useMemo(() => {
+    if (user?.is_superuser) return "Dashboard";
+    const org = user?.company_name?.trim() || (organizationName !== "Vibe Group" ? organizationName?.trim() : "");
+    if (org && org !== "Primary Tenant") return `${org} Dashboard`;
+    return "Dashboard";
+  }, [user, organizationName]);
+
+  const handleNavigateCrumb = (level: DrillLevel) => {
+    if (level === 'portfolio') {
+      setDrillLevel('portfolio');
+      setSelectedProject(null);
+      setSelectedTower(null);
+      setSelectedFloor(null);
+      setSelectedUnit(null);
+      setSelectedTask(null);
+      setSelectedDepartment(null);
+    } else if (level === 'project') {
+      setDrillLevel('project');
+      setSelectedTower(null);
+      setSelectedFloor(null);
+      setSelectedUnit(null);
+      setSelectedTask(null);
+    } else if (level === 'tower') {
+      setDrillLevel('tower');
+      setSelectedFloor(null);
+      setSelectedUnit(null);
+      setSelectedTask(null);
+    } else if (level === 'floor') {
+      setDrillLevel('floor');
+      setSelectedUnit(null);
+      setSelectedTask(null);
+    } else if (level === 'unit') {
+      setDrillLevel('unit');
+      setSelectedTask(null);
+    }
+  };
+
+  const handleDrillTask = (task: ApiTask) => {
+    if (task.projectId && !selectedProject) setSelectedProject(getProjectById(task.projectId) || null);
+    if (task.towerId && !selectedTower) setSelectedTower(getTowerById(task.towerId) || null);
+    if (task.floorId && !selectedFloor) setSelectedFloor(getFloorById(task.floorId) || null);
+    if (task.unitId && !selectedUnit) setSelectedUnit(getUnitById(task.unitId) || null);
+    setSelectedTask(task);
+    setDrillLevel('task');
+  };
+
+  const isLoading = projectsLoading || towersLoading || floorsLoading || unitsLoading || tasksLoading || hurdlesLoading;
 
   if (isLoading) {
     return <p className="text-center text-muted-foreground py-16">Loading dashboard…</p>;
@@ -989,37 +1421,97 @@ const Dashboard = () => {
     return <p className="text-center text-destructive py-16">Couldn't load dashboard data. Is the backend running?</p>;
   }
 
-  // Handle drill-down navigation
+  // 1. Task View (Replaces main container)
   if (drillLevel === 'task' && selectedTask) {
+    const parentProject = selectedProject || getProjectById(selectedTask.projectId);
+    const parentTower = selectedTower || getTowerById(selectedTask.towerId);
+    const parentFloor = selectedFloor || getFloorById(selectedTask.floorId);
+    const parentUnit = selectedUnit || getUnitById(selectedTask.unitId);
+
     return (
       <>
         <TaskDrillDown
           task={selectedTask}
-          project={getProjectById(selectedTask.projectId)}
-          tower={getTowerById(selectedTask.towerId)}
-          onBack={() => { setDrillLevel(selectedTower ? 'tower' : (selectedProject ? 'project' : 'portfolio')); setSelectedTask(null); }}
+          project={parentProject}
+          tower={parentTower}
+          floor={parentFloor}
+          unit={parentUnit}
+          allSubTasks={subTasks}
+          onBack={() => {
+            if (selectedUnit) setDrillLevel('unit');
+            else if (selectedFloor) setDrillLevel('floor');
+            else if (selectedTower) setDrillLevel('tower');
+            else if (selectedProject) setDrillLevel('project');
+            else setDrillLevel('portfolio');
+            setSelectedTask(null);
+          }}
+          onNavigateCrumb={handleNavigateCrumb}
         />
         <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
       </>
     );
   }
 
-  if (drillLevel === 'tower' && selectedTower && selectedProject) {
+  // 2. Unit View (Replaces main container)
+  if (drillLevel === 'unit' && selectedUnit && selectedFloor && selectedTower && selectedProject) {
+    return (
+      <>
+        <UnitDrillDown
+          unit={selectedUnit}
+          floor={selectedFloor}
+          tower={selectedTower}
+          project={selectedProject}
+          allTasks={tasks}
+          onBack={() => { setDrillLevel('floor'); setSelectedUnit(null); }}
+          onDrillTask={handleDrillTask}
+          onNavigateCrumb={handleNavigateCrumb}
+        />
+        <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
+      </>
+    );
+  }
+
+  // 3. Floor View (Replaces main container)
+  if (drillLevel === 'floor' && selectedFloor && selectedTower && selectedProject) {
     return (
       <>
         <FloorDrillDown
+          floor={selectedFloor}
           tower={selectedTower}
           project={selectedProject}
-          allFloors={floors}
+          allUnits={units}
           allTasks={tasks}
-          onBack={() => { setDrillLevel('project'); setSelectedTower(null); }}
-          onDrillTask={(task) => { setSelectedTask(task); setDrillLevel('task'); }}
+          onBack={() => { setDrillLevel('tower'); setSelectedFloor(null); }}
+          onDrillUnit={(unit) => { setSelectedUnit(unit); setDrillLevel('unit'); }}
+          onDrillTask={handleDrillTask}
+          onNavigateCrumb={handleNavigateCrumb}
         />
         <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
       </>
     );
   }
 
+  // 4. Tower View (Replaces main container)
+  if (drillLevel === 'tower' && selectedTower && selectedProject) {
+    return (
+      <>
+        <TowerDrillDown
+          tower={selectedTower}
+          project={selectedProject}
+          allFloors={floors}
+          allUnits={units}
+          allTasks={tasks}
+          onBack={() => { setDrillLevel('project'); setSelectedTower(null); }}
+          onDrillFloor={(floor) => { setSelectedFloor(floor); setDrillLevel('floor'); }}
+          onDrillTask={handleDrillTask}
+          onNavigateCrumb={handleNavigateCrumb}
+        />
+        <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
+      </>
+    );
+  }
+
+  // 5. Project View (Replaces main container)
   if (drillLevel === 'project' && selectedProject) {
     return (
       <>
@@ -1030,17 +1522,15 @@ const Dashboard = () => {
           allHurdles={hurdles}
           onBack={() => { setDrillLevel('portfolio'); setSelectedProject(null); }}
           onDrillTower={(tower) => { setSelectedTower(tower); setDrillLevel('tower'); }}
-          onDrillTask={(task) => {
-            setSelectedTower(getTowerById(task.towerId) || null);
-            setSelectedTask(task);
-            setDrillLevel('task');
-          }}
+          onDrillTask={handleDrillTask}
+          onNavigateCrumb={handleNavigateCrumb}
         />
         <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
       </>
     );
   }
 
+  // 6. Department View (Replaces main container)
   if (drillLevel === 'department' && selectedDepartment) {
     return (
       <>
@@ -1049,7 +1539,8 @@ const Dashboard = () => {
           allTasks={tasks}
           allProjects={projects}
           onBack={() => { setDrillLevel('portfolio'); setSelectedDepartment(null); }}
-          onDrillTask={(task) => { setSelectedTask(task); setDrillLevel('task'); }}
+          onDrillTask={handleDrillTask}
+          onNavigateCrumb={handleNavigateCrumb}
         />
         <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
       </>
@@ -1079,12 +1570,18 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      <HierarchicalBreadcrumb
+        items={[
+          { label: dashboardTitle, icon: <Building2 className="h-4 w-4" />, active: true }
+        ]}
+      />
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="font-display text-2xl md:text-3xl font-bold">CEO Dashboard</h1>
+          <h1 className="font-display text-2xl md:text-3xl font-bold">{dashboardTitle}</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Portfolio overview — {organizationName} · Click any project to drill down
+            Portfolio overview — {user?.is_superuser ? "Notandas Realty" : (user?.company_name || organizationName || "Notandas Realty")} · Click any project to drill down
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
@@ -1236,12 +1733,7 @@ const Dashboard = () => {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
               {delayedTasks.map(task => (
                 <div key={task.id} className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors"
-                  onClick={() => {
-                    setSelectedProject(getProjectById(task.projectId) || null);
-                    setSelectedTower(getTowerById(task.towerId) || null);
-                    setSelectedTask(task);
-                    setDrillLevel('task');
-                  }}>
+                  onClick={() => handleDrillTask(task)}>
                   <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
                     <Clock className="h-5 w-5 text-destructive" />
                   </div>
@@ -1258,7 +1750,6 @@ const Dashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Floating AI Assistant Widget with toggle support */}
       <AIAssistantWidget open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} showFloatingTrigger={true} />
     </div>
   );

@@ -552,16 +552,7 @@ const Documents = () => {
                     </a>
                   </Button>
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive/80 hover:text-destructive"
-                    onClick={() => deleteMutation.mutate(doc.id)}
-                    disabled={deleteMutation.isPending}
-                    title="Delete Document"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+
                 </div>
               </CardContent>
             </Card>

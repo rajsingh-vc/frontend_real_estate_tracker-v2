@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import jsPDF from "jspdf";
@@ -22,8 +22,10 @@ import {
 } from "lucide-react";
 import { NewTaskDialog } from "@/components/dialogs/NewTaskDialog";
 import { useToast } from "@/hooks/use-toast";
+import { Label } from "@/components/ui/label";
 import {
   tasksApi, usersApi, projectsApi, towersApi, documentsApi, statusesApi,
+  subTasksApi, type ApiSubTask, type SubTaskPayload,
   type ApiTask, type ApiDocument, type ApiChatMessage, ApiError, resolveImageUrl,
 } from "@/lib/api";
 
@@ -136,6 +138,17 @@ function daysBetween(startDate?: string | null, endDate?: string | null): number
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   const MS_PER_DAY = 1000 * 60 * 60 * 24;
   return Math.round((end.getTime() - start.getTime()) / MS_PER_DAY);
+}
+
+// Configured schedule duration in days (inclusive of start & end day, exactly matching MPP)
+function computeDurationDays(startDate?: string | null, endDate?: string | null): number | null {
+  if (!startDate || !endDate) return null;
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const MS_PER_DAY = 1000 * 60 * 60 * 24;
+  const diff = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY);
+  return diff >= 0 ? diff + 1 : 0;
 }
 
 // signed delay in days, synced to the real clock every time this renders —
@@ -437,30 +450,455 @@ function CameraCaptureDialog({
 // Task subtasks: view, add, toggle completion, and delete subtasks under the
 // current task. Provides instant optimistic updates and syncs with backend.
 // ============================================================================
-function TaskSubtasks({ task }: { task: ApiTaskExt }) {
+
+// ============================================================================
+// Edit Subtask Dialog (configured MPP dates, status, progress, name)
+// ============================================================================
+export function SubTaskEditDialog({
+  open,
+  onOpenChange,
+  subtask,
+  onSave,
+  saving,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  subtask: {
+    id: number;
+    name: string;
+    startDate?: string | null;
+    endDate?: string | null;
+    status: string;
+    progress: number;
+    isChecklistSubTask?: boolean;
+    taskId?: number;
+  } | null;
+  onSave: (values: {
+    name: string;
+    startDate?: string | null;
+    endDate?: string | null;
+    status: string;
+    progress: number;
+  }) => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState({
+    name: "",
+    startDate: "",
+    endDate: "",
+    status: "pending",
+    progress: "0",
+  });
+
+  useEffect(() => {
+    if (!open || !subtask) return;
+    setForm({
+      name: subtask.name,
+      startDate: subtask.startDate ?? "",
+      endDate: subtask.endDate ?? "",
+      status: subtask.status ?? "pending",
+      progress: String(subtask.progress ?? 0),
+    });
+  }, [open, subtask]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    onSave({
+      name: form.name.trim(),
+      startDate: form.startDate || null,
+      endDate: form.endDate || null,
+      status: form.status,
+      progress: Number(form.progress || 0),
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil className="h-4 w-4 text-primary" /> Edit Subtask
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="st-name" className="text-xs font-semibold">Subtask Name</Label>
+            <Input
+              id="st-name"
+              value={form.name}
+              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="st-start" className="text-xs font-semibold">Start Date (Configured in MPP)</Label>
+              <Input
+                id="st-start"
+                type="date"
+                value={form.startDate}
+                onChange={(e) => setForm((p) => ({ ...p, startDate: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="st-end" className="text-xs font-semibold">End Date (Configured in MPP)</Label>
+              <Input
+                id="st-end"
+                type="date"
+                value={form.endDate}
+                onChange={(e) => setForm((p) => ({ ...p, endDate: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="st-status" className="text-xs font-semibold">Status</Label>
+              <Input
+                id="st-status"
+                value={form.status}
+                onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+                placeholder="e.g. pending, in_progress, completed"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="st-prog" className="text-xs font-semibold">Progress %</Label>
+              <Input
+                id="st-prog"
+                type="number"
+                min={0}
+                max={100}
+                value={form.progress}
+                onChange={(e) => setForm((p) => ({ ...p, progress: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t">
+            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={saving || !form.name.trim()}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Check className="h-3.5 w-3.5 mr-1" />}
+              Save Changes
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================================
+// Edit Task Dialog (configured MPP dates, priority, status, progress, delay)
+// ============================================================================
+export function TaskEditDialog({
+  open,
+  onOpenChange,
+  task,
+  onSave,
+  saving,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  task: ApiTaskExt | null;
+  onSave: (values: {
+    title: string;
+    department?: string;
+    phase?: string;
+    priority?: string;
+    startDate?: string | null;
+    endDate?: string | null;
+    status: string;
+    progress: number;
+    delayDays: number;
+    description?: string;
+  }) => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState({
+    title: "",
+    department: "",
+    phase: "",
+    priority: "medium",
+    startDate: "",
+    endDate: "",
+    status: "not_started",
+    progress: "0",
+    delayDays: "0",
+    description: "",
+  });
+
+  useEffect(() => {
+    if (!open || !task) return;
+    setForm({
+      title: task.title,
+      department: task.department ?? "",
+      phase: task.phase ?? "",
+      priority: task.priority ?? "medium",
+      startDate: task.startDate ?? "",
+      endDate: task.endDate ?? "",
+      status: task.status ?? "not_started",
+      progress: String(task.progress ?? 0),
+      delayDays: String(task.delayDays ?? 0),
+      description: task.description ?? "",
+    });
+  }, [open, task]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim()) return;
+    onSave({
+      title: form.title.trim(),
+      department: form.department.trim(),
+      phase: form.phase.trim(),
+      priority: form.priority,
+      startDate: form.startDate || null,
+      endDate: form.endDate || null,
+      status: form.status,
+      progress: Number(form.progress || 0),
+      delayDays: Number(form.delayDays || 0),
+      description: form.description.trim(),
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[88vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil className="h-4 w-4 text-primary" /> Edit Task Schedule & Details
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="t-title" className="text-xs font-semibold">Task Title</Label>
+            <Input
+              id="t-title"
+              value={form.title}
+              onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="t-dept" className="text-xs font-semibold">Department</Label>
+              <Input
+                id="t-dept"
+                value={form.department}
+                onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="t-phase" className="text-xs font-semibold">Phase</Label>
+              <Input
+                id="t-phase"
+                value={form.phase}
+                onChange={(e) => setForm((p) => ({ ...p, phase: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-2">
+              <Label className="text-xs font-semibold">Priority</Label>
+              <Select
+                value={form.priority}
+                onValueChange={(val) => setForm((p) => ({ ...p, priority: val }))}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="t-start" className="text-xs font-semibold">Configured Start</Label>
+              <Input
+                id="t-start"
+                type="date"
+                value={form.startDate}
+                onChange={(e) => setForm((p) => ({ ...p, startDate: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="t-end" className="text-xs font-semibold">Configured End</Label>
+              <Input
+                id="t-end"
+                type="date"
+                value={form.endDate}
+                onChange={(e) => setForm((p) => ({ ...p, endDate: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="t-status" className="text-xs font-semibold">Status</Label>
+              <Input
+                id="t-status"
+                value={form.status}
+                onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="t-prog" className="text-xs font-semibold">Progress %</Label>
+              <Input
+                id="t-prog"
+                type="number"
+                min={0}
+                max={100}
+                value={form.progress}
+                onChange={(e) => setForm((p) => ({ ...p, progress: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="t-delay" className="text-xs font-semibold">Delay (days)</Label>
+              <Input
+                id="t-delay"
+                type="number"
+                value={form.delayDays}
+                onChange={(e) => setForm((p) => ({ ...p, delayDays: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="t-desc" className="text-xs font-semibold">Description</Label>
+            <Textarea
+              id="t-desc"
+              value={form.description}
+              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+              className="text-xs min-h-[60px]"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t">
+            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={saving || !form.title.trim()}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Check className="h-3.5 w-3.5 mr-1" />}
+              Save Task Schedule
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TaskSubtasks({
+  task,
+  onEditSubTask,
+}: {
+  task: ApiTaskExt;
+  onEditSubTask?: (subtask: {
+    id: number;
+    name: string;
+    startDate?: string | null;
+    endDate?: string | null;
+    status: string;
+    progress: number;
+    isChecklistSubTask: boolean;
+    taskId?: number;
+  }) => void;
+}) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [newTitle, setNewTitle] = useState("");
   const [priority, setPriority] = useState<string>("medium");
+  const [startDate, setStartDate] = useState<string>("");
   const [dueDate, setDueDate] = useState<string>("");
   const [showAddForm, setShowAddForm] = useState(false);
 
   const subtasksQueryKey = ["task", task.id, "subtasks"] as const;
 
-  const { data: subtasks = (task.subtasks ?? []), isLoading } = useQuery({
+  // 1. Fetch checklist subtasks (configured from MPP file)
+  const { data: allApiSubTasks = [], isLoading: apiSubTasksLoading } = useQuery({
+    queryKey: ["subtasks"],
+    queryFn: subTasksApi.list,
+  });
+
+  // 2. Fallback fetch from task subtasks action
+  const { data: legacySubtasks = (task.subtasks ?? []), isLoading: legacyLoading } = useQuery({
     queryKey: subtasksQueryKey,
     queryFn: () => tasksApi.subtasks.list(task.id),
     initialData: task.subtasks ?? [],
   });
 
+  const linkedChecklistSubtasks = allApiSubTasks.filter((s) => s.taskId === task.id);
+
+  // Combine unified subtasks
+  const unifiedSubtasks = useMemo(() => {
+    const list: Array<{
+      id: number;
+      name: string;
+      startDate?: string | null;
+      endDate?: string | null;
+      status: string;
+      progress: number;
+      priority?: string;
+      isChecklistSubTask: boolean;
+    }> = [];
+
+    // From checklist SubTask model (contains MPP configured dates)
+    linkedChecklistSubtasks.forEach((s) => {
+      list.push({
+        id: s.id,
+        name: s.name,
+        startDate: s.startDate,
+        endDate: s.endDate,
+        status: s.status || "pending",
+        progress: s.progress || 0,
+        priority: "medium",
+        isChecklistSubTask: true,
+      });
+    });
+
+    // From legacy child tasks if any
+    (legacySubtasks ?? []).forEach((st: any) => {
+      if (!list.some((existing) => existing.name === (st.title || st.name))) {
+        list.push({
+          id: st.id,
+          name: st.title || st.name,
+          startDate: st.startDate,
+          endDate: st.endDate,
+          status: st.status || "not_started",
+          progress: st.progress || 0,
+          priority: st.priority,
+          isChecklistSubTask: false,
+        });
+      }
+    });
+
+    return list;
+  }, [linkedChecklistSubtasks, legacySubtasks]);
+
   const createMutation = useMutation({
-    mutationFn: (data: { title: string; priority?: string; endDate?: string }) =>
-      tasksApi.subtasks.create(task.id, data),
-    onSuccess: (newSubtask) => {
-      queryClient.setQueryData<any[]>(subtasksQueryKey, (old = []) => [...old, newSubtask]);
+    mutationFn: (data: { title: string; priority?: string; startDate?: string; endDate?: string }) =>
+      subTasksApi.create({
+        taskId: task.id,
+        projectId: task.projectId,
+        name: data.title,
+        status: "pending",
+        progress: 0,
+        startDate: data.startDate || null,
+        endDate: data.endDate || null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["subtasks"] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: subtasksQueryKey });
       setNewTitle("");
+      setStartDate("");
       setDueDate("");
       setShowAddForm(false);
       toast({ title: "Subtask created successfully" });
@@ -475,57 +913,25 @@ function TaskSubtasks({ task }: { task: ApiTaskExt }) {
   });
 
   const toggleMutation = useMutation({
-    mutationFn: ({ subtaskId, completed }: { subtaskId: number; completed: boolean }) =>
-      tasksApi.update(subtaskId, {
-        status: completed ? "completed" : "in_progress",
-        progress: completed ? 100 : 0,
-      }),
-    onMutate: async ({ subtaskId, completed }) => {
-      await queryClient.cancelQueries({ queryKey: subtasksQueryKey });
-      const prevSubtasks = queryClient.getQueryData<any[]>(subtasksQueryKey);
-      queryClient.setQueryData<any[]>(subtasksQueryKey, (old = []) =>
-        old.map((st) =>
-          st.id === subtaskId
-            ? { ...st, status: completed ? "completed" : "in_progress", progress: completed ? 100 : 0 }
-            : st
-        )
-      );
-      return { prevSubtasks };
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.prevSubtasks) {
-        queryClient.setQueryData(subtasksQueryKey, context.prevSubtasks);
+    mutationFn: async ({ subtask, completed }: { subtask: any; completed: boolean }) => {
+      const nextStatus = completed ? "completed" : "pending";
+      const nextProgress = completed ? 100 : 0;
+      if (subtask.isChecklistSubTask) {
+        return subTasksApi.update(subtask.id, { status: nextStatus, progress: nextProgress });
+      } else {
+        return tasksApi.update(subtask.id, {
+          status: completed ? "completed" : "in_progress",
+          progress: nextProgress,
+        });
       }
-      toast({ title: "Failed to update subtask", variant: "destructive" });
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: subtasksQueryKey });
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (subtaskId: number) => tasksApi.remove(subtaskId),
-    onMutate: async (subtaskId) => {
-      await queryClient.cancelQueries({ queryKey: subtasksQueryKey });
-      const prevSubtasks = queryClient.getQueryData<any[]>(subtasksQueryKey);
-      queryClient.setQueryData<any[]>(subtasksQueryKey, (old = []) =>
-        old.filter((st) => st.id !== subtaskId)
-      );
-      return { prevSubtasks };
     },
     onSuccess: () => {
-      toast({ title: "Subtask deleted" });
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.prevSubtasks) {
-        queryClient.setQueryData(subtasksQueryKey, context.prevSubtasks);
-      }
-      toast({ title: "Failed to delete subtask", variant: "destructive" });
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: subtasksQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["subtasks"] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: subtasksQueryKey });
+    },
+    onError: () => {
+      toast({ title: "Failed to update subtask", variant: "destructive" });
     },
   });
 
@@ -536,14 +942,16 @@ function TaskSubtasks({ task }: { task: ApiTaskExt }) {
     createMutation.mutate({
       title: trimmed,
       priority,
+      startDate: startDate || undefined,
       endDate: dueDate || undefined,
     });
   };
 
-  const completedCount = subtasks.filter(
-    (st) => st.status === "completed" || st.progress === 100
+  const completedCount = unifiedSubtasks.filter(
+    (st) => st.status?.toLowerCase() === "completed" || st.progress === 100
   ).length;
-  const progressPercent = subtasks.length > 0 ? Math.round((completedCount / subtasks.length) * 100) : 0;
+  const progressPercent = unifiedSubtasks.length > 0 ? Math.round((completedCount / unifiedSubtasks.length) * 100) : 0;
+  const isLoading = apiSubTasksLoading && legacyLoading;
 
   return (
     <div className="mt-5 rounded-lg border bg-card p-4 space-y-3">
@@ -551,9 +959,9 @@ function TaskSubtasks({ task }: { task: ApiTaskExt }) {
         <div className="flex items-center gap-2">
           <ListTree className="h-4 w-4 text-primary" />
           <h4 className="font-display font-semibold text-sm">
-            Subtasks ({completedCount}/{subtasks.length})
+            Subtasks ({completedCount}/{unifiedSubtasks.length})
           </h4>
-          {subtasks.length > 0 && (
+          {unifiedSubtasks.length > 0 && (
             <Badge variant="secondary" className="text-[11px] font-normal">
               {progressPercent}% done
             </Badge>
@@ -573,15 +981,15 @@ function TaskSubtasks({ task }: { task: ApiTaskExt }) {
         )}
       </div>
 
-      {subtasks.length > 0 && (
+      {unifiedSubtasks.length > 0 && (
         <Progress value={progressPercent} className="h-1.5 bg-muted" />
       )}
 
       {/* List of subtasks */}
       <div className="space-y-1.5">
-        {isLoading && subtasks.length === 0 ? (
+        {isLoading && unifiedSubtasks.length === 0 ? (
           <p className="text-xs text-muted-foreground py-2">Loading subtasks…</p>
-        ) : subtasks.length === 0 && !showAddForm ? (
+        ) : unifiedSubtasks.length === 0 && !showAddForm ? (
           <div className="text-center py-4 border border-dashed rounded-md bg-muted/20">
             <p className="text-xs text-muted-foreground mb-2">No subtasks created for this task yet.</p>
             <Button
@@ -596,56 +1004,68 @@ function TaskSubtasks({ task }: { task: ApiTaskExt }) {
             </Button>
           </div>
         ) : (
-          subtasks.map((st) => {
-            const isCompleted = st.status === "completed" || st.progress === 100;
+          unifiedSubtasks.map((st) => {
+            const isCompleted = st.status?.toLowerCase() === "completed" || st.progress === 100;
             return (
               <div
                 key={st.id}
-                className={`flex items-center justify-between gap-2 p-2 rounded-md border text-sm transition-all ${
-                  isCompleted ? "bg-muted/30 border-muted" : "bg-background hover:border-primary/40"
+                onClick={() => onEditSubTask?.({ ...st, taskId: task.id })}
+                className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border text-sm transition-all cursor-pointer group ${
+                  isCompleted ? "bg-muted/30 border-muted" : "bg-card hover:bg-muted/40 hover:border-primary/40 shadow-2xs"
                 }`}
+                title="Click to view & edit subtask schedule"
               >
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <Checkbox
-                    checked={isCompleted}
-                    onCheckedChange={(checked) =>
-                      toggleMutation.mutate({ subtaskId: st.id, completed: !!checked })
-                    }
-                    className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
-                  />
-                  <span
-                    className={`truncate text-xs sm:text-sm font-medium ${
-                      isCompleted ? "line-through text-muted-foreground" : "text-foreground"
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleMutation.mutate({ subtask: st, completed: !isCompleted });
+                    }}
+                    className={`h-4.5 w-4.5 rounded border flex items-center justify-center cursor-pointer transition-colors shrink-0 ${
+                      isCompleted ? "bg-emerald-500 border-emerald-500 text-white" : "border-border hover:border-primary bg-background"
                     }`}
                   >
-                    {st.title}
-                  </span>
-                  {st.priority && (
-                    <Badge
-                      className={`${
-                        priorityColors[st.priority as Priority] || "bg-muted text-muted-foreground"
-                      } text-[9px] px-1 py-0 h-4`}
+                    {isCompleted && <Check className="h-3 w-3 stroke-[3]" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={`truncate text-xs sm:text-sm font-medium group-hover:text-primary transition-colors ${
+                        isCompleted ? "line-through text-muted-foreground" : "text-foreground"
+                      }`}
                     >
-                      {st.priority}
-                    </Badge>
-                  )}
-                  {st.endDate && (
-                    <span className="text-[10px] text-muted-foreground hidden sm:inline-flex items-center gap-1">
-                      <CalendarDays className="h-3 w-3" />
-                      {new Date(st.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                    </span>
-                  )}
+                      {st.name}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
+                      <Badge variant={isCompleted ? "default" : "outline"} className="text-[9px] px-1 py-0 capitalize">
+                        {st.status || "Pending"}
+                      </Badge>
+                      {(st.startDate || st.endDate) && (
+                        <span className="inline-flex items-center gap-1 font-mono text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
+                          <CalendarDays className="h-2.5 w-2.5" />
+                          {st.startDate || "No start"} → {st.endDate || "No end"}
+                        </span>
+                      )}
+                      <span>{st.progress || 0}%</span>
+                    </div>
+                  </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
-                  onClick={() => deleteMutation.mutate(st.id)}
-                  disabled={deleteMutation.isPending}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Progress value={st.progress || 0} className="h-1.5 w-14 hidden sm:flex" />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-primary hover:text-primary hover:bg-primary/10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditSubTask?.({ ...st, taskId: task.id });
+                    }}
+                    title="Edit Subtask"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             );
           })
@@ -666,6 +1086,13 @@ function TaskSubtasks({ task }: { task: ApiTaskExt }) {
             autoFocus
           />
           <div className="flex items-center gap-2 flex-wrap">
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="h-7 text-xs w-[130px] bg-background"
+              title="Configured start date"
+            />
             <Select value={priority} onValueChange={setPriority}>
               <SelectTrigger className="h-7 text-xs w-[100px] bg-background">
                 <SelectValue placeholder="Priority" />
@@ -856,15 +1283,7 @@ function TaskAttachments({
                   <Download className="h-3.5 w-3.5" />
                 </a>
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 shrink-0 text-destructive"
-                onClick={() => deleteMutation.mutate(doc.id)}
-                disabled={deleteMutation.isPending}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+
             </div>
           ))}
         </div>
@@ -976,15 +1395,7 @@ function TaskChat({ task }: { task: ApiTaskExt }) {
                 </div>
                 <p className="text-sm break-words whitespace-pre-wrap">{m.text}</p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 text-destructive"
-                onClick={() => deleteMutation.mutate(m.id)}
-                disabled={deleteMutation.isPending}
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
+
             </div>
           ))
         )}
@@ -1045,6 +1456,28 @@ function TaskRelationsPanel({
     });
   };
 
+  const [localStartDate, setLocalStartDate] = useState(task.startDate || "");
+  const [localEndDate, setLocalEndDate] = useState(task.endDate || "");
+  const [localAssignedTo, setLocalAssignedTo] = useState(task.assignedTo ? String(task.assignedTo) : "unassigned");
+  const [localDependsOn, setLocalDependsOn] = useState(task.dependsOn ? String(task.dependsOn) : "none");
+  const [justSaved, setJustSaved] = useState(false);
+
+  useEffect(() => {
+    setLocalStartDate(task.startDate || "");
+    setLocalEndDate(task.endDate || "");
+    setLocalAssignedTo(task.assignedTo ? String(task.assignedTo) : "unassigned");
+    setLocalDependsOn(task.dependsOn ? String(task.dependsOn) : "none");
+  }, [task.id, task.startDate, task.endDate, task.assignedTo, task.dependsOn]);
+
+  const hasChanges =
+    (localStartDate || null) !== (task.startDate || null) ||
+    (localEndDate || null) !== (task.endDate || null) ||
+    (localAssignedTo === "unassigned" ? null : Number(localAssignedTo)) !== (task.assignedTo ?? null) ||
+    (localDependsOn === "none" ? null : Number(localDependsOn)) !== (task.dependsOn ?? null);
+
+  const durationDays = computeDurationDays(localStartDate || null, localEndDate || null) ?? task.durationDays ?? null;
+  const signedDelay = computeSignedDelay({ ...task, endDate: localEndDate || null });
+
   const patchMutation = useMutation({
     mutationFn: (patch: Partial<ApiTaskExt>) => tasksApi.update(task.id, patch as Partial<ApiTask>),
     onMutate: async (patch) => {
@@ -1055,6 +1488,11 @@ function TaskRelationsPanel({
       );
       return { previousTasks };
     },
+    onSuccess: () => {
+      toast({ title: "Task updated successfully", description: "Schedule and details saved." });
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 3000);
+    },
     onError: (err, _patch, context) => {
       if (context?.previousTasks) {
         queryClient.setQueryData(["tasks"], context.previousTasks);
@@ -1064,11 +1502,19 @@ function TaskRelationsPanel({
     onSettled: invalidateTasks,
   });
 
-  const dependency = allTasks?.find((t) => t.id === task.dependsOn) as ApiTaskExt | undefined;
-  const dependencyBlocking = !!dependency && dependency.status !== 'completed';
+  const handleSave = () => {
+    const newDur = computeDurationDays(localStartDate || null, localEndDate || null);
+    patchMutation.mutate({
+      startDate: localStartDate || null,
+      endDate: localEndDate || null,
+      assignedTo: localAssignedTo === "unassigned" ? null : Number(localAssignedTo),
+      dependsOn: localDependsOn === "none" ? null : Number(localDependsOn),
+      ...(newDur != null ? { durationDays: newDur } : {}),
+    });
+  };
 
-  const durationDays = daysBetween(task.startDate, task.endDate);
-  const signedDelay = computeSignedDelay(task);
+  const dependency = allTasks?.find((t) => t.id === (localDependsOn === "none" ? null : Number(localDependsOn))) as ApiTaskExt | undefined;
+  const dependencyBlocking = !!dependency && dependency.status !== 'completed';
 
   return (
     <div className="mt-4 space-y-4">
@@ -1079,17 +1525,17 @@ function TaskRelationsPanel({
             <UserPlus className="h-3.5 w-3.5" /> Assigned To
           </label>
           <Select
-            value={task.assignedTo ? String(task.assignedTo) : "unassigned"}
-            onValueChange={(v) => patchMutation.mutate({ assignedTo: v === "unassigned" ? null : Number(v) })}
+            value={localAssignedTo}
+            onValueChange={(v) => setLocalAssignedTo(v)}
           >
             <SelectTrigger className="h-9 text-sm">
               <SelectValue placeholder="Unassigned">
-                {task.assignedTo && assignee ? (
+                {localAssignedTo !== "unassigned" && users?.find((u) => String(u.id) === localAssignedTo) ? (
                   <span className="flex items-center gap-2 truncate">
                     <span className="h-5 w-5 shrink-0 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold">
-                      {initialsOf(assignee.name)}
+                      {initialsOf(users.find((u) => String(u.id) === localAssignedTo)!.name)}
                     </span>
-                    <span className="truncate">{toTitleCase(assignee.name)}</span>
+                    <span className="truncate">{toTitleCase(users.find((u) => String(u.id) === localAssignedTo)!.name)}</span>
                   </span>
                 ) : (
                   "Unassigned"
@@ -1139,8 +1585,8 @@ function TaskRelationsPanel({
             <Link2 className="h-3.5 w-3.5" /> Depends On
           </label>
           <Select
-            value={task.dependsOn ? String(task.dependsOn) : "none"}
-            onValueChange={(v) => patchMutation.mutate({ dependsOn: v === "none" ? null : Number(v) })}
+            value={localDependsOn}
+            onValueChange={(v) => setLocalDependsOn(v)}
           >
             <SelectTrigger className="h-9 text-sm">
               <SelectValue placeholder="No dependency" />
@@ -1171,8 +1617,8 @@ function TaskRelationsPanel({
           </label>
           <Input
             type="date"
-            value={task.startDate || ""}
-            onChange={(e) => patchMutation.mutate({ startDate: e.target.value || null })}
+            value={localStartDate}
+            onChange={(e) => setLocalStartDate(e.target.value)}
             className="h-9 text-sm"
           />
         </div>
@@ -1182,8 +1628,8 @@ function TaskRelationsPanel({
           </label>
           <Input
             type="date"
-            value={task.endDate || ""}
-            onChange={(e) => patchMutation.mutate({ endDate: e.target.value || null })}
+            value={localEndDate}
+            onChange={(e) => setLocalEndDate(e.target.value)}
             className="h-9 text-sm"
           />
         </div>
@@ -1216,13 +1662,64 @@ function TaskRelationsPanel({
           </span>
         </div>
       </div>
+
+      {/* Save Button Bar */}
+      <div className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-muted/20">
+        <div className="text-xs">
+          {hasChanges ? (
+            <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+              Unsaved changes — click "Save Task" to apply
+            </span>
+          ) : justSaved ? (
+            <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1.5">
+              <Check className="h-3.5 w-3.5 stroke-[2.5]" />
+              Task schedule saved successfully
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              Task schedule is up to date
+            </span>
+          )}
+        </div>
+
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleSave}
+          disabled={patchMutation.isPending || (!hasChanges && !justSaved)}
+          className={`h-8 px-4 gap-1.5 font-medium transition-all ${
+            hasChanges
+              ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+              : "bg-muted text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          {patchMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Check className="h-3.5 w-3.5" />
+          )}
+          Save Task
+        </Button>
+      </div>
     </div>
   );
 }
 
-function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
+function TaskDetailDialog({
+  task: initialTask,
+  onEditTask,
+  onEditSubTask,
+}: {
+  task: ApiTaskExt;
+  onEditTask?: (task: ApiTaskExt) => void;
+  onEditSubTask?: (subtask: any) => void;
+}) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { data: allTasksForExport = [] } = useQuery({ queryKey: ["tasks"], queryFn: tasksApi.list });
+  const task = (allTasksForExport.find((t) => t.id === initialTask.id) as ApiTaskExt) ?? initialTask;
+
   const [newComment, setNewComment] = useState("");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState(task.title);
@@ -1447,11 +1944,76 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
             </Select>
           </div>
 
-          {/* export this task as a PDF summary */}
-          <Button type="button" variant="outline" size="sm" onClick={handleExportPDF}>
-            <FileDown className="h-4 w-4 mr-1.5" />
-            Export PDF
-          </Button>
+          <div className="flex items-center gap-2">
+            {onEditTask && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs h-8 text-primary border-primary/40 hover:bg-primary/10 font-medium"
+                onClick={() => onEditTask(task)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit Task
+              </Button>
+            )}
+            {/* export this task as a PDF summary */}
+            <Button type="button" variant="outline" size="sm" onClick={handleExportPDF} className="h-8 text-xs">
+              <FileDown className="h-3.5 w-3.5 mr-1.5" />
+              Export PDF
+            </Button>
+          </div>
+        </div>
+
+        {/* Configured MPP Schedule Grid */}
+        <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5 space-y-2.5 mt-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-1.5">
+              <CalendarDays className="h-4 w-4" />
+              Configured Schedule (MPP File)
+            </h4>
+            <Badge variant="secondary" className="text-[11px] font-mono">
+              Duration: {computeDurationDays(task.startDate, task.endDate) != null ? `${computeDurationDays(task.startDate, task.endDate)} Days` : task.durationDays != null ? `${task.durationDays} Days` : "—"}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="p-2.5 rounded-lg bg-card border border-border/60 shadow-2xs">
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <CalendarDays className="h-3 w-3 text-primary" /> Start Date
+              </p>
+              <p className="text-xs font-semibold text-foreground mt-0.5">
+                {task.startDate
+                  ? new Date(task.startDate).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
+                  : "Not specified"}
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-card border border-border/60 shadow-2xs">
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <CalendarDays className="h-3 w-3 text-primary" /> End Date
+              </p>
+              <p className="text-xs font-semibold text-foreground mt-0.5">
+                {task.endDate
+                  ? new Date(task.endDate).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
+                  : "Ongoing"}
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-card border border-border/60 shadow-2xs">
+              <p className="text-[10px] text-muted-foreground">Baseline Schedule</p>
+              <p className="text-xs font-medium text-foreground mt-0.5">
+                {task.baselineStartDate || "—"} to {task.baselineEndDate || "—"}
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-card border border-border/60 shadow-2xs">
+              <p className="text-[10px] text-muted-foreground">Schedule Variance</p>
+              <p className={`text-xs font-bold mt-0.5 ${task.delayDays && task.delayDays > 0 ? "text-destructive" : "text-emerald-500"}`}>
+                {task.delayDays && task.delayDays > 0 ? `+${task.delayDays}d Delay` : "On Schedule"}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Editable Title Section */}
@@ -1576,7 +2138,7 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
       />
 
       {/* Subtasks: View, create, and manage subtasks */}
-      <TaskSubtasks task={task} />
+      <TaskSubtasks task={task} onEditSubTask={onEditSubTask} />
 
       {/* Checklist */}
       {checklist.length > 0 && (
@@ -1642,22 +2204,35 @@ function TaskDetailDialog({ task }: { task: ApiTaskExt }) {
 // (`import { TaskRow } from "@/pages/Tasks"`) to render direct-mode task
 // rows with the full feature set (chat, attachments, dependencies, etc.).
 // Without `export` here, TypeScript reports "no exported member 'TaskRow'".
-export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?: boolean }) {
-  const subtasksCount = task.subtasks?.length ?? 0;
-  const subtasksCompleted = (task.subtasks ?? []).filter(
-    (s) => s.status === 'completed' || s.progress === 100
-  ).length;
+export function TaskRow({
+  task,
+  openOnMount,
+  onEditTask,
+  onEditSubTask,
+  allSubTasks = [],
+}: {
+  task: ApiTaskExt;
+  openOnMount?: boolean;
+  onEditTask?: (task: ApiTaskExt) => void;
+  onEditSubTask?: (subtask: any) => void;
+  allSubTasks?: ApiSubTask[];
+}) {
+  const linkedChecklistSubtasks = allSubTasks.filter((s) => s.taskId === task.id);
+  const subtasksCount = linkedChecklistSubtasks.length > 0 ? linkedChecklistSubtasks.length : (task.subtasks?.length ?? 0);
+  const subtasksCompleted = linkedChecklistSubtasks.length > 0
+    ? linkedChecklistSubtasks.filter((s) => s.status?.toLowerCase() === "completed" || s.progress === 100).length
+    : (task.subtasks ?? []).filter((s) => s.status === 'completed' || s.progress === 100).length;
 
   return (
     <Dialog defaultOpen={openOnMount}>
       <DialogTrigger asChild>
-        <div className="flex flex-col sm:grid sm:grid-cols-[auto,1fr,auto,auto,auto] items-start sm:items-center gap-2.5 sm:gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors">
+        <div className="flex flex-col sm:grid sm:grid-cols-[auto,1fr,auto,auto,auto] items-start sm:items-center gap-2.5 sm:gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors group">
           {/* Status dot + Mobile Title */}
           <div className="flex items-center gap-2.5 w-full sm:w-auto min-w-0">
             <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${displayStatusDot(task.status)}`} />
             <div className="min-w-0 flex-1 sm:hidden">
               <div className="flex items-center gap-2">
-                <p className="text-sm font-medium truncate">{task.title}</p>
+                <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{task.title}</p>
                 {task.criticalPath && <Badge variant="destructive" className="text-[9px] px-1 py-0">CP</Badge>}
               </div>
             </div>
@@ -1666,51 +2241,50 @@ export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?:
           {/* Desktop Title + sub-info */}
           <div className="hidden sm:block min-w-0">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-medium truncate">{task.title}</p>
+              <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{task.title}</p>
               {task.criticalPath && <Badge variant="destructive" className="text-[9px] px-1 py-0">CP</Badge>}
             </div>
-            <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
-              <span>{task.department}</span>
+            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+              <span>{task.department || "General"}</span>
               <span>·</span>
-              <span>{task.phase}</span>
-              {task.createdAt && (
-                <>
-                  <span>·</span>
-                  <span>Created {new Date(task.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span>
-                </>
+              <span>{task.phase || "Phase"}</span>
+              {(task.startDate || task.endDate) && (
+                <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
+                  <CalendarDays className="h-3 w-3" />
+                  {task.startDate || "—"} to {task.endDate || "—"}
+                  {task.durationDays ? ` (${task.durationDays}d)` : ""}
+                </span>
               )}
               {subtasksCount > 0 && (
-                <>
-                  <span>·</span>
-                  <span className="inline-flex items-center gap-1 text-primary font-medium">
-                    <ListTree className="h-3 w-3" />
-                    {subtasksCompleted}/{subtasksCount} subtasks
-                  </span>
-                </>
+                <span className="inline-flex items-center gap-1 text-[11px] bg-muted/80 text-foreground px-1.5 py-0.5 rounded font-medium">
+                  <ListTree className="h-3 w-3 text-primary" />
+                  {subtasksCompleted}/{subtasksCount} subtasks
+                </span>
               )}
             </div>
           </div>
 
           {/* Mobile sub-info */}
           <div className="sm:hidden flex flex-wrap items-center gap-2 text-xs text-muted-foreground w-full">
-            <span>{task.department}</span>
+            <span>{task.department || "General"}</span>
             <span>·</span>
-            <span>{task.phase}</span>
-            {task.createdAt && (
-              <>
-                <span>·</span>
-                <span>Created {new Date(task.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span>
-              </>
+            <span>{task.phase || "Phase"}</span>
+            {(task.startDate || task.endDate) && (
+              <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
+                <CalendarDays className="h-3 w-3" />
+                {task.startDate || "—"} to {task.endDate || "—"}
+                {task.durationDays ? ` (${task.durationDays}d)` : ""}
+              </span>
             )}
             {subtasksCount > 0 && (
-              <span className="inline-flex items-center gap-1 text-primary font-medium">
-                <ListTree className="h-3 w-3" />
+              <span className="inline-flex items-center gap-1 text-[11px] bg-muted/80 text-foreground px-1.5 py-0.5 rounded font-medium">
+                <ListTree className="h-3 w-3 text-primary" />
                 {subtasksCompleted}/{subtasksCount} subtasks
               </span>
             )}
           </div>
 
-          {/* Priority & Status badges + Progress */}
+          {/* Priority & Status badges + Progress + Edit Button */}
           <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto mt-1 sm:mt-0 flex-wrap">
             <Badge className={`${priorityColors[task.priority as Priority]} text-[10px] whitespace-nowrap`}>
               {task.priority}
@@ -1724,15 +2298,44 @@ export function TaskRow({ task, openOnMount }: { task: ApiTaskExt; openOnMount?:
               <Progress value={task.progress} className="h-1.5 flex-1" />
               <span className="text-xs font-medium w-8 text-right">{task.progress}%</span>
             </div>
+
+            {onEditTask && (
+              <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => onEditTask(task)}
+                  title="Edit Task Schedule & Details"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </DialogTrigger>
-      <TaskDetailDialog task={task} />
+      <TaskDetailDialog task={task} onEditTask={onEditTask} onEditSubTask={onEditSubTask} />
     </Dialog>
   );
 }
 
-function KanbanColumn({ status, columnTasks, onDrop }: { status: string; columnTasks: ApiTaskExt[]; onDrop: (taskId: number, newStatus: string) => void }) {
+function KanbanColumn({
+  status,
+  columnTasks,
+  onDrop,
+  onEditTask,
+  onEditSubTask,
+  allSubTasks = [],
+}: {
+  status: string;
+  columnTasks: ApiTaskExt[];
+  onDrop: (taskId: number, newStatus: string) => void;
+  onEditTask?: (task: ApiTaskExt) => void;
+  onEditSubTask?: (subtask: any) => void;
+  allSubTasks?: ApiSubTask[];
+}) {
   const statusDot = displayStatusDot(status);
 
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.currentTarget.classList.add('ring-2', 'ring-primary/50'); };
@@ -1753,16 +2356,17 @@ function KanbanColumn({ status, columnTasks, onDrop }: { status: string; columnT
       </div>
       <div className="space-y-2">
         {columnTasks.map((task) => {
-          const subtasksCount = task.subtasks?.length ?? 0;
-          const subtasksCompleted = (task.subtasks ?? []).filter(
-            (s) => s.status === 'completed' || s.progress === 100
-          ).length;
+          const linkedChecklistSubtasks = allSubTasks.filter((s) => s.taskId === task.id);
+          const subtasksCount = linkedChecklistSubtasks.length > 0 ? linkedChecklistSubtasks.length : (task.subtasks?.length ?? 0);
+          const subtasksCompleted = linkedChecklistSubtasks.length > 0
+            ? linkedChecklistSubtasks.filter((s) => s.status?.toLowerCase() === "completed" || s.progress === 100).length
+            : (task.subtasks ?? []).filter((s) => s.status === 'completed' || s.progress === 100).length;
 
           return (
             <div key={task.id} draggable onDragStart={e => { e.dataTransfer.setData('taskId', String(task.id)); e.dataTransfer.effectAllowed = 'move'; }}>
               <Dialog>
                 <DialogTrigger asChild>
-                  <Card className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow">
+                  <Card className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow group">
                     <CardContent className="p-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1">
@@ -1771,32 +2375,46 @@ function KanbanColumn({ status, columnTasks, onDrop }: { status: string; columnT
                         </div>
                         <div className="flex items-center gap-1">
                           {task.criticalPath && <Badge variant="destructive" className="text-[9px]">CP</Badge>}
+                          {onEditTask && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-muted-foreground group-hover:text-foreground"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEditTask(task);
+                              }}
+                              title="Edit Task"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          )}
                         </div>
                       </div>
-                      <p className="text-sm font-medium">{task.title}</p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{task.department}</span>
+                      <p className="text-sm font-medium group-hover:text-primary transition-colors">{task.title}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                        <span>{task.department || "General"}</span>
                         <span>·</span>
-                        <span>{task.phase}</span>
+                        <span>{task.phase || "Phase"}</span>
                       </div>
-                      {/* Subtasks indicator */}
+                      {(task.startDate || task.endDate) && (
+                        <div className="inline-flex items-center gap-1 font-mono text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
+                          <CalendarDays className="h-2.5 w-2.5" />
+                          {task.startDate || "—"} to {task.endDate || "—"}
+                        </div>
+                      )}
                       {subtasksCount > 0 && (
                         <div className="flex items-center gap-1 text-[11px] text-primary font-medium">
                           <ListTree className="h-3 w-3" />
                           <span>{subtasksCompleted}/{subtasksCount} subtasks</span>
                         </div>
                       )}
-                      {/* ✅ NEW — created date */}
-                      {task.createdAt && (
-                        <p className="text-[10px] text-muted-foreground">
-                          Created {new Date(task.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
-                        </p>
-                      )}
                       <Progress value={task.progress} className="h-1" />
                     </CardContent>
                   </Card>
                 </DialogTrigger>
-                <TaskDetailDialog task={task} />
+                <TaskDetailDialog task={task} onEditTask={onEditTask} onEditSubTask={onEditSubTask} />
               </Dialog>
             </div>
           );
@@ -1826,11 +2444,125 @@ const Tasks = () => {
     queryKey: ["tasks"],
     queryFn: tasksApi.list,
   });
+  const { data: allSubTasks = [] } = useQuery({
+    queryKey: ["subtasks"],
+    queryFn: subTasksApi.list,
+  });
   const { data: projects = [] } = useQuery({
     queryKey: ["projects"],
     queryFn: projectsApi.list,
   });
   const taskStatuses = useTaskStatuses();
+
+  // Task edit state
+  const [editingTask, setEditingTask] = useState<ApiTaskExt | null>(null);
+  const [taskEditDialogOpen, setTaskEditDialogOpen] = useState(false);
+
+  // Subtask edit state
+  const [editingSubTask, setEditingSubTask] = useState<{
+    id: number;
+    name: string;
+    startDate?: string | null;
+    endDate?: string | null;
+    status: string;
+    progress: number;
+    isChecklistSubTask: boolean;
+    taskId?: number;
+  } | null>(null);
+  const [subTaskEditDialogOpen, setSubTaskEditDialogOpen] = useState(false);
+
+  const updateTaskMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<ApiTask> }) => tasksApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast({ title: "Task schedule updated successfully" });
+      setTaskEditDialogOpen(false);
+      setEditingTask(null);
+    },
+    onError: (err) => {
+      toast({
+        title: "Failed to update task",
+        description: err instanceof ApiError ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveTask = (values: any) => {
+    if (!editingTask) return;
+    const dur = computeDurationDays(values.startDate, values.endDate);
+    updateTaskMutation.mutate({
+      id: editingTask.id,
+      data: {
+        ...values,
+        ...(dur != null ? { durationDays: dur } : {}),
+      },
+    });
+  };
+
+  const updateSubTaskMutation = useMutation({
+    mutationFn: async ({ id, isChecklistSubTask, data }: { id: number; isChecklistSubTask: boolean; data: any }) => {
+      if (isChecklistSubTask) {
+        return subTasksApi.update(id, data);
+      } else {
+        return tasksApi.update(id, data);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["subtasks"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast({ title: "Subtask updated successfully" });
+      setSubTaskEditDialogOpen(false);
+      setEditingSubTask(null);
+    },
+    onError: (err) => {
+      toast({
+        title: "Failed to update subtask",
+        description: err instanceof ApiError ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveSubTask = async (values: any) => {
+    if (!editingSubTask) return;
+    const currentTaskId = editingSubTask.taskId;
+
+    updateSubTaskMutation.mutate({
+      id: editingSubTask.id,
+      isChecklistSubTask: editingSubTask.isChecklistSubTask,
+      data: values,
+    });
+
+    // If subtask dates were changed, check if parent task schedule bounds are affected
+    if (currentTaskId && (values.startDate || values.endDate)) {
+      const parentTask = allTasks?.find((t) => t.id === currentTaskId);
+      if (parentTask) {
+        const otherSubTasks = allSubTasks.filter(
+          (s) => s.taskId === currentTaskId && s.id !== editingSubTask.id
+        );
+        const allStarts = [values.startDate, ...otherSubTasks.map((s) => s.startDate)].filter(Boolean) as string[];
+        const allEnds = [values.endDate, ...otherSubTasks.map((s) => s.endDate)].filter(Boolean) as string[];
+
+        allStarts.sort();
+        allEnds.sort();
+        const earliestStart = allStarts[0] || values.startDate || parentTask.startDate;
+        const latestEnd = allEnds[allEnds.length - 1] || values.endDate || parentTask.endDate;
+
+        if (earliestStart !== parentTask.startDate || latestEnd !== parentTask.endDate) {
+          const newDur = computeDurationDays(earliestStart, latestEnd);
+          updateTaskMutation.mutate({
+            id: currentTaskId,
+            data: {
+              startDate: earliestStart,
+              endDate: latestEnd,
+              ...(newDur != null ? { durationDays: newDur } : {}),
+            },
+          });
+        }
+      }
+    }
+  };
 
   // dragging a card to a new Kanban column also updates progress to match,
   // with an instant optimistic update.
@@ -1888,11 +2620,8 @@ const Tasks = () => {
 
   const tasks = (allTasks ?? []) as ApiTaskExt[];
 
-  // Filter top-level tasks for the main lists/kanban boards so child tasks
-  // (subtasks) are accessed directly inside their parent task module.
-  const topLevelTasks = tasks.filter((t) => !t.parentId);
-
-  const filtered = topLevelTasks.filter(t => {
+  // Show all tasks linked to the project (do not hide tasks with parentId)
+  const filtered = tasks.filter(t => {
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
     if (projectFilter !== 'all' && String(t.projectId) !== String(projectFilter)) return false;
@@ -1907,7 +2636,7 @@ const Tasks = () => {
           <h1 className="font-display text-2xl md:text-3xl font-bold">Execution Tasks</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {projectFilter === "all"
-              ? `${topLevelTasks.length} tasks across all projects`
+              ? `${tasks.length} tasks across all projects`
               : `${filtered.length} task${filtered.length === 1 ? "" : "s"} in selected project`}
           </p>
         </div>
@@ -1958,7 +2687,20 @@ const Tasks = () => {
         <TabsContent value="list" className="mt-4">
           <div className="space-y-2">
             {filtered.map((task) => (
-              <TaskRow key={task.id} task={task} openOnMount={task.id === openTaskId} />
+              <TaskRow
+                key={task.id}
+                task={task}
+                openOnMount={task.id === openTaskId}
+                onEditTask={(t) => {
+                  setEditingTask(t);
+                  setTaskEditDialogOpen(true);
+                }}
+                onEditSubTask={(st) => {
+                  setEditingSubTask(st);
+                  setSubTaskEditDialogOpen(true);
+                }}
+                allSubTasks={allSubTasks}
+              />
             ))}
           </div>
           {filtered.length === 0 && <p className="text-center text-muted-foreground py-8">No tasks match filters</p>}
@@ -1968,11 +2710,51 @@ const Tasks = () => {
           <div className="flex gap-4 overflow-x-auto pb-4">
             {taskStatuses.map(({ value: status }) => {
               const columnTasks = filtered.filter(t => t.status === status);
-              return <KanbanColumn key={status} status={status} columnTasks={columnTasks} onDrop={handleDrop} />;
+              return (
+                <KanbanColumn
+                  key={status}
+                  status={status}
+                  columnTasks={columnTasks}
+                  onDrop={handleDrop}
+                  onEditTask={(t) => {
+                    setEditingTask(t);
+                    setTaskEditDialogOpen(true);
+                  }}
+                  onEditSubTask={(st) => {
+                    setEditingSubTask(st);
+                    setSubTaskEditDialogOpen(true);
+                  }}
+                  allSubTasks={allSubTasks}
+                />
+              );
             })}
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Task Edit Dialog */}
+      <TaskEditDialog
+        open={taskEditDialogOpen}
+        onOpenChange={(open) => {
+          setTaskEditDialogOpen(open);
+          if (!open) setEditingTask(null);
+        }}
+        task={editingTask}
+        onSave={handleSaveTask}
+        saving={updateTaskMutation.isPending}
+      />
+
+      {/* Subtask Edit Dialog */}
+      <SubTaskEditDialog
+        open={subTaskEditDialogOpen}
+        onOpenChange={(open) => {
+          setSubTaskEditDialogOpen(open);
+          if (!open) setEditingSubTask(null);
+        }}
+        subtask={editingSubTask}
+        onSave={handleSaveSubTask}
+        saving={updateSubTaskMutation.isPending}
+      />
     </div>
   );
 };

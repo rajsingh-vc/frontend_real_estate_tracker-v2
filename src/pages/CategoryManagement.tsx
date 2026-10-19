@@ -718,17 +718,7 @@ function CategoryManagement() {
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleDeleteCategory(category);
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -795,14 +785,7 @@ function CategoryManagement() {
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => handleDeleteSubCategory(subCategory)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground">{subCategory.progress || 0}% complete</p>

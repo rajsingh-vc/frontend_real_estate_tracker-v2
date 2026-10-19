@@ -242,16 +242,18 @@ export interface ApiChecklist {
 export interface ApiSubTask {
   id: number;
   name: string;
-  checklistId: number;
+  checklistId?: number;
   taskId: number;
-  unitId: number;
-  floorId: number;
-  towerId: number;
-  projectId: number;
+  unitId?: number;
+  floorId?: number;
+  towerId?: number;
+  projectId?: number;
   status: string;
   progress: number;
-  createdAt: string;
-  updatedAt: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ApiChecklistItem {
@@ -466,14 +468,16 @@ export interface ChecklistPayload {
 
 export interface SubTaskPayload {
   name: string;
-  checklistId: number;
-  taskId: number;
-  unitId: number;
-  floorId: number;
-  towerId: number;
-  projectId: number;
+  checklistId?: number;
+  taskId?: number;
+  unitId?: number;
+  floorId?: number;
+  towerId?: number;
+  projectId?: number;
   status?: string;
   progress?: number;
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 export interface UserPayload {
@@ -1483,3 +1487,191 @@ export const passwordResetApi = {
       confirmPassword,
     }),
 };
+
+// ============================================================
+// ✅ Module Visibility & Permission Management API
+// ============================================================
+export interface AppModule {
+  id?: number;
+  key: string;
+  name: string;
+  description: string;
+  category: "Main" | "Operations" | "Management" | "System" | string;
+  route: string;
+  icon: string;
+  order: number;
+  is_active?: boolean;
+  isActive?: boolean;
+  default_enabled?: boolean;
+  defaultEnabled?: boolean;
+  default_visible?: boolean;
+  defaultVisible?: boolean;
+  admin_only?: boolean;
+  adminOnly?: boolean;
+  is_enabled?: boolean;
+  isEnabled?: boolean;
+  is_visible?: boolean;
+  isVisible?: boolean;
+  source?: string;
+  override_enabled?: boolean | null;
+  overrideEnabled?: boolean | null;
+  override_visible?: boolean | null;
+  overrideVisible?: boolean | null;
+  has_explicit_policy?: boolean;
+  hasExplicitPolicy?: boolean;
+}
+
+export interface UserModuleConfig {
+  module_key: string;
+  is_enabled: boolean | null;
+  is_visible: boolean | null;
+}
+
+export interface ModuleAuditLog {
+  id: number;
+  actor: number | null;
+  actor_name?: string | null;
+  actorName?: string | null;
+  actor_email?: string | null;
+  actorEmail?: string | null;
+  action: string;
+  module_key?: string;
+  moduleKey?: string;
+  target_user?: number | null;
+  targetUser?: number | null;
+  target_user_name?: string | null;
+  targetUserName?: string | null;
+  target_role?: number | null;
+  targetRole?: number | null;
+  target_role_name?: string | null;
+  targetRoleName?: string | null;
+  target_project?: number | null;
+  targetProject?: number | null;
+  organization?: number | null;
+  previous_value?: Record<string, any>;
+  previousValue?: Record<string, any>;
+  new_value?: Record<string, any>;
+  newValue?: Record<string, any>;
+  details: string;
+  created_at?: string;
+  createdAt?: string;
+}
+
+export interface ModuleMatrixItem {
+  module_id?: number;
+  moduleId?: number;
+  key: string;
+  name: string;
+  category: string;
+  route: string;
+  icon: string;
+  is_active?: boolean;
+  isActive?: boolean;
+  default_enabled?: boolean;
+  defaultEnabled?: boolean;
+  default_visible?: boolean;
+  defaultVisible?: boolean;
+  admin_only?: boolean;
+  adminOnly?: boolean;
+  user_overrides_count?: number;
+  userOverridesCount?: number;
+  roles?: Record<
+    number,
+    {
+      role_name?: string;
+      roleName?: string;
+      is_enabled?: boolean;
+      isEnabled?: boolean;
+      is_visible?: boolean;
+      isVisible?: boolean;
+      has_override?: boolean;
+      hasOverride?: boolean;
+    }
+  >;
+  users?: Record<
+    number,
+    {
+      is_enabled?: boolean;
+      isEnabled?: boolean;
+      is_visible?: boolean;
+      isVisible?: boolean;
+      source?: string;
+      has_override?: boolean;
+      hasOverride?: boolean;
+    }
+  >;
+}
+
+export interface MatrixUser {
+  id: number;
+  name: string;
+  username: string;
+  email: string;
+  role_name?: string;
+  roleName?: string;
+  is_superuser?: boolean;
+  isSuperuser?: boolean;
+  is_invited?: boolean;
+  isInvited?: boolean;
+  company_name?: string;
+  companyName?: string;
+}
+
+export interface ModuleMatrixResponse {
+  modules: ModuleMatrixItem[];
+  roles: { id: number; name: string }[];
+  users: MatrixUser[];
+  total_users?: number;
+  totalUsers?: number;
+  filtered_users_count?: number;
+  filteredUsersCount?: number;
+}
+
+export const modulesApi = {
+  list: (params?: { category?: string; search?: string }) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    return apiList<AppModule>(`/modules/${query ? `?${query}` : ""}`);
+  },
+  myPermissions: (projectId?: number) =>
+    apiGet<{
+      user_id?: number;
+      userId?: number;
+      is_superuser?: boolean;
+      isSuperuser?: boolean;
+      project_id?: number | null;
+      projectId?: number | null;
+      modules: AppModule[];
+      module_map?: Record<string, { is_enabled?: boolean; isEnabled?: boolean; is_visible?: boolean; isVisible?: boolean }>;
+      moduleMap?: Record<string, { is_enabled?: boolean; isEnabled?: boolean; is_visible?: boolean; isVisible?: boolean }>;
+    }>(`/modules/my-permissions/${projectId ? `?project_id=${projectId}` : ""}`),
+  toggleGlobal: (module_key: string, is_active: boolean) =>
+    apiPost<{ message: string; module: AppModule }>("/modules/toggle-global/", { module_key, is_active }),
+  matrix: (includeAll: boolean = false) =>
+    apiGet<ModuleMatrixResponse>(`/modules/matrix/${includeAll ? "?include_all=1" : ""}`),
+  getUserModules: (userId: number, projectId?: number) =>
+    apiGet<{
+      user: { id: number; name: string; email: string; role: string; company_id?: number | null; companyId?: number | null };
+      project_id?: number | null;
+      projectId?: number | null;
+      modules: AppModule[];
+      overrides: Record<string, { is_enabled?: boolean | null; isEnabled?: boolean | null; is_visible?: boolean | null; isVisible?: boolean | null }>;
+    }>(`/modules/users/${userId}/${projectId ? `?project_id=${projectId}` : ""}`),
+  updateUserModules: (userId: number, overrides: UserModuleConfig[], projectId?: number) =>
+    apiPost<{ message: string; modules: AppModule[] }>(`/modules/users/${userId}/`, { overrides, project_id: projectId }),
+  resetUserModules: (userId: number, projectId?: number) =>
+    apiPost<{ message: string; modules: AppModule[] }>(`/modules/users/${userId}/reset/`, { project_id: projectId }),
+  bulkUpdateUserModules: (userIds: number[], overrides: UserModuleConfig[], projectId?: number) =>
+    apiPost<{ message: string; modified_count?: number; modifiedCount?: number }>("/modules/users/bulk/", {
+      user_ids: userIds,
+      overrides,
+      project_id: projectId,
+    }),
+  getRoleModules: (roleId: number) =>
+    apiGet<{
+      role: { id: number; name: string; company_id?: number | null; companyId?: number | null };
+      modules: AppModule[];
+    }>(`/modules/roles/${roleId}/`),
+  updateRoleModules: (roleId: number, policies: { module_key: string; is_enabled: boolean; is_visible: boolean }[]) =>
+    apiPost<{ message: string }>(`/modules/roles/${roleId}/`, { policies }),
+  auditLogs: () => apiGet<ModuleAuditLog[]>("/modules/audit-logs/"),
+};

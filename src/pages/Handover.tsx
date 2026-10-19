@@ -162,15 +162,7 @@ function HandoverAttachments({ unit }: { unit: ApiHandoverUnit }) {
                   <Download className="h-3.5 w-3.5" />
                 </a>
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 shrink-0 text-destructive"
-                onClick={() => deleteMutation.mutate(doc.id)}
-                disabled={deleteMutation.isPending}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+
             </div>
           ))}
         </div>
@@ -286,15 +278,7 @@ const Handover = () => {
                   <p className="font-medium text-sm">{unit.unit} — {unit.tower}</p>
                   <p className="text-xs text-muted-foreground">{unit.projectName} · Buyer: {unit.buyer}</p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => deleteMutation.mutate(unit.id)}
-                  disabled={deleteMutation.isPending}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+
               </div>
 
               <div className="grid md:grid-cols-[180px_1fr] gap-3 items-center">

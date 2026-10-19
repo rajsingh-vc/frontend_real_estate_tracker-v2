@@ -1109,15 +1109,7 @@ const Checklists = () => {
                             />
                           </DialogContent>
                         </Dialog>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive"
-                          onClick={() => deleteMutation.mutate(template.id)}
-                          disabled={deleteMutation.isPending}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">
