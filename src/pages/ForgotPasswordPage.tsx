@@ -96,8 +96,8 @@ export default function ForgotPasswordPage() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden bg-slate-950 font-sans select-none">
-      {/* Animated Architecture Background Slides matching LoginPage */}
-      <AuthBackground />
+      {/* Animated Architecture / Notandas Video Background matching LoginPage */}
+      <AuthBackground usernameOrEmail={email} />
 
       {/* =========================================================================
           FOREGROUND LAYER: Premium Glassmorphism Card

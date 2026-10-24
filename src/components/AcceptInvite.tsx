@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { invitationsApi, type InvitationPreview } from "@/lib/api";
 import { setTokens } from "@/contexts/AuthContext";
+import AuthBackground from "@/components/auth/AuthBackground";
 
 type Step = "loading" | "invalid" | "preview" | "form" | "success";
 
@@ -88,6 +89,7 @@ function AcceptInvite() {
         password,
       });
       setTokens(result.access, result.refresh);
+      localStorage.setItem("apex_last_role", "invited");
       setStep("success");
       setTimeout(() => navigate("/"), 1200);
     } catch (err) {
@@ -100,8 +102,8 @@ function AcceptInvite() {
   if (step === "loading") {
     return (
       <CenterCard>
-        <Loader2 className="animate-spin text-blue-600 mx-auto" size={28} />
-        <p className="text-sm text-gray-500 mt-3">Checking your invitation…</p>
+        <Loader2 className="animate-spin text-cyan-400 mx-auto" size={28} />
+        <p className="text-sm text-slate-300 mt-3">Checking your invitation…</p>
       </CenterCard>
     );
   }
@@ -109,11 +111,11 @@ function AcceptInvite() {
   if (step === "invalid") {
     return (
       <CenterCard>
-        <XCircle className="text-red-500 mx-auto" size={32} />
-        <p className="text-sm font-medium text-gray-900 mt-3">{loadError}</p>
+        <XCircle className="text-rose-400 mx-auto" size={32} />
+        <p className="text-sm font-medium text-white mt-3">{loadError}</p>
         <button
           onClick={() => navigate("/login")}
-          className="mt-5 text-sm font-medium text-blue-600 hover:text-blue-700"
+          className="mt-5 text-sm font-medium text-cyan-400 hover:text-cyan-300 transition-colors"
         >
           Go to login
         </button>
@@ -125,34 +127,34 @@ function AcceptInvite() {
     const greetingName = invitation.name || invitation.username || invitation.email;
     return (
       <CenterCard>
-        <h1 className="text-xl font-bold text-gray-900 mb-1">You're invited</h1>
-        <p className="text-sm text-gray-500 mb-1">Hi {greetingName},</p>
-        <p className="text-sm text-gray-500 mb-4">
+        <h1 className="text-xl font-bold text-white mb-1">You're invited</h1>
+        <p className="text-sm text-slate-300 mb-1">Hi {greetingName},</p>
+        <p className="text-sm text-slate-300 mb-4">
           You've been invited to join{" "}
-          <span className="font-semibold text-gray-700">{invitation.company_name}</span>
+          <span className="font-semibold text-cyan-300">{invitation.company_name}</span>
           {invitation.role_name && (
             <>
               {" "}
-              as <span className="font-semibold text-gray-700">{invitation.role_name}</span>
+              as <span className="font-semibold text-cyan-300">{invitation.role_name}</span>
             </>
           )}
           {invitation.department_name && (
             <>
               {" "}
-              in the <span className="font-semibold text-gray-700">{invitation.department_name}</span> department
+              in the <span className="font-semibold text-cyan-300">{invitation.department_name}</span> department
             </>
           )}
           .
         </p>
-        <div className="bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 mb-6 text-left">
-          <p className="text-xs text-gray-500 mb-0.5">Your username</p>
-          <p className="text-sm font-semibold text-gray-800">
+        <div className="bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3 mb-6 text-left">
+          <p className="text-xs text-slate-400 mb-0.5">Your username</p>
+          <p className="text-sm font-semibold text-white">
             {invitation.username || invitation.email}
           </p>
         </div>
         <button
           onClick={() => setStep("form")}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-lg transition-colors"
+          className="w-full bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium py-2.5 rounded-xl transition-all shadow-lg shadow-cyan-900/30"
         >
           Accept invitation
         </button>
@@ -163,9 +165,9 @@ function AcceptInvite() {
   if (step === "success") {
     return (
       <CenterCard>
-        <CheckCircle2 className="text-green-500 mx-auto" size={32} />
-        <p className="text-sm font-medium text-gray-900 mt-3">You're all set!</p>
-        <p className="text-sm text-gray-500 mt-1">Taking you to your dashboard…</p>
+        <CheckCircle2 className="text-emerald-400 mx-auto" size={32} />
+        <p className="text-sm font-medium text-white mt-3">You're all set!</p>
+        <p className="text-sm text-slate-300 mt-1">Taking you to your dashboard…</p>
       </CenterCard>
     );
   }
@@ -173,51 +175,51 @@ function AcceptInvite() {
   // step === "form"
   return (
     <CenterCard>
-      <h1 className="text-xl font-bold text-gray-900 mb-1">Set up your login</h1>
-      <p className="text-sm text-gray-500 mb-6">
+      <h1 className="text-xl font-bold text-white mb-1">Set up your login</h1>
+      <p className="text-sm text-slate-300 mb-6">
         Confirm the username{" "}
-        <span className="font-semibold text-gray-700">{invitation?.username}</span> and choose a
+        <span className="font-semibold text-cyan-300">{invitation?.username}</span> and choose a
         password.
       </p>
       <form onSubmit={handleSubmit} className="space-y-3 text-left">
         <label className="block">
-          <span className="block text-xs font-medium text-gray-600 mb-1">Username</span>
+          <span className="block text-xs font-medium text-slate-300 mb-1">Username</span>
           <input
             required
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+            className="w-full rounded-xl bg-slate-900/70 border border-white/15 px-3 py-2 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-400"
           />
         </label>
         <label className="block">
-          <span className="block text-xs font-medium text-gray-600 mb-1">New password</span>
+          <span className="block text-xs font-medium text-slate-300 mb-1">New password</span>
           <input
             required
             type="password"
             minLength={6}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+            className="w-full rounded-xl bg-slate-900/70 border border-white/15 px-3 py-2 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-400"
           />
         </label>
         <label className="block">
-          <span className="block text-xs font-medium text-gray-600 mb-1">Confirm password</span>
+          <span className="block text-xs font-medium text-slate-300 mb-1">Confirm password</span>
           <input
             required
             type="password"
             minLength={6}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+            className="w-full rounded-xl bg-slate-900/70 border border-white/15 px-3 py-2 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-400"
           />
         </label>
 
-        {formError && <p className="text-sm text-red-600">{formError}</p>}
+        {formError && <p className="text-sm text-rose-400">{formError}</p>}
 
         <button
           type="submit"
           disabled={submitting}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-lg transition-colors disabled:opacity-50"
+          className="w-full bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium py-2.5 rounded-xl transition-all shadow-lg shadow-cyan-900/30 disabled:opacity-50"
         >
           {submitting ? "Setting up…" : "Set password & log in"}
         </button>
@@ -228,8 +230,9 @@ function AcceptInvite() {
 
 function CenterCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 w-full max-w-sm p-8 text-center">
+    <div className="relative min-h-screen w-full flex items-center justify-center p-4 bg-slate-950 overflow-hidden">
+      <AuthBackground forceMode="video" />
+      <div className="relative z-20 w-full max-w-sm rounded-2xl bg-slate-950/75 border border-white/15 p-8 text-center backdrop-blur-xl shadow-2xl shadow-black/60">
         {children}
       </div>
     </div>

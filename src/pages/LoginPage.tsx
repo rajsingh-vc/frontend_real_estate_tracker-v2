@@ -32,8 +32,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden bg-slate-950 font-sans select-none">
-      {/* Animated Architecture Background Slides */}
-      <AuthBackground />
+      {/* Animated Architecture / Notandas Video Background */}
+      <AuthBackground usernameOrEmail={username} />
 
       {/* =========================================================================
           FOREGROUND LAYER: Premium Glassmorphism Login Card

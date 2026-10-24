@@ -41,10 +41,13 @@ export interface UnitRollup {
   hasBlockers: boolean;
 }
 
+export type FloorType = "regular" | "terrace" | "mumty" | "basement";
+
 export interface FloorRollup {
   floor: ApiFloor;
   number: number;
   name: string;
+  floorType: FloorType;
   progress: number;
   status: string;
   units: UnitRollup[];
@@ -96,6 +99,7 @@ export interface HoveredElementInfo {
   name: string;
   towerName?: string;
   floorName?: string;
+  floorType?: FloorType;
   progress: number;
   status: string;
   totalTasks: number;

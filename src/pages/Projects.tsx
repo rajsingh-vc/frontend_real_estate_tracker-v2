@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
-  Building2, MapPin, Calendar, CalendarDays, ArrowRight, Pencil, Trash2, ChevronLeft,
+  Building2, MapPin, Calendar, CalendarDays, ArrowRight, Pencil, ChevronLeft,
   ChevronRight, ChevronDown, Layers, Boxes, GitFork, ListTree, ArrowDown,
   Sparkles, CheckCircle2, Clock, CheckSquare, Split, ArrowDownRight, CornerDownRight,
   ListChecks, Plus, Check, Circle, ExternalLink, Search, ChevronsUpDown, X, Home
@@ -36,7 +36,8 @@ import {
   type Organization, type OrganizationCompany, type Entity,
 } from "@/lib/api";
 import { NewTaskDialog } from "@/components/dialogs/NewTaskDialog";
-import { TaskRow } from "@/pages/Tasks";
+import { TaskRow, isTaskAssignedToUser, TaskDetailModal, TaskEditDialog } from "@/pages/Tasks";
+import { useAuth } from "@/contexts/AuthContext";
 
 type ProjectStatus = string;
 type TaskStatus = string;
@@ -1633,6 +1634,7 @@ function ProjectList({
   onDelete?: (project: ApiProject) => void;
 }) {
   const navigate = useNavigate();
+  const { canEdit } = useAuth();
   const [projectSearch, setProjectSearch] = useState("");
 
   // Dynamic search, organization filtering, and ranked sorting
@@ -1719,9 +1721,11 @@ function ProjectList({
             />
           )}
 
-          <Button onClick={onCreate} className="w-full sm:w-auto shadow-sm">
-            + New Project
-          </Button>
+          {canEdit && (
+            <Button onClick={onCreate} className="w-full sm:w-auto shadow-sm">
+              + New Project
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1809,18 +1813,19 @@ function ProjectList({
                   </div>
 
                   <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground bg-background/60 hover:bg-background/90 backdrop-blur-xs rounded-lg transition-colors"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onEdit(project);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground bg-background/60 hover:bg-background/90 backdrop-blur-xs rounded-lg transition-colors"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEdit(project);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -1963,8 +1968,10 @@ function TaskScheduleModal({
   onEditSubTask: (subTask: ApiSubTask) => void;
   onCreateSubTask?: () => void;
 }) {
+  const { canEdit, user } = useAuth();
   if (!task) return null;
 
+  const canEditTask = canEdit || isTaskAssignedToUser(task, user);
   const linkedSubTasks = subTasks.filter((s) => s.taskId === task.id);
 
   return (
@@ -1991,18 +1998,20 @@ function TaskScheduleModal({
                 {task.department || "General"} · {task.phase || "Phase"}
               </p>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 shrink-0 self-start text-xs h-8"
-              onClick={() => {
-                onOpenChange(false);
-                onEditTask(task);
-              }}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit Task
-            </Button>
+            {canEditTask && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 shrink-0 self-start text-xs h-8"
+                onClick={() => {
+                  onOpenChange(false);
+                  onEditTask(task);
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit Task
+              </Button>
+            )}
           </div>
         </DialogHeader>
 
@@ -2148,19 +2157,21 @@ function TaskScheduleModal({
 
                       <div className="flex items-center gap-2 shrink-0">
                         <Progress value={subTask.progress || 0} className="h-1.5 w-16 hidden sm:flex" />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground group-hover:text-foreground"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenChange(false);
-                            onEditSubTask(subTask);
-                          }}
-                          title="Edit Subtask"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
+                        {canEditTask && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground group-hover:text-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenChange(false);
+                              onEditSubTask(subTask);
+                            }}
+                            title="Edit Subtask"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );
@@ -2174,17 +2185,19 @@ function TaskScheduleModal({
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Close
           </Button>
-          <Button
-            size="sm"
-            className="gap-1.5"
-            onClick={() => {
-              onOpenChange(false);
-              onEditTask(task);
-            }}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Edit Task Schedule
-          </Button>
+          {canEditTask && (
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => {
+                onOpenChange(false);
+                onEditTask(task);
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit Task Schedule
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -2225,6 +2238,7 @@ function ProjectDetail({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit, user } = useAuth();
 
   if (!project) return <div className="text-center py-12">Project not found</div>;
 
@@ -2277,15 +2291,17 @@ function ProjectDetail({
         onBack={() => navigate("/projects")}
         backLabel="Projects"
         actions={
-          isDirect ? (
-            <NewTaskDialog
-              lockedProjectId={project.id}
-              trigger={<Button size="sm">+ New Task</Button>}
-              onCreated={() => queryClient.invalidateQueries({ queryKey: ["tasks"] })}
-            />
-          ) : (
-            <Button size="sm" onClick={onCreateTower}>+ New Tower</Button>
-          )
+          canEdit ? (
+            isDirect ? (
+              <NewTaskDialog
+                lockedProjectId={project.id}
+                trigger={<Button size="sm">+ New Task</Button>}
+                onCreated={() => queryClient.invalidateQueries({ queryKey: ["tasks"] })}
+              />
+            ) : (
+              <Button size="sm" onClick={onCreateTower}>+ New Tower</Button>
+            )
+          ) : undefined
         }
       />
 
@@ -2451,28 +2467,19 @@ function ProjectDetail({
                             <Badge variant="secondary" className="capitalize text-xs">
                               {tower.status}
                             </Badge>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onEditTower(tower);
-                              }}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onDeleteTower(tower);
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onEditTower(tower);
+                                }}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                           </div>
                         </div>
 
@@ -2563,7 +2570,7 @@ function ProjectDetail({
                     <Progress value={task.progress} className="h-1.5 w-20 hidden md:flex shrink-0" />
                     <span className="text-xs font-semibold shrink-0">{task.progress}%</span>
                     <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      {onEditTask && (
+                      {(canEdit || isTaskAssignedToUser(task, user)) && onEditTask && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -2632,6 +2639,7 @@ function TowerDetail({
   onDeleteFloor: (floor: ApiFloor) => void;
 }) {
   const navigate = useNavigate();
+  const { canEdit } = useAuth();
 
   if (!tower) return <div className="text-center py-12">Tower not found</div>;
 
@@ -2653,7 +2661,7 @@ function TowerDetail({
         ]}
         onBack={onBack}
         backLabel="Project"
-        actions={<Button size="sm" onClick={onCreateFloor}>+ New Floor</Button>}
+        actions={canEdit ? <Button size="sm" onClick={onCreateFloor}>+ New Floor</Button> : undefined}
       />
 
       {/* Header */}
@@ -2736,18 +2744,19 @@ function TowerDetail({
                       <Badge variant="secondary" className="capitalize text-xs">
                         {floor.status || "Active"}
                       </Badge>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onEditFloor(floor);
-                        }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onEditFloor(floor);
+                          }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -2824,6 +2833,7 @@ function FloorDetail({
   onEditTask?: (task: ApiTask) => void;
 }) {
   const navigate = useNavigate();
+  const { canEdit, user } = useAuth();
 
   if (!floor) return <div className="text-center py-12">Floor not found</div>;
 
@@ -2848,7 +2858,7 @@ function FloorDetail({
         ]}
         onBack={onBack}
         backLabel="Tower"
-        actions={<Button size="sm" onClick={onCreateUnit}>+ New Unit</Button>}
+        actions={canEdit ? <Button size="sm" onClick={onCreateUnit}>+ New Unit</Button> : undefined}
       />
 
       {/* Header */}
@@ -2906,10 +2916,12 @@ function FloorDetail({
                 Since no units are mapped on this floor, floor-level tasks and activities appear dynamically.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={onCreateUnit}>+ Map A Unit</Button>
-              {onCreateTask && <Button size="sm" onClick={onCreateTask}>+ New Task</Button>}
-            </div>
+            {canEdit && (
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={onCreateUnit}>+ Map A Unit</Button>
+                {onCreateTask && <Button size="sm" onClick={onCreateTask}>+ New Task</Button>}
+              </div>
+            )}
           </div>
 
           {floorTasks.length === 0 ? (
@@ -2920,10 +2932,12 @@ function FloorDetail({
                 </div>
                 <p className="font-medium text-foreground">No tasks or units mapped yet for this floor.</p>
                 <p className="text-xs">You can either create units or add tasks directly to this floor.</p>
-                <div className="flex items-center justify-center gap-2 pt-2">
-                  <Button size="sm" variant="outline" onClick={onCreateUnit}>+ Add Unit</Button>
-                  {onCreateTask && <Button size="sm" onClick={onCreateTask}>+ Add Floor Task</Button>}
-                </div>
+                {canEdit && (
+                  <div className="flex items-center justify-center gap-2 pt-2">
+                    <Button size="sm" variant="outline" onClick={onCreateUnit}>+ Add Unit</Button>
+                    {onCreateTask && <Button size="sm" onClick={onCreateTask}>+ Add Floor Task</Button>}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -2954,7 +2968,7 @@ function FloorDetail({
                   <Progress value={task.progress || 0} className="h-1.5 w-20 hidden md:flex shrink-0" />
                   <span className="text-xs font-semibold shrink-0">{task.progress || 0}%</span>
                   <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    {onEditTask && (
+                    {(canEdit || isTaskAssignedToUser(task, user)) && onEditTask && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -2998,18 +3012,19 @@ function FloorDetail({
                       <Badge variant="secondary" className="capitalize text-xs">
                         {unit.status || "Available"}
                       </Badge>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onEditUnit(unit);
-                        }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onEditUnit(unit);
+                          }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -3077,6 +3092,7 @@ function UnitDetail({
   onDeleteTask: (task: ApiTask) => void;
 }) {
   const navigate = useNavigate();
+  const { canEdit, user } = useAuth();
 
   if (!unit) return <div className="text-center py-12">Unit not found</div>;
 
@@ -3093,7 +3109,7 @@ function UnitDetail({
         ]}
         onBack={onBack}
         backLabel="Floor"
-        actions={<Button size="sm" onClick={onCreateTask}>+ New Task</Button>}
+        actions={canEdit ? <Button size="sm" onClick={onCreateTask}>+ New Task</Button> : undefined}
       />
 
       {/* Header */}
@@ -3149,7 +3165,7 @@ function UnitDetail({
                 <CheckSquare className="h-6 w-6" />
               </div>
               <p>No tasks mapped yet for this unit.</p>
-              <Button size="sm" onClick={onCreateTask}>+ Add First Task</Button>
+              {canEdit && <Button size="sm" onClick={onCreateTask}>+ Add First Task</Button>}
             </CardContent>
           </Card>
         ) : (
@@ -3193,15 +3209,16 @@ function UnitDetail({
                 <Progress value={task.progress} className="h-2 w-24 hidden md:flex shrink-0" />
                 <span className="text-xs font-semibold shrink-0">{task.progress}%</span>
                 <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                    onClick={() => onEditTask(task)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-
+                  {(canEdit || isTaskAssignedToUser(task, user)) && onEditTask && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => onEditTask(task)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
                 <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
               </div>
@@ -3255,6 +3272,7 @@ function TaskDetail({
   onToggleSubTask?: (subTask: ApiSubTask) => void;
   onEditTask?: (task: ApiTask) => void;
 }) {
+  const { canEdit, user } = useAuth();
   const navigate = useNavigate();
 
   if (!task) return <div className="text-center py-12">Task not found</div>;
@@ -3275,7 +3293,7 @@ function TaskDetail({
         ]}
         onBack={onBack}
         backLabel="Unit"
-        actions={<Button size="sm" onClick={onCreateChecklist}>+ New Checklist</Button>}
+        actions={canEdit ? <Button size="sm" onClick={onCreateChecklist}>+ New Checklist</Button> : undefined}
       />
 
       {/* Header */}
@@ -3299,7 +3317,7 @@ function TaskDetail({
           >
             {task.status.replace("_", " ")}
           </Badge>
-          {onEditTask && (
+          {(canEdit || isTaskAssignedToUser(task, user)) && onEditTask && (
             <Button
               size="sm"
               variant="outline"
@@ -3416,10 +3434,12 @@ function TaskDetail({
                   Subtasks directly linked to this task appear dynamically without requiring an intermediate checklist.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={onCreateChecklist}>+ Add Checklist</Button>
-                {onCreateSubTask && <Button size="sm" onClick={onCreateSubTask}>+ New Subtask</Button>}
-              </div>
+              {canEdit && (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={onCreateChecklist}>+ Add Checklist</Button>
+                  {onCreateSubTask && <Button size="sm" onClick={onCreateSubTask}>+ New Subtask</Button>}
+                </div>
+              )}
             </div>
 
             {subTasks.filter(s => s.taskId === task.id).length === 0 ? (
@@ -3430,10 +3450,12 @@ function TaskDetail({
                   </div>
                   <p className="font-medium text-foreground">No checklists or subtasks mapped yet for this task.</p>
                   <p className="text-xs">You can either create a checklist or add direct subtasks.</p>
-                  <div className="flex items-center justify-center gap-2 pt-2">
-                    <Button size="sm" variant="outline" onClick={onCreateChecklist}>+ Add Checklist</Button>
-                    {onCreateSubTask && <Button size="sm" onClick={onCreateSubTask}>+ Add Subtask</Button>}
-                  </div>
+                  {canEdit && (
+                    <div className="flex items-center justify-center gap-2 pt-2">
+                      <Button size="sm" variant="outline" onClick={onCreateChecklist}>+ Add Checklist</Button>
+                      {onCreateSubTask && <Button size="sm" onClick={onCreateSubTask}>+ Add Subtask</Button>}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ) : (
@@ -3443,16 +3465,22 @@ function TaskDetail({
                   return (
                     <div
                       key={subTask.id}
-                      onClick={() => onEditSubTask?.(subTask)}
-                      className="flex items-center gap-3 p-3.5 rounded-xl border border-border/80 bg-card hover:bg-muted/40 hover:border-primary/40 transition-all duration-200 shadow-2xs cursor-pointer group"
-                      title="Click to view & edit subtask schedule"
+                      onClick={() => {
+                        if (canEdit && onEditSubTask) {
+                          onEditSubTask(subTask);
+                        }
+                      }}
+                      className={`flex items-center gap-3 p-3.5 rounded-xl border border-border/80 bg-card hover:bg-muted/40 hover:border-primary/40 transition-all duration-200 shadow-2xs group ${canEdit ? "cursor-pointer" : ""}`}
+                      title={canEdit ? "Click to view & edit subtask schedule" : undefined}
                     >
                       <div
                         onClick={(e) => {
                           e.stopPropagation();
-                          onToggleSubTask?.(subTask);
+                          if (canEdit) onToggleSubTask?.(subTask);
                         }}
-                        className={`h-5 w-5 rounded border flex items-center justify-center cursor-pointer transition-colors ${
+                        className={`h-5 w-5 rounded border flex items-center justify-center transition-colors ${
+                          canEdit ? "cursor-pointer" : "cursor-default opacity-80"
+                        } ${
                           isDone ? "bg-emerald-500 border-emerald-500 text-white" : "border-border hover:border-primary"
                         }`}
                       >
@@ -3477,18 +3505,20 @@ function TaskDetail({
                       <Badge variant={isDone ? "default" : "outline"} className="text-[10px] capitalize shrink-0">
                         {subTask.status || "Pending"}
                       </Badge>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {onEditSubTask && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                            onClick={() => onEditSubTask(subTask)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
+                      {canEdit && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          {onEditSubTask && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              onClick={() => onEditSubTask(subTask)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -3521,17 +3551,18 @@ function TaskDetail({
                 </div>
                 <Progress value={checklist.progress || 0} className="h-1.5 w-20 hidden md:flex shrink-0" />
                 <span className="text-xs font-semibold shrink-0">{checklist.progress || 0}%</span>
-                <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                    onClick={() => onEditChecklist(checklist)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-
-                </div>
+                {canEdit && (
+                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => onEditChecklist(checklist)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
                 <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
               </div>
             );
@@ -3580,6 +3611,7 @@ function ChecklistDetail({
   onDeleteSubTask: (subTask: ApiSubTask) => void;
   onToggleSubTask?: (subTask: ApiSubTask) => void;
 }) {
+  const { canEdit } = useAuth();
   if (!checklist) return <div className="text-center py-12">Checklist not found</div>;
 
   const completedCount = subTasks.filter((s) => s.status === "completed").length;
@@ -3599,7 +3631,7 @@ function ChecklistDetail({
         ]}
         onBack={onBack}
         backLabel="Task"
-        actions={<Button size="sm" onClick={onCreateSubTask}>+ New Sub Task</Button>}
+        actions={canEdit ? <Button size="sm" onClick={onCreateSubTask}>+ New Sub Task</Button> : undefined}
       />
 
       {/* Header */}
@@ -3655,7 +3687,7 @@ function ChecklistDetail({
                 <CheckCircle2 className="h-6 w-6" />
               </div>
               <p>No sub tasks mapped yet for this checklist.</p>
-              <Button size="sm" onClick={onCreateSubTask}>+ Add First Sub Task</Button>
+              {canEdit && <Button size="sm" onClick={onCreateSubTask}>+ Add First Sub Task</Button>}
             </CardContent>
           </Card>
         ) : (
@@ -3664,22 +3696,29 @@ function ChecklistDetail({
             return (
               <div
                 key={subTask.id}
-                onClick={() => onEditSubTask(subTask)}
-                className="flex items-center gap-3 p-3 rounded-xl border border-border/80 bg-card hover:bg-muted/40 hover:border-primary/40 transition-colors shadow-2xs cursor-pointer group"
-                title="Click to view & edit subtask schedule"
+                onClick={() => {
+                  if (canEdit && onEditSubTask) {
+                    onEditSubTask(subTask);
+                  }
+                }}
+                className={`flex items-center gap-3 p-3 rounded-xl border border-border/80 bg-card hover:bg-muted/40 hover:border-primary/40 transition-colors shadow-2xs group ${canEdit ? "cursor-pointer" : ""}`}
+                title={canEdit ? "Click to view & edit subtask schedule" : undefined}
               >
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onToggleSubTask?.(subTask);
+                    if (canEdit) onToggleSubTask?.(subTask);
                   }}
-                  className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  disabled={!canEdit}
+                  className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors shrink-0 ${
+                    canEdit ? "cursor-pointer" : "cursor-default opacity-80"
+                  } ${
                     isDone
                       ? "bg-emerald-500 border-emerald-500 text-white"
                       : "border-border hover:border-primary bg-background"
                   }`}
-                  title={isDone ? "Mark as pending" : "Mark as completed"}
+                  title={canEdit ? (isDone ? "Mark as pending" : "Mark as completed") : undefined}
                 >
                   {isDone && <Check className="h-3.5 w-3.5 stroke-[3]" />}
                 </button>
@@ -3700,16 +3739,18 @@ function ChecklistDetail({
                 <Badge variant={isDone ? "default" : "outline"} className="text-[10px] shrink-0">
                   {subTask.status || "Pending"}
                 </Badge>
-                <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                    onClick={() => onEditSubTask(subTask)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                {canEdit && (
+                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => onEditSubTask(subTask)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })
@@ -3723,6 +3764,7 @@ function ChecklistDetail({
 const Projects = () => {
   const { projectId, towerId, floorId, unitId, taskId, checklistId } = useParams();
   const { toast } = useToast();
+  const { canEdit, user } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -3740,6 +3782,8 @@ const Projects = () => {
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ApiTask | null>(null);
   const [viewingTask, setViewingTask] = useState<ApiTask | null>(null);
+  const [taskScheduleEditDialogOpen, setTaskScheduleEditDialogOpen] = useState(false);
+  const [taskForScheduleEdit, setTaskForScheduleEdit] = useState<any>(null);
 
   const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
   const [editingChecklist, setEditingChecklist] = useState<ApiChecklist | null>(null);
@@ -4138,7 +4182,7 @@ const Projects = () => {
   });
 
   const handleSaveProject = (values: ProjectFormValues) => {
-    if (!values.organizationId || !values.companyId) return;
+    if (!canEdit || !values.organizationId || !values.companyId) return;
 
     const payload: ProjectPayload = {
       name: values.name.trim(),
@@ -4178,12 +4222,13 @@ const Projects = () => {
   };
 
   const handleDeleteProject = (project: ApiProject) => {
+    if (!canEdit) return;
     if (!window.confirm(`Delete ${project.name}? This will also delete all associated data.`)) return;
     deleteMutation.mutate(project.id);
   };
 
   const handleSaveTower = (values: TowerFormValues) => {
-    if (!projectId) return;
+    if (!canEdit || !projectId) return;
     const payload: TowerPayload = {
       projectId: Number(projectId),
       name: values.name.trim(),
@@ -4204,12 +4249,13 @@ const Projects = () => {
   };
 
   const handleDeleteTower = (tower: ApiTower) => {
+    if (!canEdit) return;
     if (!window.confirm(`Delete ${tower.name}? This will also delete all associated floors, units, and tasks.`)) return;
     deleteTowerMutation.mutate(tower.id);
   };
 
   const handleSaveFloor = (values: FloorFormValues) => {
-    if (!projectId || !towerId) return;
+    if (!canEdit || !projectId || !towerId) return;
     const payload: FloorPayload = {
       towerId: Number(towerId),
       projectId: Number(projectId),
@@ -4228,12 +4274,13 @@ const Projects = () => {
   };
 
   const handleDeleteFloor = (floor: ApiFloor) => {
+    if (!canEdit) return;
     if (!window.confirm(`Delete Floor ${floor.number}? This will also delete all associated units and tasks.`)) return;
     deleteFloorMutation.mutate(floor.id);
   };
 
   const handleSaveUnit = (values: UnitFormValues) => {
-    if (!projectId || !towerId || !floorId) return;
+    if (!canEdit || !projectId || !towerId || !floorId) return;
     const payload: UnitPayload = {
       floorId: Number(floorId),
       towerId: Number(towerId),
@@ -4254,11 +4301,13 @@ const Projects = () => {
   };
 
   const handleDeleteUnit = (unit: ApiUnit) => {
+    if (!canEdit) return;
     if (!window.confirm(`Delete ${unit.unitNumber}? This will also delete all associated tasks.`)) return;
     deleteUnitMutation.mutate(unit.id);
   };
 
   const handleSaveTask = (values: TaskFormValues) => {
+    if (!canEdit && (!editingTask || !isTaskAssignedToUser(editingTask, user))) return;
     if (editingTask) {
       const payload: Partial<ApiTask> = {
         title: values.title.trim(),
@@ -4302,12 +4351,13 @@ const Projects = () => {
   };
 
   const handleDeleteTask = (task: ApiTask) => {
+    if (!canEdit) return;
     if (!window.confirm(`Delete "${task.title}"? This will also delete all associated checklists.`)) return;
     deleteTaskMutation.mutate(task.id);
   };
 
   const handleSaveChecklist = (values: ChecklistFormValues) => {
-    if (!projectId || !towerId || !floorId || !unitId || !taskId) return;
+    if (!canEdit || !projectId || !towerId || !floorId || !unitId || !taskId) return;
     const payload: ChecklistPayload = {
       taskId: Number(taskId),
       unitId: Number(unitId),
@@ -4328,11 +4378,14 @@ const Projects = () => {
   };
 
   const handleDeleteChecklist = (checklist: ApiChecklist) => {
+    if (!canEdit) return;
     if (!window.confirm(`Delete "${checklist.name}"? This will also delete all associated sub tasks.`)) return;
     deleteChecklistMutation.mutate(checklist.id);
   };
 
   const handleSaveSubTask = (values: SubTaskFormValues) => {
+    const parentTask = viewingTask || tasks.find((t) => t.id === Number(taskId));
+    if (!canEdit && (!parentTask || !isTaskAssignedToUser(parentTask, user))) return;
     if (editingSubTask) {
       const payload: Partial<SubTaskPayload> = {
         name: values.name.trim(),
@@ -4366,6 +4419,7 @@ const Projects = () => {
   };
 
   const handleDeleteSubTask = (subTask: ApiSubTask) => {
+    if (!canEdit) return;
     if (!window.confirm(`Delete "${subTask.name}"?`)) return;
     deleteSubTaskMutation.mutate(subTask.id);
   };
@@ -4383,6 +4437,7 @@ const Projects = () => {
     navigate(`/projects/${projectId}/towers/${towerId}/floors/${floorId}/units/${unitId}/tasks/${taskId}/checklists/${checklistId}`);
 
   const handleToggleSubTask = (subTask: ApiSubTask) => {
+    if (!canEdit) return;
     const nextStatus = subTask.status === "completed" ? "pending" : "completed";
     const nextProgress = nextStatus === "completed" ? 100 : 0;
     updateSubTaskMutation.mutate({
@@ -4683,36 +4738,60 @@ const Projects = () => {
         saving={createUnitMutation.isPending || updateUnitMutation.isPending}
       />
 
-      <TaskScheduleModal
-        open={!!viewingTask}
+      {/* Exact Task Template from Task Module Section for editing and viewing tasks */}
+      <TaskDetailModal
+        open={(taskDialogOpen && !!editingTask) || !!viewingTask}
         onOpenChange={(open) => {
-          if (!open) setViewingTask(null);
+          if (!open) {
+            setTaskDialogOpen(false);
+            setEditingTask(null);
+            setViewingTask(null);
+          }
         }}
-        task={viewingTask ? (tasks.find((t) => t.id === viewingTask.id) || viewingTask) : null}
-        subTasks={subTasks}
+        task={
+          (editingTask ? (tasks.find((t) => t.id === editingTask.id) || editingTask) : null) ||
+          (viewingTask ? (tasks.find((t) => t.id === viewingTask.id) || viewingTask) : null)
+        }
         onEditTask={(task) => {
-          setEditingTask(task);
-          setTaskDialogOpen(true);
+          setTaskForScheduleEdit(task);
+          setTaskScheduleEditDialogOpen(true);
         }}
         onEditSubTask={(subTask) => {
           setEditingSubTask(subTask);
           setSubTaskDialogOpen(true);
         }}
-        onCreateSubTask={() => {
-          setEditingSubTask(null);
-          setSubTaskDialogOpen(true);
-        }}
       />
 
+      {/* Task Schedule Edit Dialog (opened when clicking Edit Task inside the template) */}
+      <TaskEditDialog
+        open={taskScheduleEditDialogOpen}
+        onOpenChange={(open) => {
+          setTaskScheduleEditDialogOpen(open);
+          if (!open) setTaskForScheduleEdit(null);
+        }}
+        task={taskForScheduleEdit}
+        onSave={(values) => {
+          if (!taskForScheduleEdit) return;
+          updateTaskMutation.mutate({
+            id: taskForScheduleEdit.id,
+            data: values,
+          });
+          setTaskScheduleEditDialogOpen(false);
+          setTaskForScheduleEdit(null);
+        }}
+        saving={updateTaskMutation.isPending}
+      />
+
+      {/* Create New Task Dialog (when adding a brand-new task where initialTask is null) */}
       <TaskDialog
-        open={taskDialogOpen}
+        open={taskDialogOpen && !editingTask}
         onOpenChange={(open) => {
           setTaskDialogOpen(open);
           if (!open) setEditingTask(null);
         }}
         onSave={handleSaveTask}
-        initialTask={editingTask}
-        saving={createTaskMutation.isPending || updateTaskMutation.isPending}
+        initialTask={null}
+        saving={createTaskMutation.isPending}
       />
 
       <ChecklistDialog

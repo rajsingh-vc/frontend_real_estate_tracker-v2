@@ -14,6 +14,7 @@ import { useState, useCallback, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Search, CheckSquare, Plus, Trash2, Edit2, X, Upload, Loader2, ClipboardList, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   checklistTemplatesApi, checklistsApi, tasksApi, projectsApi, statusesApi,
   towersApi, floorsApi,
@@ -436,6 +437,7 @@ const TemplateForm = ({
 
 // ==================== Main Checklists Component ====================
 const Checklists = () => {
+  const { canEdit } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -522,7 +524,10 @@ const Checklists = () => {
   }, []);
 
   const createMutation = useMutation({
-    mutationFn: (payload: ChecklistTemplatePayload) => checklistTemplatesApi.create(payload),
+    mutationFn: (payload: ChecklistTemplatePayload) => {
+      if (!canEdit) throw new Error("Permission denied");
+      return checklistTemplatesApi.create(payload);
+    },
     onSuccess: (template) => {
       invalidate();
       toast({ title: "Template created", description: `"${template.name}" with ${template.items.length} items.` });
@@ -533,8 +538,10 @@ const Checklists = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<ChecklistTemplatePayload> }) =>
-      checklistTemplatesApi.update(id, data),
+    mutationFn: ({ id, data }: { id: number; data: Partial<ChecklistTemplatePayload> }) => {
+      if (!canEdit) throw new Error("Permission denied");
+      return checklistTemplatesApi.update(id, data);
+    },
     onSuccess: () => {
       invalidate();
       toast({ title: "Template updated" });
@@ -545,7 +552,10 @@ const Checklists = () => {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => checklistTemplatesApi.remove(id),
+    mutationFn: (id: number) => {
+      if (!canEdit) throw new Error("Permission denied");
+      return checklistTemplatesApi.remove(id);
+    },
     onSuccess: () => {
       invalidate();
       toast({ title: "Template deleted" });
@@ -555,6 +565,7 @@ const Checklists = () => {
 
   const bulkImportMutation = useMutation({
     mutationFn: async () => {
+      if (!canEdit) throw new Error("Permission denied");
       const results = await Promise.allSettled(
         importPreview.map((group) =>
           checklistTemplatesApi.create({
@@ -594,6 +605,7 @@ const Checklists = () => {
   });
 
   const handleCreate = useCallback(() => {
+    if (!canEdit) return;
     if (!formName.trim()) return;
     // ✅ CHANGED: Project is now required for manual template creation too.
     if (!formProjectId) return;
@@ -607,9 +619,10 @@ const Checklists = () => {
       categoryId: formCategoryId ? Number(formCategoryId) : null,
       subCategoryId: formSubCategoryId ? Number(formSubCategoryId) : null,
     });
-  }, [formName, formItems, formCategory, formProjectId, formCategoryId, formSubCategoryId, createMutation]);
+  }, [canEdit, formName, formItems, formCategory, formProjectId, formCategoryId, formSubCategoryId, createMutation]);
 
   const handleEdit = useCallback(() => {
+    if (!canEdit) return;
     if (!editingTemplate || !formName.trim()) return;
     // ✅ CHANGED: Project is now required when editing a template too.
     if (!formProjectId) return;
@@ -625,7 +638,7 @@ const Checklists = () => {
         subCategoryId: formSubCategoryId ? Number(formSubCategoryId) : null,
       },
     });
-  }, [editingTemplate, formName, formItems, formCategory, formProjectId, formCategoryId, formSubCategoryId, updateMutation]);
+  }, [canEdit, editingTemplate, formName, formItems, formCategory, formProjectId, formCategoryId, formSubCategoryId, updateMutation]);
 
   const openEdit = useCallback((template: ApiChecklistTemplate) => {
     setFormName(template.name);
@@ -787,199 +800,201 @@ const Checklists = () => {
               {allTemplates.length} templates across {categories.length} categories
             </p>
 
-            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
-              {/* ---- Import from PDF ---- */}
-              <Dialog open={importOpen} onOpenChange={(open) => (open ? setImportOpen(true) : resetImportDialog())}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full sm:w-auto"><Upload className="h-4 w-4 mr-2" />Import from PDF</Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle className="font-display text-xl">Import Checklist Templates from PDF</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 mt-2">
-                    <div className="grid gap-2">
-                      <Label>PDF File</Label>
-                      <Input type="file" accept="application/pdf" onChange={handleImportFileChange} />
-                    </div>
+            {canEdit && (
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+                {/* ---- Import from PDF ---- */}
+                <Dialog open={importOpen} onOpenChange={(open) => (open ? setImportOpen(true) : resetImportDialog())}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="w-full sm:w-auto"><Upload className="h-4 w-4 mr-2" />Import from PDF</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle className="font-display text-xl">Import Checklist Templates from PDF</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 mt-2">
+                      <div className="grid gap-2">
+                        <Label>PDF File</Label>
+                        <Input type="file" accept="application/pdf" onChange={handleImportFileChange} />
+                      </div>
 
-                    {parsingPdf && (
-                      <p className="text-sm text-muted-foreground">Parsing PDF table structure…</p>
-                    )}
+                      {parsingPdf && (
+                        <p className="text-sm text-muted-foreground">Parsing PDF table structure…</p>
+                      )}
 
-                    {!parsingPdf && extracted.headers.length > 0 && (
-                      <div className="space-y-4 border-t pt-4">
-                        <p className="text-xs text-muted-foreground">
-                          Map each field to a column from the PDF, pin one fixed value for every row, or type your own.
-                          Rows that share the same Template Name and Category become one checklist template.
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {CHECKLIST_IMPORT_FIELDS.map((field) => {
-                            const currentValue = importMapping[field.key] || "none";
-                            const isMappedColumn = currentValue !== "none" && currentValue !== "__other__";
-                            const columnValueOptions = isMappedColumn ? getUniqueImportValues(currentValue) : [];
-                            return (
-                              <div key={field.key} className="space-y-1">
-                                <Label className="text-xs">
-                                  {field.label}
-                                  {field.required && " *"}
-                                </Label>
-                                <Select
-                                  value={currentValue}
-                                  onValueChange={(val) => {
-                                    setImportMapping((prev) => ({ ...prev, [field.key]: val === "none" ? "" : val }));
-                                    setImportUseFixedValue((prev) => ({ ...prev, [field.key]: false }));
-                                    setImportFixedValues((prev) => ({ ...prev, [field.key]: "" }));
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8 text-xs">
-                                    <SelectValue placeholder="Map to PDF column" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="none">None</SelectItem>
-                                    {extracted.headers.map((h) => (
-                                      <SelectItem key={h} value={h}>{h}</SelectItem>
-                                    ))}
-                                    <SelectItem value="__other__">Other (type my own)</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                {currentValue === "__other__" && (
-                                  <Input
-                                    value={importManualValues[field.key] || ""}
-                                    onChange={(e) =>
-                                      setImportManualValues((prev) => ({ ...prev, [field.key]: e.target.value }))
-                                    }
-                                    placeholder={`Type ${field.label.toLowerCase()} for all rows`}
-                                    className="h-8 text-xs"
-                                  />
-                                )}
-                                {isMappedColumn && (
-                                  <div className="space-y-1 pt-0.5">
-                                    <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                                      <input
-                                        type="checkbox"
-                                        checked={!!importUseFixedValue[field.key]}
-                                        onChange={(e) =>
-                                          setImportUseFixedValue((prev) => ({ ...prev, [field.key]: e.target.checked }))
-                                        }
-                                      />
-                                      Use one value for all rows instead
-                                    </label>
-                                    {importUseFixedValue[field.key] && (
-                                      <Select
-                                        value={importFixedValues[field.key] || ""}
-                                        onValueChange={(val) =>
-                                          setImportFixedValues((prev) => ({ ...prev, [field.key]: val }))
-                                        }
-                                      >
-                                        <SelectTrigger className="h-8 text-xs">
-                                          <SelectValue
-                                            placeholder={
-                                              columnValueOptions.length > 0
-                                                ? `Pick ${field.label.toLowerCase()}`
-                                                : "No values found in column"
-                                            }
-                                          />
-                                        </SelectTrigger>
-                                        <SelectContent className="max-h-64">
-                                          {columnValueOptions.map((v) => (
-                                            <SelectItem key={v} value={v}>{v}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
+                      {!parsingPdf && extracted.headers.length > 0 && (
+                        <div className="space-y-4 border-t pt-4">
+                          <p className="text-xs text-muted-foreground">
+                            Map each field to a column from the PDF, pin one fixed value for every row, or type your own.
+                            Rows that share the same Template Name and Category become one checklist template.
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {CHECKLIST_IMPORT_FIELDS.map((field) => {
+                              const currentValue = importMapping[field.key] || "none";
+                              const isMappedColumn = currentValue !== "none" && currentValue !== "__other__";
+                              const columnValueOptions = isMappedColumn ? getUniqueImportValues(currentValue) : [];
+                              return (
+                                <div key={field.key} className="space-y-1">
+                                  <Label className="text-xs">
+                                    {field.label}
+                                    {field.required && " *"}
+                                  </Label>
+                                  <Select
+                                    value={currentValue}
+                                    onValueChange={(val) => {
+                                      setImportMapping((prev) => ({ ...prev, [field.key]: val === "none" ? "" : val }));
+                                      setImportUseFixedValue((prev) => ({ ...prev, [field.key]: false }));
+                                      setImportFixedValues((prev) => ({ ...prev, [field.key]: "" }));
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 text-xs">
+                                      <SelectValue placeholder="Map to PDF column" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="none">None</SelectItem>
+                                      {extracted.headers.map((h) => (
+                                        <SelectItem key={h} value={h}>{h}</SelectItem>
+                                      ))}
+                                      <SelectItem value="__other__">Other (type my own)</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  {currentValue === "__other__" && (
+                                    <Input
+                                      value={importManualValues[field.key] || ""}
+                                      onChange={(e) =>
+                                        setImportManualValues((prev) => ({ ...prev, [field.key]: e.target.value }))
+                                      }
+                                      placeholder={`Type ${field.label.toLowerCase()} for all rows`}
+                                      className="h-8 text-xs"
+                                    />
+                                  )}
+                                  {isMappedColumn && (
+                                    <div className="space-y-1 pt-0.5">
+                                      <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                        <input
+                                          type="checkbox"
+                                          checked={!!importUseFixedValue[field.key]}
+                                          onChange={(e) =>
+                                            setImportUseFixedValue((prev) => ({ ...prev, [field.key]: e.target.checked }))
+                                          }
+                                        />
+                                        Use one value for all rows instead
+                                      </label>
+                                      {importUseFixedValue[field.key] && (
+                                        <Select
+                                          value={importFixedValues[field.key] || ""}
+                                          onValueChange={(val) =>
+                                            setImportFixedValues((prev) => ({ ...prev, [field.key]: val }))
+                                          }
+                                        >
+                                          <SelectTrigger className="h-8 text-xs">
+                                            <SelectValue
+                                              placeholder={
+                                                columnValueOptions.length > 0
+                                                  ? `Pick ${field.label.toLowerCase()}`
+                                                  : "No values found in column"
+                                              }
+                                            />
+                                          </SelectTrigger>
+                                          <SelectContent className="max-h-64">
+                                            {columnValueOptions.map((v) => (
+                                              <SelectItem key={v} value={v}>{v}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
 
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={generateImportPreview} disabled={!canPreviewImport}>
-                            Preview Templates
-                          </Button>
-                          {importPreview.length > 0 && (
-                            <Button size="sm" onClick={() => bulkImportMutation.mutate()} disabled={bulkImportMutation.isPending}>
-                              {bulkImportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                              {bulkImportMutation.isPending
-                                ? "Importing…"
-                                : `Import ${importPreview.length} Template${importPreview.length === 1 ? "" : "s"}`}
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={generateImportPreview} disabled={!canPreviewImport}>
+                              Preview Templates
                             </Button>
+                            {importPreview.length > 0 && (
+                              <Button size="sm" onClick={() => bulkImportMutation.mutate()} disabled={bulkImportMutation.isPending}>
+                                {bulkImportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                                {bulkImportMutation.isPending
+                                  ? "Importing…"
+                                  : `Import ${importPreview.length} Template${importPreview.length === 1 ? "" : "s"}`}
+                              </Button>
+                            )}
+                          </div>
+
+                          {importPreview.length > 0 && (
+                            <div className="max-h-56 overflow-y-auto border rounded p-2 space-y-2 text-xs">
+                              {importPreview.map((group, i) => (
+                                <div key={i} className="border-b last:border-b-0 pb-2 last:pb-0">
+                                  <p className="font-medium">
+                                    {group.name}{" "}
+                                    <span className="text-muted-foreground font-normal">
+                                      · {group.category} · {group.items.length} items
+                                    </span>
+                                  </p>
+                                  <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                                    {group.items.slice(0, 4).map((it, j) => <li key={j}>• {it}</li>)}
+                                    {group.items.length > 4 && <li>… and {group.items.length - 4} more</li>}
+                                  </ul>
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
+                      )}
 
-                        {importPreview.length > 0 && (
-                          <div className="max-h-56 overflow-y-auto border rounded p-2 space-y-2 text-xs">
-                            {importPreview.map((group, i) => (
-                              <div key={i} className="border-b last:border-b-0 pb-2 last:pb-0">
-                                <p className="font-medium">
-                                  {group.name}{" "}
-                                  <span className="text-muted-foreground font-normal">
-                                    · {group.category} · {group.items.length} items
-                                  </span>
-                                </p>
-                                <ul className="mt-1 space-y-0.5 text-muted-foreground">
-                                  {group.items.slice(0, 4).map((it, j) => <li key={j}>• {it}</li>)}
-                                  {group.items.length > 4 && <li>… and {group.items.length - 4} more</li>}
-                                </ul>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                      {!parsingPdf && importFile && importFile.type === "application/pdf" && extracted.headers.length === 0 && (
+                        <p className="text-sm text-muted-foreground">No table structure found in this PDF.</p>
+                      )}
+
+                      <div className="flex justify-end gap-3 pt-2">
+                        <Button variant="outline" onClick={resetImportDialog}>Cancel</Button>
                       </div>
-                    )}
-
-                    {!parsingPdf && importFile && importFile.type === "application/pdf" && extracted.headers.length === 0 && (
-                      <p className="text-sm text-muted-foreground">No table structure found in this PDF.</p>
-                    )}
-
-                    <div className="flex justify-end gap-3 pt-2">
-                      <Button variant="outline" onClick={resetImportDialog}>Cancel</Button>
                     </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+                  </DialogContent>
+                </Dialog>
 
-              {/* ---- Manual create ---- */}
-              <Dialog
-                open={createOpen}
-                onOpenChange={(open) => {
-                  setCreateOpen(open);
-                  if (!open) resetForm();
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button className="w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Template</Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle className="font-display text-xl">Create Checklist Template</DialogTitle>
-                  </DialogHeader>
-                  <TemplateForm
-                    formName={formName}
-                    setFormName={setFormName}
-                    formCategory={formCategory}
-                    setFormCategory={setFormCategory}
-                    formItems={formItems}
-                    setFormItems={setFormItems}
-                    formProjectId={formProjectId}
-                    setFormProjectId={setFormProjectId}
-                    formCategoryId={formCategoryId}
-                    setFormCategoryId={setFormCategoryId}
-                    formSubCategoryId={formSubCategoryId}
-                    setFormSubCategoryId={setFormSubCategoryId}
-                    allProjects={allProjects}
-                    formProjectTowers={formProjectTowers}
-                    formCategoryFloors={formCategoryFloors}
-                    onSubmit={handleCreate}
-                    submitLabel="Create Template"
-                    submitting={createMutation.isPending}
-                    onCancel={() => { setCreateOpen(false); resetForm(); }}
-                  />
-                </DialogContent>
-              </Dialog>
-            </div>
+                {/* ---- Manual create ---- */}
+                <Dialog
+                  open={createOpen}
+                  onOpenChange={(open) => {
+                    setCreateOpen(open);
+                    if (!open) resetForm();
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button className="w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Template</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle className="font-display text-xl">Create Checklist Template</DialogTitle>
+                    </DialogHeader>
+                    <TemplateForm
+                      formName={formName}
+                      setFormName={setFormName}
+                      formCategory={formCategory}
+                      setFormCategory={setFormCategory}
+                      formItems={formItems}
+                      setFormItems={setFormItems}
+                      formProjectId={formProjectId}
+                      setFormProjectId={setFormProjectId}
+                      formCategoryId={formCategoryId}
+                      setFormCategoryId={setFormCategoryId}
+                      formSubCategoryId={formSubCategoryId}
+                      setFormSubCategoryId={setFormSubCategoryId}
+                      allProjects={allProjects}
+                      formProjectTowers={formProjectTowers}
+                      formCategoryFloors={formCategoryFloors}
+                      onSubmit={handleCreate}
+                      submitLabel="Create Template"
+                      submitting={createMutation.isPending}
+                      onCancel={() => { setCreateOpen(false); resetForm(); }}
+                    />
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -1068,48 +1083,49 @@ const Checklists = () => {
                         <CardTitle className="text-base font-display">{template.name}</CardTitle>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Dialog
-                          open={editingTemplate?.id === template.id}
-                          onOpenChange={(open) => {
-                            if (!open) {
-                              setEditingTemplate(null);
-                              resetForm();
-                            }
-                          }}
-                        >
-                          <DialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(template)}>
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-                            <DialogHeader>
-                              <DialogTitle className="font-display text-xl">Edit Template</DialogTitle>
-                            </DialogHeader>
-                            <TemplateForm
-                              formName={formName}
-                              setFormName={setFormName}
-                              formCategory={formCategory}
-                              setFormCategory={setFormCategory}
-                              formItems={formItems}
-                              setFormItems={setFormItems}
-                              formProjectId={formProjectId}
-                              setFormProjectId={setFormProjectId}
-                              formCategoryId={formCategoryId}
-                              setFormCategoryId={setFormCategoryId}
-                              formSubCategoryId={formSubCategoryId}
-                              setFormSubCategoryId={setFormSubCategoryId}
-                              allProjects={allProjects}
-                              formProjectTowers={formProjectTowers}
-                              formCategoryFloors={formCategoryFloors}
-                              onSubmit={handleEdit}
-                              submitLabel="Save Changes"
-                              submitting={updateMutation.isPending}
-                              onCancel={() => { setEditingTemplate(null); resetForm(); }}
-                            />
-                          </DialogContent>
-                        </Dialog>
-
+                        {canEdit && (
+                          <Dialog
+                            open={editingTemplate?.id === template.id}
+                            onOpenChange={(open) => {
+                              if (!open) {
+                                setEditingTemplate(null);
+                                resetForm();
+                              }
+                            }}
+                          >
+                            <DialogTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(template)}>
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+                              <DialogHeader>
+                                <DialogTitle className="font-display text-xl">Edit Template</DialogTitle>
+                              </DialogHeader>
+                              <TemplateForm
+                                formName={formName}
+                                setFormName={setFormName}
+                                formCategory={formCategory}
+                                setFormCategory={setFormCategory}
+                                formItems={formItems}
+                                setFormItems={setFormItems}
+                                formProjectId={formProjectId}
+                                setFormProjectId={setFormProjectId}
+                                formCategoryId={formCategoryId}
+                                setFormCategoryId={setFormCategoryId}
+                                formSubCategoryId={formSubCategoryId}
+                                setFormSubCategoryId={setFormSubCategoryId}
+                                allProjects={allProjects}
+                                formProjectTowers={formProjectTowers}
+                                formCategoryFloors={formCategoryFloors}
+                                onSubmit={handleEdit}
+                                submitLabel="Save Changes"
+                                submitting={updateMutation.isPending}
+                                onCancel={() => { setEditingTemplate(null); resetForm(); }}
+                              />
+                            </DialogContent>
+                          </Dialog>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">

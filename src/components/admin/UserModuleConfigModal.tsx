@@ -171,14 +171,14 @@ export function UserModuleConfigModal({
 
   const handleResetUser = async () => {
     if (isBulk) return;
-    if (!window.confirm(`Reset all module overrides for ${targetUser.name} back to inherited role defaults?`)) {
+    if (!window.confirm(`Reset all module overrides for ${targetUser.name}?`)) {
       return;
     }
     setSaving(true);
     setError(null);
     try {
       await modulesApi.resetUserModules(targetUser.id, selectedProjectId);
-      setSuccessMessage("All custom overrides have been reset to inherited role permissions.");
+      setSuccessMessage("All custom overrides have been reset.");
       await refreshModules();
       await loadUserModules();
       if (onSuccess) onSuccess();

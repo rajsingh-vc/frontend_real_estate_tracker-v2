@@ -131,6 +131,8 @@ export interface User extends ApiUser {
   assigned_projects?: string[];
   assigned_project_ids?: number[];
   invitation_status?: string;
+  is_invited?: boolean;
+  can_edit?: boolean;
 }
 
 export interface Company {
@@ -582,6 +584,8 @@ export function normalizeUser(raw: any): User {
     assigned_projects: raw.assigned_projects ?? raw.assignedProjects ?? [],
     assigned_project_ids: raw.assigned_project_ids ?? raw.assignedProjectIds ?? [],
     invitation_status: raw.invitation_status ?? raw.invitationStatus ?? "Active",
+    is_invited: raw.is_invited ?? raw.isInvited ?? (raw.invitation_status === "Accepted" || raw.invitationStatus === "Accepted"),
+    can_edit: raw.can_edit ?? raw.canEdit ?? (raw.is_superuser || (raw.can_manage_users && !raw.is_invited)),
   };
 }
 

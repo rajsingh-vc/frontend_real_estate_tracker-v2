@@ -33,6 +33,7 @@ import {
   Loader2,
   Users,
   UserCheck,
+  RotateCcw,
 } from "lucide-react";
 import {
   AppModule,
@@ -65,7 +66,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Settings,
 };
 
-type SubView = "matrix" | "all" | "roles" | "audit";
+type SubView = "matrix" | "audit";
 
 export function ModuleManagementTab() {
   const { isSuperAdmin } = useAuth();
@@ -103,34 +104,6 @@ export function ModuleManagementTab() {
     loadData(includeAllUsers);
   }, [includeAllUsers]);
 
-  const handleToggleGlobal = async (moduleItem: ModuleMatrixItem) => {
-    if (!isSuperAdmin) {
-      setError("Only Super Admin can toggle global module activation.");
-      return;
-    }
-
-    const currentActive = moduleItem.is_active ?? moduleItem.isActive ?? true;
-    const nextActive = !currentActive;
-
-    if (!nextActive && !window.confirm(`Are you sure you want to disable "${moduleItem.name}" globally for all users?`)) {
-      return;
-    }
-
-    setUpdatingKey(moduleItem.key);
-    setError(null);
-    setActionSuccess(null);
-    try {
-      const res = await modulesApi.toggleGlobal(moduleItem.key, nextActive);
-      setActionSuccess(res.message || `Module "${moduleItem.name}" global status updated.`);
-      await loadData();
-      await refreshModules();
-    } catch (err: any) {
-      setError(err?.message || "Failed to toggle global module status.");
-    } finally {
-      setUpdatingKey(null);
-    }
-  };
-
   const handleToggleUserModule = async (userId: number, moduleKey: string, currentEnabled: boolean) => {
     const nextEnabled = !currentEnabled;
     const key = `user-${userId}-${moduleKey}`;
@@ -156,25 +129,20 @@ export function ModuleManagementTab() {
     }
   };
 
-  const handleToggleRolePolicy = async (roleId: number, moduleKey: string, currentEnabled: boolean) => {
-    const nextEnabled = !currentEnabled;
-    setUpdatingKey(`${roleId}-${moduleKey}`);
+  const handleResetUserModules = async (userId: number, userName: string) => {
+    if (!window.confirm(`Reset all custom module overrides for "${userName}"?`)) {
+      return;
+    }
+    setUpdatingKey(`user-reset-${userId}`);
     setError(null);
     setActionSuccess(null);
-
     try {
-      await modulesApi.updateRoleModules(roleId, [
-        {
-          module_key: moduleKey,
-          is_enabled: nextEnabled,
-          is_visible: nextEnabled,
-        },
-      ]);
-      setActionSuccess(`Role policy updated for ${moduleKey}.`);
+      await modulesApi.resetUserModules(userId);
+      setActionSuccess(`Successfully reset custom module overrides for ${userName}.`);
       await loadData();
       await refreshModules();
     } catch (err: any) {
-      setError(err?.message || "Failed to update role policy.");
+      setError(err?.message || "Failed to reset user module overrides.");
     } finally {
       setUpdatingKey(null);
     }
@@ -183,7 +151,6 @@ export function ModuleManagementTab() {
   const categories = ["All", "Main", "Operations", "Management", "System"];
 
   const modulesList = matrixData?.modules || [];
-  const rolesList = matrixData?.roles || [];
   const usersList = (matrixData?.users || []).filter((u) => !u.is_superuser);
 
   const filteredModules = modulesList.filter((m) => {
@@ -257,35 +224,14 @@ export function ModuleManagementTab() {
           </button>
           <button
             type="button"
-            onClick={() => setSubView("all")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              subView === "all"
-                ? "bg-white dark:bg-card text-gray-900 dark:text-gray-100 shadow-xs"
-                : "text-gray-500 dark:text-gray-400 hover:text-gray-900"
-            }`}
-          >
-            All Modules
-          </button>
-          <button
-            type="button"
-            onClick={() => setSubView("roles")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              subView === "roles"
-                ? "bg-white dark:bg-card text-gray-900 dark:text-gray-100 shadow-xs"
-                : "text-gray-500 dark:text-gray-400 hover:text-gray-900"
-            }`}
-          >
-            Role Defaults
-          </button>
-          <button
-            type="button"
             onClick={() => setSubView("audit")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 ${
               subView === "audit"
                 ? "bg-white dark:bg-card text-gray-900 dark:text-gray-100 shadow-xs"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900"
             }`}
           >
+            <History className="h-3.5 w-3.5 text-gray-500" />
             Audit History
           </button>
         </div>
@@ -331,105 +277,33 @@ export function ModuleManagementTab() {
         </div>
       )}
 
-      {/* Sub-view: All Modules */}
-      {subView === "all" && (
-        <div className="border border-gray-200 dark:border-border rounded-xl overflow-hidden bg-white dark:bg-card">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-gray-50 dark:bg-muted/60 text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-border">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Module</th>
-                  <th className="px-4 py-3 font-semibold">Category</th>
-                  <th className="px-4 py-3 font-semibold">Route</th>
-                  <th className="px-4 py-3 font-semibold text-center">Global Status</th>
-                  <th className="px-4 py-3 font-semibold text-center">Default Policy</th>
-                  <th className="px-4 py-3 font-semibold text-center">User Overrides</th>
-                  {isSuperAdmin && <th className="px-4 py-3 font-semibold text-right">Actions</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-border">
-                {filteredModules.map((module) => {
-                  const IconComp = ICON_MAP[module.icon] || LayoutDashboard;
-                  const isActive = module.is_active ?? module.isActive ?? true;
-                  const adminOnly = module.admin_only ?? module.adminOnly ?? false;
-                  const userOverridesCount = module.user_overrides_count ?? module.userOverridesCount ?? 0;
-                  const isUpdating = updatingKey === module.key;
 
-                  return (
-                    <tr key={module.key} className="hover:bg-gray-50/50 dark:hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-200/50 dark:border-blue-900/40">
-                            <IconComp className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <span className="font-semibold text-gray-900 dark:text-gray-100">{module.name}</span>
-                            <span className="block text-[10px] text-gray-400 font-mono">{module.key}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-secondary text-gray-700 dark:text-gray-300 font-medium text-[10px]">
-                          {module.category}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-gray-500 dark:text-gray-400 text-[11px]">
-                        {module.route}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
-                            isActive
-                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50"
-                              : "bg-red-50 text-red-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50"
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-emerald-500" : "bg-red-500"}`} />
-                          {isActive ? "Active Globally" : "Disabled Globally"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium">
-                          {adminOnly ? "Admin Only" : "All Users"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {userOverridesCount > 0 ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-semibold text-[10px] border border-purple-200/50 dark:border-purple-800/40">
-                            {userOverridesCount} user override(s)
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 italic text-[11px]">None</span>
-                        )}
-                      </td>
-                      {isSuperAdmin && (
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <span className={`text-[11px] font-bold ${isActive ? "text-emerald-600 dark:text-emerald-400" : "text-gray-400"}`}>
-                              {isActive ? "ON" : "OFF"}
-                            </span>
-                            <Switch
-                              checked={isActive}
-                              onCheckedChange={() => handleToggleGlobal(module)}
-                              disabled={isUpdating}
-                              aria-label={`Toggle global activation for ${module.name}`}
-                              className="data-[state=checked]:bg-emerald-600 dark:data-[state=checked]:bg-emerald-500"
-                            />
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* Sub-view: Dynamic User Visibility Matrix */}
       {subView === "matrix" && (
         <div className="space-y-3">
+          {/* Header Controls for Matrix */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                Configurable Users ({usersList.length})
+              </span>
+              <span className="text-[11px] text-gray-400">
+                • Changes take effect immediately & dynamically for each user
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={includeAllUsers}
+                  onChange={(e) => setIncludeAllUsers(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                />
+                <span>Show all team members</span>
+              </label>
+            </div>
+          </div>
 
           {usersList.length === 0 ? (
             <div className="p-10 text-center bg-white dark:bg-card border border-dashed border-gray-200 dark:border-border rounded-xl">
@@ -451,31 +325,44 @@ export function ModuleManagementTab() {
                       <th className="px-4 py-3 font-semibold sticky left-0 bg-gray-50 dark:bg-muted/60 z-10 border-r border-gray-200 dark:border-border min-w-[220px]">
                         Module
                       </th>
-                      {usersList.map((u) => (
-                        <th key={u.id} className="px-4 py-3 text-center min-w-[170px] border-r border-gray-100 dark:border-border">
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="font-bold text-gray-900 dark:text-gray-100 text-xs">
-                              {u.name || u.username}
-                            </span>
-                            <div className="flex items-center gap-1 flex-wrap justify-center">
-                              <span
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                                  u.is_superuser
-                                    ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
-                                    : "bg-gray-100 text-gray-700 dark:bg-secondary dark:text-gray-300"
-                                }`}
-                              >
-                                {u.role_name || (u.is_superuser ? "Super Admin" : "User")}
+                      {usersList.map((u) => {
+                        const isResetting = updatingKey === `user-reset-${u.id}`;
+                        return (
+                          <th key={u.id} className="px-4 py-3 text-center min-w-[170px] border-r border-gray-100 dark:border-border">
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="font-bold text-gray-900 dark:text-gray-100 text-xs">
+                                {u.name || u.username}
                               </span>
-                              {u.is_invited && !u.is_superuser && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40">
-                                  Accepted Invite
+                              <div className="flex items-center gap-1 flex-wrap justify-center">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                    u.is_superuser
+                                      ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
+                                      : "bg-gray-100 text-gray-700 dark:bg-secondary dark:text-gray-300"
+                                  }`}
+                                >
+                                  {u.role_name || (u.is_superuser ? "Super Admin" : "User")}
                                 </span>
-                              )}
+                                {u.is_invited && !u.is_superuser && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40">
+                                    Accepted Invite
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleResetUserModules(u.id, u.name || u.username)}
+                                disabled={isResetting}
+                                title="Reset all custom overrides for this user"
+                                className="mt-1 text-[10px] text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors inline-flex items-center gap-1 disabled:opacity-50"
+                              >
+                                <RotateCcw className={`h-2.5 w-2.5 ${isResetting ? "animate-spin" : ""}`} />
+                                {isResetting ? "Resetting…" : "Reset Overrides"}
+                              </button>
                             </div>
-                          </div>
-                        </th>
-                      ))}
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-border">
@@ -549,72 +436,7 @@ export function ModuleManagementTab() {
         </div>
       )}
 
-      {/* Sub-view: Role Defaults Matrix */}
-      {subView === "roles" && (
-        <div className="border border-gray-200 dark:border-border rounded-xl overflow-hidden bg-white dark:bg-card">
-          <div className="px-4 py-2.5 bg-gray-50 dark:bg-muted/60 border-b border-gray-200 dark:border-border text-xs text-gray-500">
-            Baseline role templates. Changing a role policy sets the inherited default for any user with that role.
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-gray-50 dark:bg-muted/60 text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-border">
-                <tr>
-                  <th className="px-4 py-3 font-semibold sticky left-0 bg-gray-50 dark:bg-muted/60 z-10 border-r border-gray-200 dark:border-border min-w-[200px]">
-                    Module
-                  </th>
-                  {rolesList.map((r) => (
-                    <th key={r.id} className="px-3 py-3 font-semibold text-center min-w-[130px]">
-                      {r.name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-border">
-                {filteredModules.map((module) => {
-                  const IconComp = ICON_MAP[module.icon] || LayoutDashboard;
-                  return (
-                    <tr key={module.key} className="hover:bg-gray-50/50 dark:hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3 sticky left-0 bg-white dark:bg-card z-10 border-r border-gray-200 dark:border-border">
-                        <div className="flex items-center gap-2">
-                          <div className="h-6 w-6 rounded bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                            <IconComp className="h-3.5 w-3.5" />
-                          </div>
-                          <div>
-                            <span className="font-semibold text-gray-900 dark:text-gray-100">{module.name}</span>
-                            <span className="block text-[10px] text-gray-400">{module.category}</span>
-                          </div>
-                        </div>
-                      </td>
 
-                      {rolesList.map((role) => {
-                        const rolePolicy = module.roles?.[role.id];
-                        const isEnabled = rolePolicy?.is_enabled ?? rolePolicy?.isEnabled ?? false;
-                        const isUpdating = updatingKey === `${role.id}-${module.key}`;
-
-                        return (
-                          <td key={role.id} className="px-3 py-3 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <Switch
-                                checked={isEnabled}
-                                onCheckedChange={() => handleToggleRolePolicy(role.id, module.key, isEnabled)}
-                                disabled={isUpdating}
-                                className="data-[state=checked]:bg-emerald-600 dark:data-[state=checked]:bg-emerald-500"
-                              />
-                              <span className={`text-[11px] font-bold ${isEnabled ? "text-emerald-600" : "text-gray-400"}`}>
-                                {isEnabled ? "ON" : "OFF"}
-                              </span>
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* Sub-view: Audit History */}
       {subView === "audit" && (

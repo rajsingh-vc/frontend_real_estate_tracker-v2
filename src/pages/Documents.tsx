@@ -42,6 +42,12 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { documentsApi, projectsApi, ApiError, type ApiDocument } from "@/lib/api";
+import {
+  processFileForUpload,
+  formatBytes,
+  isImageFile,
+  MAX_UPLOAD_SIZE_BYTES,
+} from "@/utils/imageCompression";
 import { MppImportWizardModal } from "@/components/documents/MppImportWizardModal";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 
@@ -195,11 +201,31 @@ const Documents = () => {
         ? form.tags.split(",").map((t) => t.trim()).filter(Boolean)
         : [];
 
+      let uploadFile = file;
+      if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+        if (!isImageFile(file)) {
+          throw new ApiError(
+            `"${file.name}" (${formatBytes(file.size)}) exceeds the 50 MB upload limit.`,
+            400
+          );
+        }
+        toast({
+          title: "Compressing image…",
+          description: `"${file.name}" is ${formatBytes(file.size)}. Compressing under 50 MB before upload.`,
+        });
+        const compressed = await processFileForUpload(file, MAX_UPLOAD_SIZE_BYTES);
+        uploadFile = compressed.file;
+        toast({
+          title: "Photo compressed",
+          description: `Optimized from ${formatBytes(compressed.originalSize)} to ${formatBytes(compressed.compressedSize)}.`,
+        });
+      }
+
       const doc = await documentsApi.upload({
-        name: form.name.trim() || file.name,
+        name: form.name.trim() || uploadFile.name,
         category: form.category || "General",
         project: resolvedProjectId,
-        file,
+        file: uploadFile,
         description: form.description.trim(),
         tags: tagsArray,
       });
@@ -266,6 +292,18 @@ const Documents = () => {
     if (selected) {
       if (!form.name) {
         setForm((prev) => ({ ...prev, name: selected.name }));
+      }
+
+      if (selected.size > MAX_UPLOAD_SIZE_BYTES) {
+        if (isImageFile(selected)) {
+          setValidationWarning(
+            `Image is ${formatBytes(selected.size)}. It will be automatically compressed under 50 MB before upload.`
+          );
+        } else {
+          setValidationWarning(
+            `File size (${formatBytes(selected.size)}) exceeds the 50 MB upload limit.`
+          );
+        }
       }
 
       // Pre-flight file validation

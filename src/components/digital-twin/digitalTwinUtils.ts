@@ -13,6 +13,7 @@ import type {
   FloorRollup,
   TowerRollup,
   ProjectRollup,
+  FloorType,
 } from "./types";
 
 /**
@@ -84,6 +85,108 @@ export function aggregateTasksStatus(tasks: ApiTask[]): string {
 }
 
 /**
+ * Dynamically detect if a floor represents a Mumty / Stairhead / Lift Machine Room
+ */
+export function isMumtyFloorName(name?: string): boolean {
+  if (!name) return false;
+  const n = name.trim().toLowerCase();
+  return (
+    n.includes("mumty") ||
+    n.includes("mummty") ||
+    n.includes("mamty") ||
+    n.includes("mumtee") ||
+    n.includes("stairhead") ||
+    n.includes("stair head") ||
+    n.includes("stair cover") ||
+    n.includes("lift machine") ||
+    /\blmr\b/.test(n) ||
+    n.includes("machine room") ||
+    n.includes("overhead tank") ||
+    /\boht\b/.test(n)
+  );
+}
+
+/**
+ * Dynamically detect if a floor represents an Open Rooftop Terrace
+ */
+export function isTerraceFloorName(name?: string): boolean {
+  if (!name) return false;
+  const n = name.trim().toLowerCase();
+  if (isMumtyFloorName(n)) return false; // Mumty takes precedence if combined
+  return (
+    n.includes("terrace") ||
+    n.includes("rooftop") ||
+    n.includes("roof top") ||
+    n === "roof" ||
+    n.startsWith("roof ") ||
+    n.endsWith(" roof") ||
+    n === "t" ||
+    n === "tr"
+  );
+}
+
+/**
+ * Detect if a floor is a basement level
+ */
+export function isBasementFloor(floor: { name?: string; number?: number }): boolean {
+  const num = typeof floor.number === "number" ? floor.number : 0;
+  const name = (floor.name || "").trim().toLowerCase();
+  return num < 0 || name.includes("basement") || /^b\s*-?\d+/i.test(name);
+}
+
+/**
+ * Categorize floor type for Digital Twin hierarchy
+ */
+export function getDigitalTwinFloorType(floor: { name?: string; number?: number }): FloorType {
+  const name = floor.name || "";
+  if (isMumtyFloorName(name)) return "mumty";
+  if (isTerraceFloorName(name)) return "terrace";
+  if (isBasementFloor(floor)) return "basement";
+  return "regular";
+}
+
+/**
+ * Sort floors in physically accurate bottom-to-top hierarchy:
+ * 1. Basements (ascending, e.g. -5, -4, ... -1)
+ * 2. Regular floors (ascending, e.g. Ground / 0, 1, 2, ... highest regular)
+ * 3. Terrace floor(s) (placed directly above highest regular floor)
+ * 4. Mumty floor(s) (placed above highest regular floor & terrace)
+ */
+export function sortFloorsPhysically<T extends { name: string; number: number }>(floors: T[]): T[] {
+  const basements: T[] = [];
+  const regular: T[] = [];
+  const terrace: T[] = [];
+  const mumty: T[] = [];
+
+  floors.forEach((f) => {
+    const type = getDigitalTwinFloorType(f);
+    if (type === "mumty") mumty.push(f);
+    else if (type === "terrace") terrace.push(f);
+    else if (type === "basement") basements.push(f);
+    else regular.push(f);
+  });
+
+  basements.sort((a, b) => a.number - b.number);
+  regular.sort((a, b) => a.number - b.number);
+  terrace.sort((a, b) => a.number - b.number);
+  mumty.sort((a, b) => a.number - b.number);
+
+  return [...basements, ...regular, ...terrace, ...mumty];
+}
+
+/**
+ * Sort floors in top-to-bottom elevation hierarchy for 2D cross-section elevation views:
+ * 1. Mumty floor(s) (at the very top)
+ * 2. Terrace floor(s) (directly below mumty)
+ * 3. Regular floors (descending from highest regular floor down to Ground)
+ * 4. Basement floors (descending, -1 down to -N)
+ */
+export function sortFloorsForElevation<T extends { name: string; number: number }>(floors: T[]): T[] {
+  const physical = sortFloorsPhysically(floors);
+  return physical.slice().reverse();
+}
+
+/**
  * Build the full nested hierarchy tree and rollups from actual DB records
  */
 export function buildProjectRollup(
@@ -104,9 +207,10 @@ export function buildProjectRollup(
   const projectSubTasks = subtasks.filter((s) => s.projectId === project.id);
 
   const towerRollups: TowerRollup[] = projectTowers.map((tower) => {
-    const towerFloors = projectFloors
-      .filter((f) => f.towerId === tower.id)
-      .sort((a, b) => a.number - b.number);
+    // Sort floors in physically realistic architectural hierarchy
+    const towerFloors = sortFloorsPhysically(
+      projectFloors.filter((f) => f.towerId === tower.id)
+    );
 
     const towerTasks = projectTasks.filter((t) => t.towerId === tower.id);
 
@@ -205,6 +309,7 @@ export function buildProjectRollup(
         floor,
         number: floor.number,
         name: floor.name,
+        floorType: getDigitalTwinFloorType(floor),
         progress: Math.min(100, Math.max(0, floorProgress)),
         status: floorStatus,
         units: unitRollups,

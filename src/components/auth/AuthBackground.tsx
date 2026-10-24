@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Video, Image as ImageIcon } from "lucide-react";
 
 export interface NotanSlide {
   id: number;
@@ -34,12 +35,82 @@ export const NOTAN_SLIDES: NotanSlide[] = [
   },
 ];
 
-export default function AuthBackground() {
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+export interface AuthBackgroundProps {
+  forceMode?: "video" | "photos";
+  usernameOrEmail?: string;
+  showToggle?: boolean;
+}
 
+export default function AuthBackground({
+  forceMode,
+  usernameOrEmail = "",
+  showToggle = true,
+}: AuthBackgroundProps) {
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [manualMode, setManualMode] = useState<"video" | "photos" | null>(null);
+  const [, setVideoLoaded] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Determine mode dynamically:
+  // If forceMode is set -> use it.
+  // If manualMode was clicked by the user -> use it.
+  // Else if usernameOrEmail is provided:
+  //   - if it's "superadmin" (case-insensitive) -> "photos"
+  //   - if it's non-empty and NOT superadmin (e.g. admin or invited user) -> "video"
+  // Else check localStorage "apex_last_role" or stored user:
+  //   - if last role was superadmin -> "photos"
+  //   - if admin or invited -> "video"
+  // Else default -> "video" (so invited/admin users get video)
+  const isSuperAdminInput = Boolean(
+    usernameOrEmail &&
+      (usernameOrEmail.trim().toLowerCase() === "superadmin" ||
+        usernameOrEmail.trim().toLowerCase().startsWith("superadmin") ||
+        usernameOrEmail.trim().toLowerCase().includes("super_admin"))
+  );
+
+  const effectiveMode: "video" | "photos" = (() => {
+    if (forceMode) return forceMode;
+    if (manualMode) return manualMode;
+
+    if (usernameOrEmail && usernameOrEmail.trim()) {
+      return isSuperAdminInput ? "photos" : "video";
+    }
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const bgParam = params.get("bg");
+      if (bgParam === "video" || bgParam === "photos") return bgParam;
+      const roleParam = params.get("role");
+      if (roleParam === "superadmin") return "photos";
+      if (roleParam === "admin" || params.get("invited") === "true") return "video";
+
+      const lastRole = localStorage.getItem("apex_last_role");
+      if (lastRole === "superadmin") return "photos";
+      if (lastRole === "admin" || lastRole === "invited") return "video";
+
+      try {
+        const storedUser = localStorage.getItem("apex_auth_user");
+        if (storedUser) {
+          const parsed = JSON.parse(storedUser);
+          if (parsed?.is_superuser) return "photos";
+          return "video";
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return "video";
+  })();
+
+  // Manage slideshow timer: run only in photos mode
   useEffect(() => {
-    // 7 seconds per slide with smooth 1.5s crossfade
+    if (effectiveMode !== "photos") {
+      if (timerRef.current) clearInterval(timerRef.current);
+      return;
+    }
+
     timerRef.current = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % NOTAN_SLIDES.length);
     }, 7000);
@@ -47,7 +118,16 @@ export default function AuthBackground() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, []);
+  }, [effectiveMode]);
+
+  // Ensure video plays smoothly when active
+  useEffect(() => {
+    if (effectiveMode === "video" && videoRef.current) {
+      videoRef.current.play().catch(() => {
+        // Browser autoplay restriction handled gracefully
+      });
+    }
+  }, [effectiveMode]);
 
   return (
     <>
@@ -149,7 +229,7 @@ export default function AuthBackground() {
       `}</style>
 
       {/* =========================================================================
-          BACKGROUND LAYER: Full-screen Animated Notan Architecture
+          BACKGROUND LAYER: Full-screen Video or Animated Notan Architecture
           ========================================================================= */}
       <div
         className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none select-none z-0"
@@ -165,26 +245,56 @@ export default function AuthBackground() {
           />
         </div>
 
-        {/* All 4 Notan Images Staggered & Crossfaded */}
-        {NOTAN_SLIDES.map((slide, index) => {
-          const isActive = currentSlide === index;
-          return (
-            <div
-              key={slide.id}
-              className={`absolute inset-0 w-full h-full transition-opacity duration-1500 ease-in-out ${
-                isActive ? "opacity-100 z-10" : "opacity-0 z-0"
-              }`}
-            >
-              <img
-                src={slide.src}
-                alt={slide.alt}
-                className={`w-full h-full object-cover brightness-[0.8] contrast-[1.08] ${
-                  isActive ? slide.animationClass : ""
+        {/* =====================================================================
+            VIDEO BACKGROUND: notandas_video.mp4 (for Admin / Invited users)
+            ===================================================================== */}
+        <div
+          className={`absolute inset-0 w-full h-full transition-opacity duration-1000 ease-in-out ${
+            effectiveMode === "video" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
+          }`}
+        >
+          <video
+            ref={videoRef}
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="auto"
+            onLoadedData={() => setVideoLoaded(true)}
+            className="w-full h-full object-cover brightness-[0.78] contrast-[1.08]"
+          >
+            <source src="/notandas_video.mp4" type="video/mp4" />
+          </video>
+        </div>
+
+        {/* =====================================================================
+            PHOTO ANIMATION SLIDES: notan1-4.png (for SuperAdmin)
+            ===================================================================== */}
+        <div
+          className={`absolute inset-0 w-full h-full transition-opacity duration-1000 ease-in-out ${
+            effectiveMode === "photos" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
+          }`}
+        >
+          {NOTAN_SLIDES.map((slide, index) => {
+            const isActive = currentSlide === index;
+            return (
+              <div
+                key={slide.id}
+                className={`absolute inset-0 w-full h-full transition-opacity duration-1500 ease-in-out ${
+                  isActive ? "opacity-100 z-10" : "opacity-0 z-0"
                 }`}
-              />
-            </div>
-          );
-        })}
+              >
+                <img
+                  src={slide.src}
+                  alt={slide.alt}
+                  className={`w-full h-full object-cover brightness-[0.8] contrast-[1.08] ${
+                    isActive ? slide.animationClass : ""
+                  }`}
+                />
+              </div>
+            );
+          })}
+        </div>
 
         {/* Cinematic Vignette & Ambient Darkness Overlay for Glassmorphic Depth */}
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/45 to-slate-950/75 pointer-events-none z-10" />
@@ -193,6 +303,45 @@ export default function AuthBackground() {
         {/* Subtle Ambient Architectural Grid */}
         <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-40 pointer-events-none z-10" />
       </div>
+
+      {/* =========================================================================
+          SLEEK AMBIENT MODE SWITCHER (Bottom-Right: Video & Image Icons Only)
+          ========================================================================= */}
+      {showToggle && (
+        <div className="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 z-30 pointer-events-auto">
+          <div className="flex items-center gap-1 p-1 rounded-full bg-slate-950/75 border border-white/15 backdrop-blur-md shadow-xl">
+            {/* Image Icon Button */}
+            <button
+              type="button"
+              onClick={() => setManualMode("photos")}
+              title="Show Image Animation"
+              aria-label="Show Image Animation"
+              className={`p-2 rounded-full transition-all active:scale-95 ${
+                effectiveMode === "photos"
+                  ? "bg-amber-500/25 text-amber-300 border border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.35)]"
+                  : "text-slate-400 hover:text-white hover:bg-white/10 border border-transparent"
+              }`}
+            >
+              <ImageIcon className="w-4 h-4" />
+            </button>
+
+            {/* Video Icon Button */}
+            <button
+              type="button"
+              onClick={() => setManualMode("video")}
+              title="Play Video"
+              aria-label="Play Video"
+              className={`p-2 rounded-full transition-all active:scale-95 ${
+                effectiveMode === "video"
+                  ? "bg-cyan-500/25 text-cyan-300 border border-cyan-400/50 shadow-[0_0_12px_rgba(34,211,238,0.35)]"
+                  : "text-slate-400 hover:text-white hover:bg-white/10 border border-transparent"
+              }`}
+            >
+              <Video className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

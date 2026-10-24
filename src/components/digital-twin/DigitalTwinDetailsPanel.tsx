@@ -61,6 +61,7 @@ export const DigitalTwinDetailsPanel: React.FC<DigitalTwinDetailsPanelProps> = (
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+  const [editProgressVal, setEditProgressVal] = useState<number>(0);
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<number>>(new Set());
   const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
   const [scheduleSearch, setScheduleSearch] = useState("");
@@ -106,9 +107,17 @@ export const DigitalTwinDetailsPanel: React.FC<DigitalTwinDetailsPanelProps> = (
     }
 
     if (activeFloor) {
+      const isMumty = activeFloor.floorType === "mumty";
+      const isTerrace = activeFloor.floorType === "terrace";
+      const floorSubtitle = isMumty
+        ? `Rooftop Stairhead / LMR • ${activeTower?.tower.name || "Tower"}`
+        : isTerrace
+        ? `Open Rooftop Terrace • ${activeTower?.tower.name || "Tower"}`
+        : activeTower?.tower.name || "Tower Floor";
+
       return {
         title: activeFloor.floor.name,
-        subtitle: activeTower?.tower.name || "Tower Floor",
+        subtitle: floorSubtitle,
         type: "floor" as const,
         progress: activeFloor.progress,
         status: activeFloor.status,
@@ -119,8 +128,16 @@ export const DigitalTwinDetailsPanel: React.FC<DigitalTwinDetailsPanelProps> = (
         completedTasks: activeFloor.completedTasks,
         overdueTasks: activeFloor.overdueTasks,
         meta: {
-          number: `Floor ${activeFloor.number}`,
-          totalUnits: `${activeFloor.units.length} Units`,
+          number: isMumty
+            ? "Rooftop Level (Mumty & LMR)"
+            : isTerrace
+            ? "Rooftop Terrace Level"
+            : `Floor ${activeFloor.number}`,
+          totalUnits: isMumty
+            ? "Stairhead & Machinery Core"
+            : isTerrace
+            ? "Open Rooftop Deck & Parapet"
+            : `${activeFloor.units.length} Units`,
         },
       };
     }

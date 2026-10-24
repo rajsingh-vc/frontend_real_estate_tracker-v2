@@ -755,6 +755,12 @@ function TowerDrillDown({
     );
   };
 
+  const towerProgress = tower.progress !== undefined && tower.progress !== null && Number(tower.progress) > 0
+    ? Number(tower.progress)
+    : (towerTasks.length > 0
+        ? Math.round(towerTasks.reduce((acc, t) => acc + (Number(t.progress) || (t.status === 'completed' ? 100 : 0)), 0) / towerTasks.length)
+        : 0);
+
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       <HierarchicalBreadcrumb
@@ -784,7 +790,7 @@ function TowerDrillDown({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <StatCard label="Total Tasks" value={towerTasks.length} icon={<div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center"><Building2 className="h-5 w-5 text-primary" /></div>} />
         <StatCard label="Completed" value={towerTasks.filter(t => t.status === 'completed').length} icon={<div className="h-10 w-10 rounded-xl bg-success/10 flex items-center justify-center"><CheckCircle2 className="h-5 w-5 text-success" /></div>} />
-        <StatCard label="Progress" value={`${towerTasks.length > 0 ? Math.round((towerTasks.filter(t => t.status === 'completed').length / towerTasks.length) * 100) : 0}%`} icon={<div className="h-10 w-10 rounded-xl bg-info/10 flex items-center justify-center"><TrendingUp className="h-5 w-5 text-info" /></div>} subtitle={<Progress value={towerTasks.length > 0 ? (towerTasks.filter(t => t.status === 'completed').length / towerTasks.length) * 100 : 0} className="h-1.5" />} />
+        <StatCard label="Progress" value={`${towerProgress}%`} icon={<div className="h-10 w-10 rounded-xl bg-info/10 flex items-center justify-center"><TrendingUp className="h-5 w-5 text-info" /></div>} subtitle={<Progress value={towerProgress} className="h-1.5" />} />
         <StatCard label="Delay Impact" value={`${towerTasks.reduce((a, t) => a + t.delayDays, 0)}d`} icon={<div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center"><Clock className="h-5 w-5 text-destructive" /></div>} />
       </div>
 
@@ -1323,6 +1329,18 @@ const Dashboard = () => {
   const departmentStats = useMemo(() => getDeptBreakdown(tasks), [tasks]);
   const delayedTasks = useMemo(() => tasks.filter(t => t.delayDays > 0), [tasks]);
 
+  const portfolioCompletion = useMemo(() => {
+    if (projects.length > 0) {
+      const total = projects.reduce((acc, p) => acc + (Number(p.progress) || 0), 0);
+      return Math.round(total / projects.length);
+    }
+    if (totalTasks > 0) {
+      const totalProg = tasks.reduce((acc, t) => acc + (Number(t.progress) || (t.status === 'completed' ? 100 : 0)), 0);
+      return Math.round(totalProg / totalTasks);
+    }
+    return 0;
+  }, [projects, tasks, totalTasks]);
+
   const organizationName = useMemo(() => {
     if (selectedProject) {
       const org =
@@ -1600,9 +1618,9 @@ const Dashboard = () => {
           icon={<div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-info/10 flex items-center justify-center"><TrendingUp className="h-5 w-5 md:h-6 md:w-6 text-info" /></div>}
           subtitle={<p className="text-xs text-muted-foreground">of {towers.length} total towers</p>}
         />
-        <StatCard label="Completion" value={totalTasks > 0 ? `${Math.round((completedTasks / totalTasks) * 100)}%` : '—'}
+        <StatCard label="Completion" value={projects.length > 0 || totalTasks > 0 ? `${portfolioCompletion}%` : '—'}
           icon={<div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center"><CheckCircle2 className="h-5 w-5 md:h-6 md:w-6 text-success" /></div>}
-          subtitle={<Progress value={totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0} className="h-1.5" />}
+          subtitle={<Progress value={portfolioCompletion} className="h-1.5" />}
         />
         <StatCard label="Open Hurdles" value={openHurdles}
           icon={<div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-destructive/10 flex items-center justify-center"><AlertTriangle className="h-5 w-5 md:h-6 md:w-6 text-destructive" /></div>}

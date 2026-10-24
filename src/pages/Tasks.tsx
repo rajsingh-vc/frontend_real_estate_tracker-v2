@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import jsPDF from "jspdf";
+import { exportTaskToPDF } from "@/utils/taskPdfExport";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -11,23 +11,40 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { statusLabels, statusColors, priorityColors, type TaskStatus, type Priority } from "@/data/demo-data";
 import {
   Search, CheckCircle2, MessageSquare, Plus, GripVertical,
   UserPlus, Link2, AlertTriangle, CalendarDays,
-  Paperclip, FolderOpen, Camera, SwitchCamera, Download, Trash2, Loader2,
+  Paperclip, FolderOpen, Camera, SwitchCamera, Download, Loader2,
   FileText, FileSpreadsheet, File as FileIcon, Image as ImageIcon, Send,
-  FileDown, Pencil, Check, X, ListTree,
+  FileDown, Pencil, Check, X, ListTree, Trash2, Eye,
 } from "lucide-react";
 import { NewTaskDialog } from "@/components/dialogs/NewTaskDialog";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   tasksApi, usersApi, projectsApi, towersApi, documentsApi, statusesApi,
   subTasksApi, type ApiSubTask, type SubTaskPayload,
   type ApiTask, type ApiDocument, type ApiChatMessage, ApiError, resolveImageUrl,
 } from "@/lib/api";
+import {
+  processFileForUpload,
+  formatBytes,
+  isImageFile,
+  MAX_UPLOAD_SIZE_BYTES,
+} from "@/utils/imageCompression";
 
 const statusOrder: TaskStatus[] = ['not_started', 'ready', 'in_progress', 'blocked', 'review', 'completed', 'delayed'];
 
@@ -100,6 +117,16 @@ type ApiTaskExt = ApiTask & {
   repeatFrequency?: RepeatFrequency | null;
   isSelfTask?: boolean | null;
 };
+
+export function isTaskAssignedToUser(task: ApiTaskExt | ApiTask | null | undefined, user: any): boolean {
+  if (!task || !user) return false;
+  const uid = Number(user.id);
+  if (task.assignedTo != null && Number(task.assignedTo) === uid) return true;
+  if ((task as any).assigned_to != null && Number((task as any).assigned_to) === uid) return true;
+  if (task.assignedUsers && Array.isArray(task.assignedUsers) && task.assignedUsers.map(Number).includes(uid)) return true;
+  if (task.assignedHod != null && Number(task.assignedHod) === uid) return true;
+  return false;
+}
 
 // ✅ derive a sensible progress value whenever the status changes.
 // - Completed always jumps to 100%.
@@ -185,131 +212,10 @@ function initialsOf(name: string): string {
 }
 
 // ============================================================================
-// PDF export for a single task. Client-side only (jsPDF) — builds a simple
-// text-based summary covering the core fields, checklist, comments, and
-// attachments, then triggers a download. No backend round trip required.
+// PDF export is handled via modular `@/utils/taskPdfExport`, supporting
+// dynamic organization branding, inspection-style structured tables,
+// checklist verification, and embedded site evidence photos.
 // ============================================================================
-function exportTaskToPDF(
-  task: ApiTaskExt,
-  opts: {
-    projectName?: string;
-    towerName?: string;
-    assigneeName?: string;
-    dependencyTitle?: string;
-    attachments?: ApiDocument[];
-    comments?: { id: number; user: string; date: string; text: string }[];
-  } = {}
-) {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const marginX = 40;
-  const pageBottom = 780;
-  let y = 50;
-
-  const ensureRoom = () => {
-    if (y > pageBottom) {
-      doc.addPage();
-      y = 50;
-    }
-  };
-
-  const line = (text: string, size = 11, bold = false, gap = 16) => {
-    doc.setFont("helvetica", bold ? "bold" : "normal");
-    doc.setFontSize(size);
-    const wrapped = doc.splitTextToSize(text, 515) as string[];
-    wrapped.forEach((l) => {
-      ensureRoom();
-      doc.text(l, marginX, y);
-      y += gap;
-    });
-  };
-
-  const spacer = (h = 8) => {
-    y += h;
-  };
-
-  const divider = () => {
-    ensureRoom();
-    doc.setDrawColor(210);
-    doc.line(marginX, y, 555, y);
-    y += 14;
-  };
-
-  // Title + top meta
-  line(task.title, 16, true, 22);
-  line(
-    `Status: ${displayStatusLabel(task.status)}   ·   Priority: ${task.priority}   ·   Progress: ${task.progress}%`,
-    10
-  );
-  spacer(4);
-  divider();
-
-  // Description
-  if (task.description) {
-    line("Description", 12, true);
-    line(task.description);
-    spacer();
-  }
-
-  // Core details
-  line("Details", 12, true);
-  if (opts.projectName) line(`Project: ${opts.projectName}`);
-  if (opts.towerName) line(`Tower: ${opts.towerName}`);
-  if (task.department) line(`Department: ${task.department}`);
-  if (task.phase) line(`Phase: ${task.phase}`);
-  line(`Assigned To: ${opts.assigneeName || "Unassigned"}`);
-  line(`Depends On: ${opts.dependencyTitle || "No dependency"}`);
-  if (task.startDate) line(`Start Date: ${task.startDate}`);
-  if (task.endDate) line(`End Date: ${task.endDate}`);
-  if (task.actualStartDate) line(`Actual Start: ${task.actualStartDate}`);
-  if (task.criticalPath) line("Critical Path: Yes");
-  spacer();
-  divider();
-
-  // Checklist
-  const checklist = task.checklist ?? [];
-  if (checklist.length > 0) {
-    line(`Checklist (${checklist.filter((c) => c.completed).length}/${checklist.length})`, 12, true);
-    checklist.forEach((item) => {
-      line(`${item.completed ? "[x]" : "[ ]"} ${item.title}`);
-    });
-    spacer();
-    divider();
-  }
-
-  // Attachments
-  if (opts.attachments && opts.attachments.length > 0) {
-    line(`Attachments (${opts.attachments.length})`, 12, true);
-    opts.attachments.forEach((doc) => {
-      line(`- ${doc.name}  (${doc.type} · ${doc.size})`);
-    });
-    spacer();
-    divider();
-  }
-
-  // Comments — now sourced from the dedicated per-task comments query
-  // (opts.comments) instead of task.comments, since the list endpoint the
-  // `task` prop comes from never includes comments. Falls back to
-  // task.comments for backward compatibility if opts.comments is omitted.
-  const comments = opts.comments ?? task.comments ?? [];
-  if (comments.length > 0) {
-    line(`Comments (${comments.length})`, 12, true);
-    comments.forEach((c) => {
-      line(`${c.user} — ${c.date}`, 10, true, 14);
-      line(c.text, 10);
-      spacer(4);
-    });
-  }
-
-  // Footer timestamp
-  ensureRoom();
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(8);
-  doc.setTextColor(140);
-  doc.text(`Exported ${new Date().toLocaleString()}`, marginX, pageBottom + 20 > 800 ? y : y);
-
-  const safeTitle = task.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase().replace(/(^-|-$)/g, "");
-  doc.save(`task-${safeTitle || task.id}.pdf`);
-}
 
 // ============================================================================
 // Live camera capture (replaces <input capture> which only ever opens a
@@ -795,7 +701,7 @@ export function TaskEditDialog({
   );
 }
 
-function TaskSubtasks({
+function Subtasks({
   task,
   onEditSubTask,
 }: {
@@ -811,6 +717,8 @@ function TaskSubtasks({
     taskId?: number;
   }) => void;
 }) {
+  const { canEdit, user } = useAuth();
+  const canEditTask = canEdit || isTaskAssignedToUser(task, user);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [newTitle, setNewTitle] = useState("");
@@ -837,21 +745,11 @@ function TaskSubtasks({
   const linkedChecklistSubtasks = allApiSubTasks.filter((s) => s.taskId === task.id);
 
   // Combine unified subtasks
+  // Combine unified subtasks: use configured checklist subtasks as primary source of truth
   const unifiedSubtasks = useMemo(() => {
-    const list: Array<{
-      id: number;
-      name: string;
-      startDate?: string | null;
-      endDate?: string | null;
-      status: string;
-      progress: number;
-      priority?: string;
-      isChecklistSubTask: boolean;
-    }> = [];
-
-    // From checklist SubTask model (contains MPP configured dates)
-    linkedChecklistSubtasks.forEach((s) => {
-      list.push({
+    // 1. If checklist SubTask records exist for this task, use them directly as the source of truth
+    if (linkedChecklistSubtasks.length > 0) {
+      return linkedChecklistSubtasks.map((s) => ({
         id: s.id,
         name: s.name,
         startDate: s.startDate,
@@ -860,31 +758,26 @@ function TaskSubtasks({
         progress: s.progress || 0,
         priority: "medium",
         isChecklistSubTask: true,
-      });
-    });
+      }));
+    }
 
-    // From legacy child tasks if any
-    (legacySubtasks ?? []).forEach((st: any) => {
-      if (!list.some((existing) => existing.name === (st.title || st.name))) {
-        list.push({
-          id: st.id,
-          name: st.title || st.name,
-          startDate: st.startDate,
-          endDate: st.endDate,
-          status: st.status || "not_started",
-          progress: st.progress || 0,
-          priority: st.priority,
-          isChecklistSubTask: false,
-        });
-      }
-    });
-
-    return list;
+    // 2. Fallback: only if no checklist subtasks exist for this task, use legacy child tasks
+    return (legacySubtasks ?? []).map((st: any) => ({
+      id: st.id,
+      name: st.title || st.name,
+      startDate: st.startDate,
+      endDate: st.endDate,
+      status: st.status || "not_started",
+      progress: st.progress || 0,
+      priority: st.priority,
+      isChecklistSubTask: false,
+    }));
   }, [linkedChecklistSubtasks, legacySubtasks]);
 
   const createMutation = useMutation({
-    mutationFn: (data: { title: string; priority?: string; startDate?: string; endDate?: string }) =>
-      subTasksApi.create({
+    mutationFn: (data: { title: string; priority?: string; startDate?: string; endDate?: string }) => {
+      if (!canEditTask) throw new Error("Permission denied");
+      return subTasksApi.create({
         taskId: task.id,
         projectId: task.projectId,
         name: data.title,
@@ -892,7 +785,8 @@ function TaskSubtasks({
         progress: 0,
         startDate: data.startDate || null,
         endDate: data.endDate || null,
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["subtasks"] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -914,6 +808,7 @@ function TaskSubtasks({
 
   const toggleMutation = useMutation({
     mutationFn: async ({ subtask, completed }: { subtask: any; completed: boolean }) => {
+      if (!canEditTask) throw new Error("Permission denied");
       const nextStatus = completed ? "completed" : "pending";
       const nextProgress = completed ? 100 : 0;
       if (subtask.isChecklistSubTask) {
@@ -937,6 +832,7 @@ function TaskSubtasks({
 
   const handleCreate = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!canEditTask) return;
     const trimmed = newTitle.trim();
     if (!trimmed) return;
     createMutation.mutate({
@@ -967,7 +863,7 @@ function TaskSubtasks({
             </Badge>
           )}
         </div>
-        {!showAddForm && (
+        {!showAddForm && canEditTask && (
           <Button
             type="button"
             size="sm"
@@ -992,16 +888,18 @@ function TaskSubtasks({
         ) : unifiedSubtasks.length === 0 && !showAddForm ? (
           <div className="text-center py-4 border border-dashed rounded-md bg-muted/20">
             <p className="text-xs text-muted-foreground mb-2">No subtasks created for this task yet.</p>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs"
-              onClick={() => setShowAddForm(true)}
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              Create First Subtask
-            </Button>
+            {canEditTask && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => setShowAddForm(true)}
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Create First Subtask
+              </Button>
+            )}
           </div>
         ) : (
           unifiedSubtasks.map((st) => {
@@ -1009,19 +907,29 @@ function TaskSubtasks({
             return (
               <div
                 key={st.id}
-                onClick={() => onEditSubTask?.({ ...st, taskId: task.id })}
-                className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border text-sm transition-all cursor-pointer group ${
+                onClick={() => {
+                  if (canEditTask && onEditSubTask) {
+                    onEditSubTask({ ...st, taskId: task.id });
+                  }
+                }}
+                className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border text-sm transition-all group ${
+                  canEditTask ? "cursor-pointer" : ""
+                } ${
                   isCompleted ? "bg-muted/30 border-muted" : "bg-card hover:bg-muted/40 hover:border-primary/40 shadow-2xs"
                 }`}
-                title="Click to view & edit subtask schedule"
+                title={canEditTask ? "Click to view & edit subtask schedule" : undefined}
               >
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <div
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleMutation.mutate({ subtask: st, completed: !isCompleted });
+                      if (canEditTask) {
+                        toggleMutation.mutate({ subtask: st, completed: !isCompleted });
+                      }
                     }}
-                    className={`h-4.5 w-4.5 rounded border flex items-center justify-center cursor-pointer transition-colors shrink-0 ${
+                    className={`h-4.5 w-4.5 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                      canEditTask ? "cursor-pointer" : "cursor-default opacity-80"
+                    } ${
                       isCompleted ? "bg-emerald-500 border-emerald-500 text-white" : "border-border hover:border-primary bg-background"
                     }`}
                   >
@@ -1052,19 +960,21 @@ function TaskSubtasks({
 
                 <div className="flex items-center gap-2 shrink-0">
                   <Progress value={st.progress || 0} className="h-1.5 w-14 hidden sm:flex" />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-primary hover:text-primary hover:bg-primary/10"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEditSubTask?.({ ...st, taskId: task.id });
-                    }}
-                    title="Edit Subtask"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                  {canEditTask && onEditSubTask && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-primary hover:text-primary hover:bg-primary/10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditSubTask({ ...st, taskId: task.id });
+                      }}
+                      title="Edit Subtask"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             );
@@ -1073,7 +983,7 @@ function TaskSubtasks({
       </div>
 
       {/* Quick Add Subtask Form */}
-      {showAddForm && (
+      {showAddForm && canEditTask && (
         <form onSubmit={handleCreate} className="p-3 rounded-md border border-primary/20 bg-primary/5 space-y-2 mt-2">
           <div className="text-xs font-semibold text-primary flex items-center gap-1">
             <Plus className="h-3.5 w-3.5" /> New Subtask
@@ -1145,20 +1055,47 @@ function TaskSubtasks({
 // and delete both persist immediately via documentsApi.
 // ============================================================================
 
+function isImageDoc(doc: ApiDocument): boolean {
+  const type = (doc.type || "").toUpperCase();
+  if (["JPG", "JPEG", "PNG", "WEBP", "GIF", "SVG"].includes(type)) return true;
+  const name = (doc.name || "").toLowerCase();
+  const file = (doc.file || "").toLowerCase();
+  return (
+    name.endsWith(".jpg") ||
+    name.endsWith(".jpeg") ||
+    name.endsWith(".png") ||
+    name.endsWith(".webp") ||
+    name.endsWith(".gif") ||
+    name.endsWith(".svg") ||
+    file.endsWith(".jpg") ||
+    file.endsWith(".jpeg") ||
+    file.endsWith(".png") ||
+    file.endsWith(".webp") ||
+    file.endsWith(".gif") ||
+    file.endsWith(".svg")
+  );
+}
+
 function TaskAttachments({
   task,
   attachments = [],
   attachmentsLoading = false,
+  canEditTask = true,
 }: {
   task: ApiTaskExt;
   attachments?: ApiDocument[];
   attachmentsLoading?: boolean;
+  canEditTask?: boolean;
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const browseInputRef = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [docToDelete, setDocToDelete] = useState<ApiDocument | null>(null);
+  const [previewPhoto, setPreviewPhoto] = useState<ApiDocument | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) =>
@@ -1184,26 +1121,75 @@ function TaskAttachments({
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => documentsApi.remove(id),
+    mutationFn: (id: number) => {
+      setDeletingId(id);
+      return documentsApi.remove(id);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents", "task", task.id] });
       queryClient.invalidateQueries({ queryKey: ["documents"] });
-      toast({ title: "Attachment deleted" });
+      toast({ title: "Attachment removed" });
+      setDocToDelete(null);
     },
     onError: (err) => {
       console.error("Attachment delete failed:", err);
       toast({
-        title: "Couldn't delete attachment",
+        title: "Couldn't remove attachment",
         description: err instanceof ApiError ? err.message : "Please try again.",
         variant: "destructive",
       });
     },
+    onSettled: () => {
+      setDeletingId(null);
+    },
   });
 
-  const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadFile = async (rawFile: File) => {
+    try {
+      let fileToUpload = rawFile;
+      if (rawFile.size > MAX_UPLOAD_SIZE_BYTES) {
+        if (!isImageFile(rawFile)) {
+          toast({
+            title: "File exceeds 50 MB limit",
+            description: `"${rawFile.name}" (${formatBytes(rawFile.size)}) exceeds the 50 MB limit. Only images can be automatically compressed.`,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        setIsProcessing(true);
+        toast({
+          title: "Compressing image…",
+          description: `"${rawFile.name}" is ${formatBytes(rawFile.size)}. Compressing under 50 MB before upload.`,
+        });
+
+        const result = await processFileForUpload(rawFile, MAX_UPLOAD_SIZE_BYTES);
+        fileToUpload = result.file;
+        toast({
+          title: "Photo compressed",
+          description: `Optimized from ${formatBytes(result.originalSize)} to ${formatBytes(result.compressedSize)}. Uploading…`,
+        });
+      }
+
+      await uploadMutation.mutateAsync(fileToUpload);
+    } catch (err: unknown) {
+      console.error("File processing/upload failed:", err);
+      toast({
+        title: "Upload failed",
+        description: err instanceof Error ? err.message : "Failed to process and upload file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files && files.length > 0) {
-      Array.from(files).forEach((file) => uploadMutation.mutate(file));
+      for (const file of Array.from(files)) {
+        await handleUploadFile(file);
+      }
     }
     event.target.value = "";
   };
@@ -1229,7 +1215,7 @@ function TaskAttachments({
           variant="outline"
           size="sm"
           onClick={() => browseInputRef.current?.click()}
-          disabled={uploadMutation.isPending}
+          disabled={uploadMutation.isPending || isProcessing}
         >
           <FolderOpen className="h-4 w-4 mr-1.5" />
           Browse Files
@@ -1239,14 +1225,14 @@ function TaskAttachments({
           variant="outline"
           size="sm"
           onClick={() => setCameraOpen(true)}
-          disabled={uploadMutation.isPending}
+          disabled={uploadMutation.isPending || isProcessing}
         >
           <Camera className="h-4 w-4 mr-1.5" />
           Take Photo
         </Button>
-        {uploadMutation.isPending && (
+        {(uploadMutation.isPending || isProcessing) && (
           <span className="inline-flex items-center text-xs text-muted-foreground gap-1">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> {isProcessing ? "Compressing photo…" : "Uploading…"}
           </span>
         )}
       </div>
@@ -1254,7 +1240,7 @@ function TaskAttachments({
       <CameraCaptureDialog
         open={cameraOpen}
         onOpenChange={setCameraOpen}
-        onCapture={(file) => uploadMutation.mutate(file)}
+        onCapture={(file) => void handleUploadFile(file)}
       />
 
       {attachmentsLoading ? (
@@ -1263,31 +1249,185 @@ function TaskAttachments({
         <p className="text-xs text-muted-foreground">No attachments yet.</p>
       ) : (
         <div className="space-y-1.5">
-          {attachments.map((doc: ApiDocument) => (
-            <div
-              key={doc.id}
-              className="flex items-center gap-2 p-2 rounded-md border text-sm"
-            >
-              {docIconMap[doc.type] || <FileIcon className="h-4 w-4 text-muted-foreground" />}
-              <a
-                href={doc.file}
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 min-w-0 truncate hover:underline"
-              >
-                {doc.name}
-              </a>
-              <span className="text-xs text-muted-foreground shrink-0">{doc.size}</span>
-              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" asChild>
-                <a href={doc.file} target="_blank" rel="noreferrer" download>
-                  <Download className="h-3.5 w-3.5" />
-                </a>
-              </Button>
+          {attachments.map((doc: ApiDocument) => {
+            const isImage = isImageDoc(doc);
+            const isDeleting = deleteMutation.isPending && deletingId === doc.id;
 
-            </div>
-          ))}
+            return (
+              <div
+                key={doc.id}
+                className="flex items-center gap-2 p-2 rounded-md border text-sm hover:bg-muted/30 transition-colors group"
+              >
+                {isImage ? (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPhoto(doc)}
+                    className="relative h-8 w-8 rounded overflow-hidden shrink-0 border bg-muted/40 hover:opacity-80 transition-opacity focus:outline-none focus:ring-1 focus:ring-primary flex items-center justify-center"
+                    title="Click to preview photo"
+                  >
+                    <img
+                      src={doc.file}
+                      alt={doc.name}
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = "none";
+                      }}
+                    />
+                    <ImageIcon className="h-4 w-4 text-warning shrink-0" />
+                  </button>
+                ) : (
+                  docIconMap[doc.type] || <FileIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                )}
+
+                <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                  {isImage ? (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewPhoto(doc)}
+                      className="truncate hover:underline text-left font-medium text-foreground text-sm"
+                      title="Click to preview photo"
+                    >
+                      {doc.name}
+                    </button>
+                  ) : (
+                    <a
+                      href={doc.file}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="truncate hover:underline font-medium text-foreground"
+                    >
+                      {doc.name}
+                    </a>
+                  )}
+                  {isImage && (
+                    <Badge variant="secondary" className="text-[10px] py-0 px-1.5 h-4 shrink-0 font-normal">
+                      Photo
+                    </Badge>
+                  )}
+                </div>
+
+                <span className="text-xs text-muted-foreground shrink-0">{doc.size}</span>
+
+                {isImage && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => setPreviewPhoto(doc)}
+                    title="Preview photo"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+
+                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" asChild title="Download file">
+                  <a href={doc.file} target="_blank" rel="noreferrer" download>
+                    <Download className="h-3.5 w-3.5" />
+                  </a>
+                </Button>
+
+                {canEditTask && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    onClick={() => setDocToDelete(doc)}
+                    disabled={isDeleting}
+                    title={isImage ? "Remove photo" : "Remove attachment"}
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-destructive" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+
+      {/* Full Photo Preview Dialog */}
+      <Dialog open={!!previewPhoto} onOpenChange={(open) => !open && setPreviewPhoto(null)}>
+        <DialogContent className="max-w-2xl p-4">
+          <DialogHeader>
+            <DialogTitle className="truncate text-base">{previewPhoto?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center max-h-[65vh] overflow-hidden rounded-md bg-muted/30 border p-2">
+            <img
+              src={previewPhoto?.file}
+              alt={previewPhoto?.name}
+              className="max-h-[60vh] w-auto max-w-full object-contain rounded"
+            />
+          </div>
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-xs text-muted-foreground">{previewPhoto?.size}</span>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <a href={previewPhoto?.file} target="_blank" rel="noreferrer" download>
+                  <Download className="h-3.5 w-3.5 mr-1.5" />
+                  Download
+                </a>
+              </Button>
+              {canEditTask && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    if (previewPhoto) {
+                      const toDelete = previewPhoto;
+                      setPreviewPhoto(null);
+                      setDocToDelete(toDelete);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                  Remove Photo
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!docToDelete} onOpenChange={(open) => !open && setDocToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {docToDelete && isImageDoc(docToDelete) ? "Remove Photo" : "Remove Attachment"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove{" "}
+              <span className="font-semibold text-foreground">&quot;{docToDelete?.name}&quot;</span>?
+              This file will be permanently removed from this task.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (docToDelete) {
+                  deleteMutation.mutate(docToDelete.id);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-1.5" />
+              )}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1441,6 +1581,8 @@ function TaskRelationsPanel({
   usersErrorObj: unknown;
   assignee?: { id: number; name: string; role?: string; department?: string };
 }) {
+  const { canEdit, user } = useAuth();
+  const canEditTask = canEdit || isTaskAssignedToUser(task, user);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -1479,7 +1621,10 @@ function TaskRelationsPanel({
   const signedDelay = computeSignedDelay({ ...task, endDate: localEndDate || null });
 
   const patchMutation = useMutation({
-    mutationFn: (patch: Partial<ApiTaskExt>) => tasksApi.update(task.id, patch as Partial<ApiTask>),
+    mutationFn: (patch: Partial<ApiTaskExt>) => {
+      if (!canEditTask) throw new Error("Permission denied");
+      return tasksApi.update(task.id, patch as Partial<ApiTask>);
+    },
     onMutate: async (patch) => {
       await queryClient.cancelQueries({ queryKey: ["tasks"] });
       const previousTasks = queryClient.getQueryData<ApiTaskExt[]>(["tasks"]);
@@ -1497,18 +1642,21 @@ function TaskRelationsPanel({
       if (context?.previousTasks) {
         queryClient.setQueryData(["tasks"], context.previousTasks);
       }
-      onMutationError(err, "Update task");
+      onMutationError(err, "Update task schedule");
     },
     onSettled: invalidateTasks,
   });
 
   const handleSave = () => {
+    if (!canEditTask) return;
     const newDur = computeDurationDays(localStartDate || null, localEndDate || null);
     patchMutation.mutate({
       startDate: localStartDate || null,
       endDate: localEndDate || null,
-      assignedTo: localAssignedTo === "unassigned" ? null : Number(localAssignedTo),
-      dependsOn: localDependsOn === "none" ? null : Number(localDependsOn),
+      ...(canEdit ? {
+        assignedTo: localAssignedTo === "unassigned" ? null : Number(localAssignedTo),
+        dependsOn: localDependsOn === "none" ? null : Number(localDependsOn),
+      } : {}),
       ...(newDur != null ? { durationDays: newDur } : {}),
     });
   };
@@ -1527,6 +1675,7 @@ function TaskRelationsPanel({
           <Select
             value={localAssignedTo}
             onValueChange={(v) => setLocalAssignedTo(v)}
+            disabled={!canEdit}
           >
             <SelectTrigger className="h-9 text-sm">
               <SelectValue placeholder="Unassigned">
@@ -1587,6 +1736,7 @@ function TaskRelationsPanel({
           <Select
             value={localDependsOn}
             onValueChange={(v) => setLocalDependsOn(v)}
+            disabled={!canEdit}
           >
             <SelectTrigger className="h-9 text-sm">
               <SelectValue placeholder="No dependency" />
@@ -1619,6 +1769,7 @@ function TaskRelationsPanel({
             type="date"
             value={localStartDate}
             onChange={(e) => setLocalStartDate(e.target.value)}
+            disabled={!canEditTask}
             className="h-9 text-sm"
           />
         </div>
@@ -1630,6 +1781,7 @@ function TaskRelationsPanel({
             type="date"
             value={localEndDate}
             onChange={(e) => setLocalEndDate(e.target.value)}
+            disabled={!canEditTask}
             className="h-9 text-sm"
           />
         </div>
@@ -1664,49 +1816,51 @@ function TaskRelationsPanel({
       </div>
 
       {/* Save Button Bar */}
-      <div className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-muted/20">
-        <div className="text-xs">
-          {hasChanges ? (
-            <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-              Unsaved changes — click "Save Task" to apply
-            </span>
-          ) : justSaved ? (
-            <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1.5">
-              <Check className="h-3.5 w-3.5 stroke-[2.5]" />
-              Task schedule saved successfully
-            </span>
-          ) : (
-            <span className="text-muted-foreground">
-              Task schedule is up to date
-            </span>
-          )}
-        </div>
+      {canEditTask && (
+        <div className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-muted/20">
+          <div className="text-xs">
+            {hasChanges ? (
+              <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                Unsaved changes — click "Save Task" to apply
+              </span>
+            ) : justSaved ? (
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1.5">
+                <Check className="h-3.5 w-3.5 stroke-[2.5]" />
+                Task schedule saved successfully
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                Task schedule is up to date
+              </span>
+            )}
+          </div>
 
-        <Button
-          type="button"
-          size="sm"
-          onClick={handleSave}
-          disabled={patchMutation.isPending || (!hasChanges && !justSaved)}
-          className={`h-8 px-4 gap-1.5 font-medium transition-all ${
-            hasChanges
-              ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-              : "bg-muted text-muted-foreground hover:bg-muted"
-          }`}
-        >
-          {patchMutation.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Check className="h-3.5 w-3.5" />
-          )}
-          Save Task
-        </Button>
-      </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleSave}
+            disabled={patchMutation.isPending || (!hasChanges && !justSaved)}
+            className={`h-8 px-4 gap-1.5 font-medium transition-all ${
+              hasChanges
+                ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+                : "bg-muted text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {patchMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="h-3.5 w-3.5" />
+            )}
+            Save Task
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
-function TaskDetailDialog({
+export function TaskDetailDialog({
   task: initialTask,
   onEditTask,
   onEditSubTask,
@@ -1715,10 +1869,12 @@ function TaskDetailDialog({
   onEditTask?: (task: ApiTaskExt) => void;
   onEditSubTask?: (subtask: any) => void;
 }) {
+  const { canEdit, user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: allTasksForExport = [] } = useQuery({ queryKey: ["tasks"], queryFn: tasksApi.list });
   const task = (allTasksForExport.find((t) => t.id === initialTask.id) as ApiTaskExt) ?? initialTask;
+  const canEditTask = canEdit || isTaskAssignedToUser(task, user);
 
   const [newComment, setNewComment] = useState("");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -1741,7 +1897,6 @@ function TaskDetailDialog({
     queryKey: ["users"],
     queryFn: usersApi.list,
   });
-  const { data: allTasksForExport } = useQuery({ queryKey: ["tasks"], queryFn: tasksApi.list });
 
   // Fetch attachments for this task – shared with TaskAttachments and PDF export
   const { data: attachments = [], isLoading: attachmentsLoading } = useQuery({
@@ -1889,6 +2044,7 @@ function TaskDetailDialog({
 
   const statusMutation = useMutation({
     mutationFn: (newStatus: string) => {
+      if (!canEditTask) throw new Error("Permission denied");
       const progress = computeProgressForStatus(newStatus, task.progress);
       return tasksApi.update(task.id, { status: newStatus, progress });
     },
@@ -1917,15 +2073,41 @@ function TaskDetailDialog({
     commentMutation.mutate(newComment);
   };
 
-  const handleExportPDF = () => {
-    exportTaskToPDF(task, {
-      projectName: project?.name,
-      towerName: tower?.name,
-      assigneeName: assignee ? toTitleCase(assignee.name) : undefined,
-      dependencyTitle: dependency?.title,
-      attachments,
-      comments,
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+
+  const handleExportPDF = async () => {
+    setIsExportingPDF(true);
+    toast({
+      title: "Generating Task Report PDF",
+      description: "Assembling organization branding, checklist, and site evidence photos...",
     });
+    try {
+      await exportTaskToPDF(task, {
+        project,
+        tower,
+        assigneeName: assignee ? toTitleCase(assignee.name) : undefined,
+        dependencyTitle: dependency?.title,
+        attachments,
+        comments,
+        currentUser: user,
+      });
+      toast({
+        title: "Report Downloaded",
+        description: "Task Management Report PDF successfully generated.",
+      });
+    } catch (err) {
+      console.error("PDF export failed:", err);
+      toast({
+        title: "Export Failed",
+        description:
+          err instanceof Error
+            ? err.message
+            : "Failed to generate task PDF report. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingPDF(false);
+    }
   };
 
   return (
@@ -1934,7 +2116,7 @@ function TaskDetailDialog({
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             <Badge className={priorityColors[task.priority as Priority]}>{task.priority}</Badge>
-            <Select value={task.status} onValueChange={v => statusMutation.mutate(v)}>
+            <Select value={task.status} onValueChange={v => statusMutation.mutate(v)} disabled={!canEditTask}>
               <SelectTrigger className="w-auto h-6 text-xs border-0 bg-transparent p-0">
                 <Badge className={displayStatusColor(task.status)}>{displayStatusLabel(task.status)}</Badge>
               </SelectTrigger>
@@ -1945,7 +2127,7 @@ function TaskDetailDialog({
           </div>
 
           <div className="flex items-center gap-2">
-            {onEditTask && (
+            {canEditTask && onEditTask && (
               <Button
                 type="button"
                 variant="outline"
@@ -1958,9 +2140,20 @@ function TaskDetailDialog({
               </Button>
             )}
             {/* export this task as a PDF summary */}
-            <Button type="button" variant="outline" size="sm" onClick={handleExportPDF} className="h-8 text-xs">
-              <FileDown className="h-3.5 w-3.5 mr-1.5" />
-              Export PDF
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleExportPDF}
+              disabled={isExportingPDF}
+              className="h-8 text-xs gap-1.5"
+            >
+              {isExportingPDF ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              ) : (
+                <FileDown className="h-3.5 w-3.5" />
+              )}
+              {isExportingPDF ? "Exporting..." : "Export PDF"}
             </Button>
           </div>
         </div>
@@ -2058,20 +2251,22 @@ function TaskDetailDialog({
         ) : (
           <div className="flex items-center justify-between gap-2 mt-2 group/title">
             <DialogTitle className="font-display text-xl">{task.title}</DialogTitle>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground opacity-80 group-hover/title:opacity-100 flex items-center gap-1.5 rounded-md hover:bg-muted shrink-0"
-              onClick={() => {
-                setEditedTitle(task.title);
-                setIsEditingTitle(true);
-              }}
-              title="Click to edit task title"
-            >
-              <Pencil className="h-3.5 w-3.5 text-primary" />
-              Edit Title
-            </Button>
+            {canEditTask && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground opacity-80 group-hover/title:opacity-100 flex items-center gap-1.5 rounded-md hover:bg-muted shrink-0"
+                onClick={() => {
+                  setEditedTitle(task.title);
+                  setIsEditingTitle(true);
+                }}
+                title="Click to edit task title"
+              >
+                <Pencil className="h-3.5 w-3.5 text-primary" />
+                Edit Title
+              </Button>
+            )}
           </div>
         )}
 
@@ -2138,7 +2333,7 @@ function TaskDetailDialog({
       />
 
       {/* Subtasks: View, create, and manage subtasks */}
-      <TaskSubtasks task={task} onEditSubTask={onEditSubTask} />
+      <Subtasks task={task} onEditSubTask={onEditSubTask} />
 
       {/* Checklist */}
       {checklist.length > 0 && (
@@ -2149,8 +2344,14 @@ function TaskDetailDialog({
           </h4>
           <div className="space-y-2">
             {checklist.map((item) => (
-              <div key={item.id} className="flex items-center gap-2 cursor-pointer" onClick={() => toggleChecklistMutation.mutate(item.id)}>
-                <Checkbox checked={item.completed} />
+              <div
+                key={item.id}
+                className={`flex items-center gap-2 ${canEditTask ? "cursor-pointer" : "cursor-default"}`}
+                onClick={() => {
+                  if (canEditTask) toggleChecklistMutation.mutate(item.id);
+                }}
+              >
+                <Checkbox checked={item.completed} disabled={!canEditTask} />
                 <span className={`text-sm ${item.completed ? 'line-through text-muted-foreground' : ''}`}>{item.title}</span>
               </div>
             ))}
@@ -2163,6 +2364,7 @@ function TaskDetailDialog({
         task={task}
         attachments={attachments}
         attachmentsLoading={attachmentsLoading}
+        canEditTask={canEditTask}
       />
 
       {/* Chat: separate from Comments below — near-real-time back-and-forth */}
@@ -2200,6 +2402,33 @@ function TaskDetailDialog({
   );
 }
 
+// Full Task Details Modal wrapper (embeds TaskDetailDialog with its own Dialog root)
+// Used across Projects.tsx and any module requiring the exact same Task Template
+export function TaskDetailModal({
+  open,
+  onOpenChange,
+  task,
+  onEditTask,
+  onEditSubTask,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  task: ApiTaskExt | ApiTask | null;
+  onEditTask?: (task: ApiTaskExt) => void;
+  onEditSubTask?: (subtask: any) => void;
+}) {
+  if (!task) return null;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <TaskDetailDialog
+        task={task as ApiTaskExt}
+        onEditTask={onEditTask}
+        onEditSubTask={onEditSubTask}
+      />
+    </Dialog>
+  );
+}
+
 // ✅ FIXED: added `export` — Projects.tsx imports this as a named export
 // (`import { TaskRow } from "@/pages/Tasks"`) to render direct-mode task
 // rows with the full feature set (chat, attachments, dependencies, etc.).
@@ -2210,13 +2439,20 @@ export function TaskRow({
   onEditTask,
   onEditSubTask,
   allSubTasks = [],
+  users = [],
+  onFilterAssignee,
 }: {
   task: ApiTaskExt;
   openOnMount?: boolean;
   onEditTask?: (task: ApiTaskExt) => void;
   onEditSubTask?: (subtask: any) => void;
   allSubTasks?: ApiSubTask[];
+  users?: { id: number; name: string; role?: string; department?: string }[];
+  onFilterAssignee?: (userId: number) => void;
 }) {
+  const { canEdit, user } = useAuth();
+  const canEditTask = canEdit || isTaskAssignedToUser(task, user);
+  const assignee = users.find((u) => u.id === task.assignedTo || u.id === (task as any).assigned_to);
   const linkedChecklistSubtasks = allSubTasks.filter((s) => s.taskId === task.id);
   const subtasksCount = linkedChecklistSubtasks.length > 0 ? linkedChecklistSubtasks.length : (task.subtasks?.length ?? 0);
   const subtasksCompleted = linkedChecklistSubtasks.length > 0
@@ -2248,6 +2484,23 @@ export function TaskRow({
               <span>{task.department || "General"}</span>
               <span>·</span>
               <span>{task.phase || "Phase"}</span>
+              {assignee && (
+                <span
+                  className={`inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium ${
+                    onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
+                  }`}
+                  onClick={(e) => {
+                    if (onFilterAssignee) {
+                      e.stopPropagation();
+                      onFilterAssignee(assignee.id);
+                    }
+                  }}
+                  title={onFilterAssignee ? `Filter tasks assigned to ${assignee.name}` : undefined}
+                >
+                  <UserPlus className="h-3 w-3 shrink-0" />
+                  <span>{toTitleCase(assignee.name)}</span>
+                </span>
+              )}
               {(task.startDate || task.endDate) && (
                 <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
                   <CalendarDays className="h-3 w-3" />
@@ -2269,6 +2522,23 @@ export function TaskRow({
             <span>{task.department || "General"}</span>
             <span>·</span>
             <span>{task.phase || "Phase"}</span>
+            {assignee && (
+              <span
+                className={`inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium ${
+                  onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
+                }`}
+                onClick={(e) => {
+                  if (onFilterAssignee) {
+                    e.stopPropagation();
+                    onFilterAssignee(assignee.id);
+                  }
+                }}
+                title={onFilterAssignee ? `Filter tasks assigned to ${assignee.name}` : undefined}
+              >
+                <UserPlus className="h-3 w-3 shrink-0" />
+                <span>{toTitleCase(assignee.name)}</span>
+              </span>
+            )}
             {(task.startDate || task.endDate) && (
               <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
                 <CalendarDays className="h-3 w-3" />
@@ -2299,7 +2569,7 @@ export function TaskRow({
               <span className="text-xs font-medium w-8 text-right">{task.progress}%</span>
             </div>
 
-            {onEditTask && (
+            {canEditTask && onEditTask && (
               <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
                 <Button
                   type="button"
@@ -2328,6 +2598,8 @@ function KanbanColumn({
   onEditTask,
   onEditSubTask,
   allSubTasks = [],
+  users = [],
+  onFilterAssignee,
 }: {
   status: string;
   columnTasks: ApiTaskExt[];
@@ -2335,10 +2607,16 @@ function KanbanColumn({
   onEditTask?: (task: ApiTaskExt) => void;
   onEditSubTask?: (subtask: any) => void;
   allSubTasks?: ApiSubTask[];
+  users?: { id: number; name: string; role?: string; department?: string }[];
+  onFilterAssignee?: (userId: number) => void;
 }) {
+  const { canEdit, user } = useAuth();
   const statusDot = displayStatusDot(status);
 
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.currentTarget.classList.add('ring-2', 'ring-primary/50'); };
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.currentTarget.classList.add('ring-2', 'ring-primary/50');
+  };
   const handleDragLeave = (e: React.DragEvent) => { e.currentTarget.classList.remove('ring-2', 'ring-primary/50'); };
   const handleDropEvent = (e: React.DragEvent) => {
     e.preventDefault();
@@ -2356,6 +2634,8 @@ function KanbanColumn({
       </div>
       <div className="space-y-2">
         {columnTasks.map((task) => {
+          const canEditTask = canEdit || isTaskAssignedToUser(task, user);
+          const assignee = users.find((u) => u.id === task.assignedTo || u.id === (task as any).assigned_to);
           const linkedChecklistSubtasks = allSubTasks.filter((s) => s.taskId === task.id);
           const subtasksCount = linkedChecklistSubtasks.length > 0 ? linkedChecklistSubtasks.length : (task.subtasks?.length ?? 0);
           const subtasksCompleted = linkedChecklistSubtasks.length > 0
@@ -2363,19 +2643,28 @@ function KanbanColumn({
             : (task.subtasks ?? []).filter((s) => s.status === 'completed' || s.progress === 100).length;
 
           return (
-            <div key={task.id} draggable onDragStart={e => { e.dataTransfer.setData('taskId', String(task.id)); e.dataTransfer.effectAllowed = 'move'; }}>
+            <div
+              key={task.id}
+              draggable={canEditTask}
+              onDragStart={(e) => {
+                if (canEditTask) {
+                  e.dataTransfer.setData('taskId', String(task.id));
+                  e.dataTransfer.effectAllowed = 'move';
+                }
+              }}
+            >
               <Dialog>
                 <DialogTrigger asChild>
-                  <Card className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow group">
+                  <Card className={`${canEditTask ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} hover:shadow-md transition-shadow group`}>
                     <CardContent className="p-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1">
-                          <GripVertical className="h-3 w-3 text-muted-foreground" />
+                          {canEditTask && <GripVertical className="h-3 w-3 text-muted-foreground" />}
                           <Badge className={`${priorityColors[task.priority as Priority]} text-[9px]`}>{task.priority}</Badge>
                         </div>
                         <div className="flex items-center gap-1">
                           {task.criticalPath && <Badge variant="destructive" className="text-[9px]">CP</Badge>}
-                          {onEditTask && (
+                          {canEditTask && onEditTask && (
                             <Button
                               type="button"
                               variant="ghost"
@@ -2398,6 +2687,23 @@ function KanbanColumn({
                         <span>·</span>
                         <span>{task.phase || "Phase"}</span>
                       </div>
+                      {assignee && (
+                        <div
+                          className={`inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium mt-0.5 ${
+                            onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
+                          }`}
+                          onClick={(e) => {
+                            if (onFilterAssignee) {
+                              e.stopPropagation();
+                              onFilterAssignee(assignee.id);
+                            }
+                          }}
+                          title={onFilterAssignee ? `Filter tasks assigned to ${assignee.name}` : undefined}
+                        >
+                          <UserPlus className="h-2.5 w-2.5 shrink-0" />
+                          <span className="truncate max-w-[120px]">{toTitleCase(assignee.name)}</span>
+                        </div>
+                      )}
                       {(task.startDate || task.endDate) && (
                         <div className="inline-flex items-center gap-1 font-mono text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
                           <CalendarDays className="h-2.5 w-2.5" />
@@ -2425,6 +2731,7 @@ function KanbanColumn({
 }
 
 const Tasks = () => {
+  const { canEdit, user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -2439,6 +2746,7 @@ const Tasks = () => {
     incomingProjectFilter?.projectFilter ?? (incomingProjectFilter?.projectId ? String(incomingProjectFilter.projectId) : "all")
   );
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
 
   const { data: allTasks, isLoading, isError, error } = useQuery({
     queryKey: ["tasks"],
@@ -2451,6 +2759,10 @@ const Tasks = () => {
   const { data: projects = [] } = useQuery({
     queryKey: ["projects"],
     queryFn: projectsApi.list,
+  });
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: usersApi.list,
   });
   const taskStatuses = useTaskStatuses();
 
@@ -2490,6 +2802,8 @@ const Tasks = () => {
 
   const handleSaveTask = (values: any) => {
     if (!editingTask) return;
+    const canEditTask = canEdit || isTaskAssignedToUser(editingTask, user);
+    if (!canEditTask) return;
     const dur = computeDurationDays(values.startDate, values.endDate);
     updateTaskMutation.mutate({
       id: editingTask.id,
@@ -2526,6 +2840,9 @@ const Tasks = () => {
 
   const handleSaveSubTask = async (values: any) => {
     if (!editingSubTask) return;
+    const parentTask = allTasks?.find((t) => t.id === editingSubTask.taskId);
+    const canEditSub = canEdit || isTaskAssignedToUser(parentTask, user);
+    if (!canEditSub) return;
     const currentTaskId = editingSubTask.taskId;
 
     updateSubTaskMutation.mutate({
@@ -2536,7 +2853,6 @@ const Tasks = () => {
 
     // If subtask dates were changed, check if parent task schedule bounds are affected
     if (currentTaskId && (values.startDate || values.endDate)) {
-      const parentTask = allTasks?.find((t) => t.id === currentTaskId);
       if (parentTask) {
         const otherSubTasks = allSubTasks.filter(
           (s) => s.taskId === currentTaskId && s.id !== editingSubTask.id
@@ -2567,8 +2883,11 @@ const Tasks = () => {
   // dragging a card to a new Kanban column also updates progress to match,
   // with an instant optimistic update.
   const dropMutation = useMutation({
-    mutationFn: ({ id, status, progress }: { id: number; status: string; progress: number }) =>
-      tasksApi.update(id, { status, progress }),
+    mutationFn: ({ id, status, progress }: { id: number; status: string; progress: number }) => {
+      const task = (allTasks ?? []).find((t) => t.id === id);
+      if (!canEdit && !isTaskAssignedToUser(task, user)) throw new Error("Permission denied");
+      return tasksApi.update(id, { status, progress });
+    },
     onMutate: async ({ id, status, progress }) => {
       await queryClient.cancelQueries({ queryKey: ["tasks"] });
       const previousTasks = queryClient.getQueryData<ApiTask[]>(["tasks"]);
@@ -2598,6 +2917,7 @@ const Tasks = () => {
 
   const handleDrop = (taskId: number, newStatus: string) => {
     const currentTask = (allTasks ?? []).find((t) => t.id === taskId);
+    if (!canEdit && !isTaskAssignedToUser(currentTask, user)) return;
     const progress = computeProgressForStatus(newStatus, currentTask?.progress ?? 0);
     dropMutation.mutate({ id: taskId, status: newStatus, progress });
   };
@@ -2621,11 +2941,33 @@ const Tasks = () => {
   const tasks = (allTasks ?? []) as ApiTaskExt[];
 
   // Show all tasks linked to the project (do not hide tasks with parentId)
-  const filtered = tasks.filter(t => {
+  const filtered = tasks.filter((t) => {
+    // If not admin, only show tasks assigned to this user
+    if (!canEdit && !isTaskAssignedToUser(t, user)) return false;
+
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
-    if (statusFilter !== 'all' && t.status !== statusFilter) return false;
-    if (projectFilter !== 'all' && String(t.projectId) !== String(projectFilter)) return false;
-    if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
+    if (statusFilter !== "all" && t.status !== statusFilter) return false;
+    if (projectFilter !== "all" && String(t.projectId) !== String(projectFilter)) return false;
+    if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
+
+    // Admin assignee filter
+    if (canEdit && assigneeFilter !== "all") {
+      if (assigneeFilter === "unassigned") {
+        const hasAssignee =
+          t.assignedTo != null ||
+          (t.assignedUsers && t.assignedUsers.length > 0) ||
+          (t as any).assigned_to != null;
+        if (hasAssignee) return false;
+      } else {
+        const uid = Number(assigneeFilter);
+        const matches =
+          (t.assignedTo != null && Number(t.assignedTo) === uid) ||
+          ((t as any).assigned_to != null && Number((t as any).assigned_to) === uid) ||
+          (t.assignedUsers && Array.isArray(t.assignedUsers) && t.assignedUsers.map(Number).includes(uid)) ||
+          (t.assignedHod != null && Number(t.assignedHod) === uid);
+        if (!matches) return false;
+      }
+    }
     return true;
   });
 
@@ -2635,12 +2977,16 @@ const Tasks = () => {
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">Execution Tasks</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            {projectFilter === "all"
+            {!canEdit
+              ? `${filtered.length} task${filtered.length === 1 ? "" : "s"} assigned to you`
+              : assigneeFilter !== "all"
+              ? `${filtered.length} task${filtered.length === 1 ? "" : "s"} for selected assignee`
+              : projectFilter === "all"
               ? `${tasks.length} tasks across all projects`
               : `${filtered.length} task${filtered.length === 1 ? "" : "s"} in selected project`}
           </p>
         </div>
-        <NewTaskDialog onCreated={handleCreated} />
+        {canEdit && <NewTaskDialog onCreated={handleCreated} />}
       </div>
 
       <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
@@ -2659,14 +3005,29 @@ const Tasks = () => {
             ))}
           </SelectContent>
         </Select>
+        {canEdit && (
+          <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+            <SelectTrigger className="w-full sm:w-[170px]">
+              <SelectValue placeholder="All Assignees" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Assignees</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {users.map((u) => (
+                <SelectItem key={u.id} value={String(u.id)}>
+                  {toTitleCase(u.name)} {u.role ? `(${u.role})` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
-            {taskStatuses.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+            {taskStatuses.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
           </SelectContent>
         </Select>
-        {/* "Critical" removed — only High / Medium / Low remain. */}
         <Select value={priorityFilter} onValueChange={setPriorityFilter}>
           <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Priority" /></SelectTrigger>
           <SelectContent>
@@ -2700,6 +3061,8 @@ const Tasks = () => {
                   setSubTaskEditDialogOpen(true);
                 }}
                 allSubTasks={allSubTasks}
+                users={users}
+                onFilterAssignee={(userId) => setAssigneeFilter(String(userId))}
               />
             ))}
           </div>
@@ -2709,7 +3072,7 @@ const Tasks = () => {
         <TabsContent value="kanban" className="mt-4">
           <div className="flex gap-4 overflow-x-auto pb-4">
             {taskStatuses.map(({ value: status }) => {
-              const columnTasks = filtered.filter(t => t.status === status);
+              const columnTasks = filtered.filter((t) => t.status === status);
               return (
                 <KanbanColumn
                   key={status}
@@ -2725,6 +3088,8 @@ const Tasks = () => {
                     setSubTaskEditDialogOpen(true);
                   }}
                   allSubTasks={allSubTasks}
+                  users={users}
+                  onFilterAssignee={(userId) => setAssigneeFilter(String(userId))}
                 />
               );
             })}

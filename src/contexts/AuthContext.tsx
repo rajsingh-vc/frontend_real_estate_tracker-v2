@@ -50,6 +50,8 @@ interface AuthContextType {
   isAdmin: boolean;
   isSuperAdmin: boolean;
   canManageUsers: boolean;
+  isInvited: boolean;
+  canEdit: boolean;
   lastLoginError: string | null;
 }
 
@@ -114,6 +116,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const normalizedUser = normalizeUser(data.user);
       setTokens(data.access, data.refresh);
       localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
+
+      if (normalizedUser.is_superuser) {
+        localStorage.setItem("apex_last_role", "superadmin");
+      } else if (normalizedUser.can_manage_users || normalizedUser.is_admin) {
+        localStorage.setItem("apex_last_role", "admin");
+      } else {
+        localStorage.setItem("apex_last_role", "invited");
+      }
+
       setUser(normalizedUser);
       setIsAuthenticated(true);
       setLastLoginError(null);
@@ -192,18 +203,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // "isAdmin" here means "sees the Admin panel" — same condition.
   const isAdmin = canManageUsers;
 
-  // ✅ FIXED — `user` state above is seeded once from localStorage and was
-  // never refreshed after that: `fetchMe()` existed but nothing ever called
-  // it, so the browser kept using whatever user object was cached at the
-  // last login/refresh forever. That's why a permission fix on the backend
-  // (e.g. UserSerializer starting to return can_manage_users) had no visible
-  // effect for an already-logged-in Admin — their cached user object
-  // predates the field, so `canManageUsers` stayed false and /admin kept
-  // bouncing to "/" until they logged out and back in. Refreshing once on
-  // mount (whenever an access token is already present) means a stale
-  // cached user — missing fields, a changed role, a revoked permission,
-  // a deactivated account — gets corrected automatically on next load,
-  // without requiring a manual logout.
+  // An invited user: has is_invited flag from backend, or accepted_invitation,
+  // or invitation_status === "Accepted", or is not superadmin/admin.
+  const isInvited = Boolean(
+    user?.is_invited ||
+    user?.invitation_status === "Accepted" ||
+    (!isSuperAdmin && !canManageUsers)
+  );
+
+  // Edit access for Project, Tower, Floor, Unit, Task, Checklist, Subtask
+  // When a user gets invited, they do NOT get access to edit or create projects,
+  // towers, floors, units, tasks, checklists, and subtasks.
+  const canEdit = Boolean(
+    isSuperAdmin || (canManageUsers && !user?.is_invited && user?.invitation_status !== "Accepted")
+  );
+
   useEffect(() => {
     if (getAccessToken()) {
       fetchMe();
@@ -222,6 +236,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin,
         isSuperAdmin,
         canManageUsers,
+        isInvited,
+        canEdit,
         lastLoginError,
       }}
     >

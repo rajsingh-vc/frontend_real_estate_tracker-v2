@@ -1,13 +1,12 @@
-import React from "react";
 import type {
   ProjectRollup,
   DigitalTwinSelection,
   VisualizationMode,
 } from "./types";
-import { getElementColor } from "./digitalTwinUtils";
+import { getElementColor, sortFloorsForElevation } from "./digitalTwinUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Layers, Grid3X3 } from "lucide-react";
+import { Building2, Layers, Grid3X3, Sun, Cog, Warehouse, CheckCircle2, Clock } from "lucide-react";
 
 interface DigitalTwin2DElevationProps {
   projectRollup: ProjectRollup;
@@ -51,8 +50,8 @@ export const DigitalTwin2DElevation: React.FC<DigitalTwin2DElevationProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
         {towers.map((towerRollup) => {
           const isTowerSelected = selection.towerId === towerRollup.tower.id;
-          // Sort floors from highest floor number to lowest (top-of-building down to ground)
-          const sortedFloors = [...towerRollup.floors].sort((a, b) => b.number - a.number);
+          // Sort floors from top-of-building (Mumty -> Terrace -> Upper Floors) down to Ground and Basements
+          const sortedFloors = sortFloorsForElevation(towerRollup.floors);
 
           return (
             <div
@@ -95,7 +94,7 @@ export const DigitalTwin2DElevation: React.FC<DigitalTwin2DElevationProps> = ({
                 />
               </div>
 
-              {/* Floor Stack (Top to Bottom) */}
+              {/* Floor Stack (Top to Bottom: Mumty -> Terrace -> Regular -> Basement) */}
               <div className="space-y-2">
                 {sortedFloors.length === 0 ? (
                   <p className="text-xs text-slate-500 text-center py-4">No floors defined.</p>
@@ -103,13 +102,22 @@ export const DigitalTwin2DElevation: React.FC<DigitalTwin2DElevationProps> = ({
                   sortedFloors.map((floorRollup) => {
                     const isFloorSelected = selection.floorId === floorRollup.floor.id;
                     const floorColor = getElementColor(floorRollup, visualizationMode);
+                    const isMumty = floorRollup.floorType === "mumty";
+                    const isTerrace = floorRollup.floorType === "terrace";
+                    const isBasement = floorRollup.floorType === "basement";
 
                     return (
                       <div
                         key={floorRollup.floor.id}
                         className={`p-2.5 rounded-xl border transition-all ${
                           isFloorSelected
-                            ? "border-primary/80 bg-primary/10"
+                            ? "border-primary/90 bg-primary/15 shadow-md shadow-primary/10"
+                            : isMumty
+                            ? "border-purple-500/30 bg-purple-950/20 hover:border-purple-500/50"
+                            : isTerrace
+                            ? "border-sky-500/30 bg-sky-950/20 hover:border-sky-500/50"
+                            : isBasement
+                            ? "border-amber-500/25 bg-amber-950/15 hover:border-amber-500/40"
                             : "border-slate-800/80 bg-slate-950/60 hover:border-slate-700"
                         }`}
                       >
@@ -126,11 +134,43 @@ export const DigitalTwin2DElevation: React.FC<DigitalTwin2DElevationProps> = ({
                           }
                           className="flex items-center justify-between text-xs cursor-pointer pb-1.5"
                         >
-                          <div className="flex items-center gap-1.5">
-                            <Layers className="h-3.5 w-3.5 text-slate-400" />
+                          <div className="flex items-center gap-2">
+                            {isMumty ? (
+                              <Cog className="h-3.5 w-3.5 text-purple-400" />
+                            ) : isTerrace ? (
+                              <Sun className="h-3.5 w-3.5 text-sky-400" />
+                            ) : isBasement ? (
+                              <Warehouse className="h-3.5 w-3.5 text-amber-400" />
+                            ) : (
+                              <Layers className="h-3.5 w-3.5 text-slate-400" />
+                            )}
                             <span className="font-semibold text-slate-200">
                               {floorRollup.floor.name}
                             </span>
+                            {isMumty && (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] px-1.5 py-0 h-4 bg-purple-500/15 text-purple-300 border-purple-500/30 font-medium"
+                              >
+                                Rooftop Stairhead / LMR
+                              </Badge>
+                            )}
+                            {isTerrace && (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] px-1.5 py-0 h-4 bg-sky-500/15 text-sky-300 border-sky-500/30 font-medium"
+                              >
+                                Open Rooftop Terrace
+                              </Badge>
+                            )}
+                            {isBasement && (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] px-1.5 py-0 h-4 bg-amber-500/15 text-amber-300 border-amber-500/30 font-medium"
+                              >
+                                Substructure
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-[11px] text-slate-400">
@@ -143,7 +183,7 @@ export const DigitalTwin2DElevation: React.FC<DigitalTwin2DElevationProps> = ({
                           </div>
                         </div>
 
-                        {/* Units Grid */}
+                        {/* Units Grid or Rooftop / Whole Floor Scope */}
                         {floorRollup.units.length > 0 ? (
                           <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 pt-1">
                             {floorRollup.units.map((unitRollup) => {
@@ -187,9 +227,20 @@ export const DigitalTwin2DElevation: React.FC<DigitalTwin2DElevationProps> = ({
                             })}
                           </div>
                         ) : (
-                          <p className="text-[10px] text-slate-500 italic pt-0.5">
-                            Whole floor scope ({floorRollup.totalTasks} tasks)
-                          </p>
+                          <div className="flex items-center justify-between pt-1 px-1 text-[11px] text-slate-400 bg-slate-950/40 rounded-lg p-1.5">
+                            <span className="italic text-slate-500">
+                              {isMumty
+                                ? "Stairhead enclosure, overhead water tank & lift machine room"
+                                : isTerrace
+                                ? "Open rooftop floor deck, parapet walls & utility elements"
+                                : `Whole floor scope (${floorRollup.totalTasks} total tasks)`}
+                            </span>
+                            <span className="font-mono text-slate-300 font-medium">
+                              {floorRollup.totalTasks > 0
+                                ? `${floorRollup.completedTasks}/${floorRollup.totalTasks} Done`
+                                : "No Tasks"}
+                            </span>
+                          </div>
                         )}
                       </div>
                     );
