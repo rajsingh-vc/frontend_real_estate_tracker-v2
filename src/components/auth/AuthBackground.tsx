@@ -44,90 +44,133 @@ export interface AuthBackgroundProps {
 export default function AuthBackground({
   forceMode,
   usernameOrEmail = "",
-  showToggle = true,
+  showToggle = false,
 }: AuthBackgroundProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [manualMode, setManualMode] = useState<"video" | "photos" | null>(null);
+  // Default to video on initial open so video plays first
+  const [autoMode, setAutoMode] = useState<"video" | "photos">("video");
   const [, setVideoLoaded] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hasTriggeredEndRef = useRef(false);
 
-  // Determine mode dynamically:
-  // If forceMode is set -> use it.
-  // If manualMode was clicked by the user -> use it.
-  // Else if usernameOrEmail is provided:
-  //   - if it's "superadmin" (case-insensitive) -> "photos"
-  //   - if it's non-empty and NOT superadmin (e.g. admin or invited user) -> "video"
-  // Else check localStorage "apex_last_role" or stored user:
-  //   - if last role was superadmin -> "photos"
-  //   - if admin or invited -> "video"
-  // Else default -> "video" (so invited/admin users get video)
-  const isSuperAdminInput = Boolean(
-    usernameOrEmail &&
-      (usernameOrEmail.trim().toLowerCase() === "superadmin" ||
-        usernameOrEmail.trim().toLowerCase().startsWith("superadmin") ||
-        usernameOrEmail.trim().toLowerCase().includes("super_admin"))
-  );
-
-  const effectiveMode: "video" | "photos" = (() => {
-    if (forceMode) return forceMode;
-    if (manualMode) return manualMode;
-
-    if (usernameOrEmail && usernameOrEmail.trim()) {
-      return isSuperAdminInput ? "photos" : "video";
-    }
-
+  // Check URL query parameter if present (?bg=video or ?bg=photos)
+  const urlParamMode: "video" | "photos" | null = (() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const bgParam = params.get("bg");
       if (bgParam === "video" || bgParam === "photos") return bgParam;
-      const roleParam = params.get("role");
-      if (roleParam === "superadmin") return "photos";
-      if (roleParam === "admin" || params.get("invited") === "true") return "video";
-
-      const lastRole = localStorage.getItem("apex_last_role");
-      if (lastRole === "superadmin") return "photos";
-      if (lastRole === "admin" || lastRole === "invited") return "video";
-
-      try {
-        const storedUser = localStorage.getItem("apex_auth_user");
-        if (storedUser) {
-          const parsed = JSON.parse(storedUser);
-          if (parsed?.is_superuser) return "photos";
-          return "video";
-        }
-      } catch {
-        // ignore
-      }
     }
-
-    return "video";
+    return null;
   })();
 
-  // Manage slideshow timer: run only in photos mode
+  // Mode priority:
+  // 1. Explicit forceMode prop
+  // 2. User-clicked manual toggle
+  // 3. URL param
+  // 4. Automatic sequential cycle: Video plays first fully -> All photos display -> Video plays fully
+  const effectiveMode: "video" | "photos" =
+    forceMode || manualMode || urlParamMode || autoMode;
+
+  const SLIDE_DURATION = 6500; // 6.5 seconds per photo slide
+
+  // Manage slideshow timer: advances through all slides, then switches to video
   useEffect(() => {
     if (effectiveMode !== "photos") {
       if (timerRef.current) clearInterval(timerRef.current);
       return;
     }
 
+    // If locked to photos via force/manual mode, loop photos continuously
+    if (forceMode === "photos" || manualMode === "photos" || urlParamMode === "photos") {
+      timerRef.current = setInterval(() => {
+        setCurrentSlide((prev) => (prev + 1) % NOTAN_SLIDES.length);
+      }, SLIDE_DURATION);
+      return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+      };
+    }
+
+    // Automatic sequential cycle: advance through all slides, then switch to video
     timerRef.current = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % NOTAN_SLIDES.length);
-    }, 7000);
+      setCurrentSlide((prev) => {
+        if (prev >= NOTAN_SLIDES.length - 1) {
+          // All images have finished displaying! Switch to video
+          setAutoMode("video");
+          return prev; // keep current slide rendered during crossfade
+        }
+        return prev + 1;
+      });
+    }, SLIDE_DURATION);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [effectiveMode]);
+  }, [effectiveMode, forceMode, manualMode, urlParamMode]);
 
-  // Ensure video plays smoothly when active
+  // Video playback management: ensure video plays fully from beginning, and stays paused during photos
   useEffect(() => {
-    if (effectiveMode === "video" && videoRef.current) {
-      videoRef.current.play().catch(() => {
-        // Browser autoplay restriction handled gracefully
-      });
+    const v = videoRef.current;
+    if (!v) return;
+
+    if (effectiveMode === "video") {
+      hasTriggeredEndRef.current = false;
+      try {
+        v.currentTime = 0;
+      } catch {
+        // ignore if not ready
+      }
+      const playPromise = v.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          // Autoplay policy handled
+        });
+      }
+    } else {
+      // Strictly pause and rewind video during photos mode so it never plays or drifts in the background
+      v.pause();
+      try {
+        v.currentTime = 0;
+      } catch {
+        // ignore
+      }
     }
   }, [effectiveMode]);
+
+  const handleVideoEnded = () => {
+    // If locked to video, let it loop
+    if (forceMode === "video" || manualMode === "video" || urlParamMode === "video") return;
+    if (hasTriggeredEndRef.current) return;
+    hasTriggeredEndRef.current = true;
+
+    const v = videoRef.current;
+    if (v) {
+      v.pause();
+      try {
+        v.currentTime = 0;
+      } catch {
+        // ignore
+      }
+    }
+
+    // Transition to photo slideshow starting from first slide
+    setCurrentSlide(0);
+    setAutoMode("photos");
+  };
+
+  const handleTimeUpdate = () => {
+    if (forceMode === "video" || manualMode === "video" || urlParamMode === "video") return;
+    if (effectiveMode !== "video") return;
+
+    const v = videoRef.current;
+    if (!v) return;
+
+    // Detect when the full video has completed playback (near the end of its duration)
+    if (v.duration > 0 && v.currentTime >= v.duration - 0.15) {
+      handleVideoEnded();
+    }
+  };
 
   return (
     <>
@@ -256,11 +299,13 @@ export default function AuthBackground({
           <video
             ref={videoRef}
             autoPlay
-            loop
+            loop={Boolean(forceMode === "video" || manualMode === "video" || urlParamMode === "video")}
             muted
             playsInline
             preload="auto"
             onLoadedData={() => setVideoLoaded(true)}
+            onEnded={handleVideoEnded}
+            onTimeUpdate={handleTimeUpdate}
             className="w-full h-full object-cover brightness-[0.78] contrast-[1.08]"
           >
             <source src="/notandas_video.mp4" type="video/mp4" />
@@ -313,7 +358,10 @@ export default function AuthBackground({
             {/* Image Icon Button */}
             <button
               type="button"
-              onClick={() => setManualMode("photos")}
+              onClick={() => {
+                setManualMode("photos");
+                setCurrentSlide(0);
+              }}
               title="Show Image Animation"
               aria-label="Show Image Animation"
               className={`p-2 rounded-full transition-all active:scale-95 ${

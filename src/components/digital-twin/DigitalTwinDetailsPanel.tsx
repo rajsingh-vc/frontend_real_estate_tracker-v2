@@ -300,6 +300,8 @@ export const DigitalTwinDetailsPanel: React.FC<DigitalTwinDetailsPanelProps> = (
                     ? "border-slate-300 text-slate-800 bg-white/90 shadow-2xs dark:border-white/40 dark:text-white dark:bg-white/10"
                     : currentScopeData.status === "delayed"
                     ? "border-rose-500 text-rose-600 bg-rose-500/10 dark:text-rose-400"
+                    : currentScopeData.status === "planning"
+                    ? "border-blue-500 text-blue-600 bg-blue-500/10 dark:text-blue-400"
                     : "border-slate-500 text-slate-500"
                 }`}
               >

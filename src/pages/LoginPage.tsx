@@ -91,7 +91,8 @@ export default function LoginPage() {
                   Password
                 </Label>
                 <Link
-                  to="/forgot-password"
+                  to={username.trim() ? `/forgot-password?username=${encodeURIComponent(username.trim())}` : "/forgot-password"}
+                  state={{ username: username.trim() }}
                   className="text-xs font-medium text-blue-400 hover:text-blue-300 hover:underline transition-colors"
                   tabIndex={-1}
                 >

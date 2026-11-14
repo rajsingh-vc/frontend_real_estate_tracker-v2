@@ -1479,8 +1479,8 @@ export const notificationsApi = {
 // ✅ Forgot Password API – OTP-based reset flow off the login page
 // ============================================================
 export const passwordResetApi = {
-  forgotPassword: (email: string) =>
-    apiPost<{ detail: string }>("/auth/forgot-password/", { email }),
+  forgotPassword: (email: string, username?: string) =>
+    apiPost<{ detail: string }>("/auth/forgot-password/", { email, username: username || undefined }),
   verifyOtp: (email: string, otp: string) =>
     apiPost<{ detail: string }>("/auth/verify-otp/", { email, otp }),
   resetPassword: (email: string, otp: string, newPassword: string, confirmPassword: string) =>

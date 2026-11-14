@@ -407,10 +407,10 @@ function UsersTab({ currentUser }: { currentUser: User }) {
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Role
                 </th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">
                   Organization
                 </th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">
                   Assigned Projects
                 </th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -477,22 +477,22 @@ function UsersTab({ currentUser }: { currentUser: User }) {
                     </td>
 
                     {/* 4. Organization */}
-                    <td className="px-4 py-3 text-xs">
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">
                       {user.is_superuser ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 whitespace-nowrap">
                           All Access (Global)
                         </span>
                       ) : (
-                        <span className="text-gray-600 dark:text-gray-300">
+                        <span className="text-gray-600 dark:text-gray-300 whitespace-nowrap">
                           {user.company_name || "Primary Tenant"}
                         </span>
                       )}
                     </td>
 
                     {/* 5. Assigned Projects */}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       {user.is_superuser ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 shadow-2xs">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 shadow-2xs whitespace-nowrap">
                           <FolderGit2 size={12} className="text-purple-600 dark:text-purple-400 shrink-0" />
                           <span>All Projects (Full Access)</span>
                         </span>

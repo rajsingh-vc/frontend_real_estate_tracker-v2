@@ -26,9 +26,7 @@ import {
   Split,
   Eye,
   SlidersHorizontal,
-  LayoutGrid,
   Box,
-  MapPin,
   Palette,
   Info,
 } from "lucide-react";
@@ -63,9 +61,6 @@ const COLOR_MODES: { id: VisualizationMode; label: string; icon: React.Component
 
 const VIEW_MODES: { id: DigitalTwinViewMode; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "3d", label: "3D Model", icon: Box },
-  { id: "map", label: "Geo 3D Map", icon: MapPin },
-  { id: "split", label: "Split View", icon: Split },
-  { id: "2d", label: "2D Elevation", icon: LayoutGrid },
 ];
 
 export const DigitalTwinToolbar: React.FC<DigitalTwinToolbarProps> = ({

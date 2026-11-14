@@ -57,19 +57,12 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
     <div className="space-y-4">
       {/* Top Banner & Project Selector */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card/60 backdrop-blur-md p-4 md:p-5 rounded-2xl border border-border shadow-sm">
-        <div className="flex items-center gap-3.5 min-w-0">
-          <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-primary/20 via-primary/10 to-transparent border border-primary/30 flex items-center justify-center shrink-0 shadow-inner">
-            <Building2 className="h-6 w-6 text-primary" />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-xl md:text-2xl font-bold tracking-tight">
+              3D Digital Twin
+            </h1>
           </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="font-display text-xl md:text-2xl font-bold tracking-tight">
-                3D Digital Twin
-              </h1>
-              <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary bg-primary/5">
-                LIVE MODEL
-              </Badge>
-            </div>
             <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
               <span>Interactive building twin mapped from real execution records</span>
             </p>
@@ -78,9 +71,11 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
                 <span className="flex items-center gap-1 font-medium text-foreground">
                   <MapPin className="h-3 w-3 text-primary shrink-0" />
                   <span>
-                    {selectedProject.address ? `${selectedProject.address}, ` : ""}
-                    {selectedProject.city || "Mumbai"}
-                    {selectedProject.state ? `, ${selectedProject.state}` : ""}
+                    {selectedProject.location ||
+                      [selectedProject.address, selectedProject.city, selectedProject.state]
+                        .filter(Boolean)
+                        .join(", ") ||
+                      "Location unassigned"}
                   </span>
                 </span>
                 {selectedProject.latitude !== null && selectedProject.latitude !== undefined && (
@@ -91,7 +86,6 @@ export const DigitalTwinHeader: React.FC<DigitalTwinHeaderProps> = ({
               </div>
             )}
           </div>
-        </div>
 
         {/* Project Selector & Actions */}
         <div className="flex items-center gap-2.5 flex-wrap">

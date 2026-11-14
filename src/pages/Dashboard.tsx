@@ -1589,12 +1589,6 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
-      <HierarchicalBreadcrumb
-        items={[
-          { label: dashboardTitle, icon: <Building2 className="h-4 w-4" />, active: true }
-        ]}
-      />
-
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold">{dashboardTitle}</h1>

@@ -65,6 +65,7 @@ export function normalizeStatus(rawStatus?: string): string {
   if (s === "in_progress" || s === "progress" || s === "active" || s === "review" || s === "ready")
     return "in_progress";
   if (s === "delayed" || s === "blocked" || s === "on_hold" || s === "hold") return "delayed";
+  if (s === "planning") return "planning";
   return "not_started";
 }
 
@@ -328,13 +329,26 @@ export function buildProjectRollup(
     const towerOverdueTasks = allTowerTasks.filter(isTaskOverdue).length;
     const towerHasBlockers = towerOverdueTasks > 0;
 
-    let towerProgress = tower.progress ?? 0;
-    if (floorRollups.length > 0) {
-      const sumFloorProg = floorRollups.reduce((acc, f) => acc + f.progress, 0);
-      towerProgress = Math.round(sumFloorProg / floorRollups.length);
-    } else if (allTowerTasks.length > 0) {
-      const sumProg = allTowerTasks.reduce((acc, t) => acc + (t.progress || 0), 0);
-      towerProgress = Math.round(sumProg / allTowerTasks.length);
+    // Calculate tower progress dynamically:
+    // 1. If tower has explicit progress in DB (> 0), honor it
+    // 2. Otherwise compute directly from all tasks assigned to the tower
+    // 3. If no tower tasks, compute from floors (weighted by floor tasks if available)
+    let towerProgress = typeof tower.progress === "number" && tower.progress > 0 ? tower.progress : 0;
+    if (towerProgress === 0) {
+      if (allTowerTasks.length > 0) {
+        const sumProg = allTowerTasks.reduce((acc, t) => acc + (t.progress || 0), 0);
+        towerProgress = Math.round(sumProg / allTowerTasks.length);
+      } else if (floorRollups.length > 0) {
+        const floorsWithTasks = floorRollups.filter((f) => f.totalTasks > 0);
+        if (floorsWithTasks.length > 0) {
+          const sumProg = floorsWithTasks.reduce((acc, f) => acc + f.progress * f.totalTasks, 0);
+          const totalTasksCount = floorsWithTasks.reduce((acc, f) => acc + f.totalTasks, 0);
+          towerProgress = Math.round(sumProg / totalTasksCount);
+        } else {
+          const sumFloorProg = floorRollups.reduce((acc, f) => acc + f.progress, 0);
+          towerProgress = Math.round(sumFloorProg / floorRollups.length);
+        }
+      }
     }
 
     const towerStatus =
@@ -368,20 +382,38 @@ export function buildProjectRollup(
   const totalSubTasks = projectSubTasks.length;
   const completedSubTasks = projectSubTasks.filter(isSubTaskCompleted).length;
 
-  let projectProgress = project.progress ?? 0;
-  if (towerRollups.length > 0) {
-    const sumTowerProg = towerRollups.reduce((acc, t) => acc + t.progress, 0);
-    projectProgress = Math.round(sumTowerProg / towerRollups.length);
+  // Project progress computation:
+  // 1. Primary source of truth: project.progress from DB (used across Dashboard & Projects)
+  // 2. If missing or 0, compute dynamically from all project tasks
+  // 3. If no tasks, compute dynamically from tower rollups (task-weighted)
+  let projectProgress: number;
+  if (typeof project.progress === "number" && !isNaN(project.progress) && project.progress > 0) {
+    projectProgress = project.progress;
   } else if (totalTasks > 0) {
     const sumProg = projectTasks.reduce((acc, t) => acc + (t.progress || 0), 0);
     projectProgress = Math.round(sumProg / totalTasks);
+  } else if (towerRollups.length > 0) {
+    const towersWithTasks = towerRollups.filter((t) => t.totalTasks > 0);
+    if (towersWithTasks.length > 0) {
+      const sumProg = towersWithTasks.reduce((acc, t) => acc + t.progress * t.totalTasks, 0);
+      const totalTTasks = towersWithTasks.reduce((acc, t) => acc + t.totalTasks, 0);
+      projectProgress = Math.round(sumProg / totalTTasks);
+    } else {
+      const sumTowerProg = towerRollups.reduce((acc, t) => acc + t.progress, 0);
+      projectProgress = Math.round(sumTowerProg / towerRollups.length);
+    }
+  } else {
+    projectProgress = Number(project.progress) || 0;
   }
 
+  // Project status:
+  // Honor the project's actual status from DB (e.g. "Planning", "Active", "Completed")
+  // If not set, derive dynamically from aggregated task status
   const projectStatus =
-    totalTasks > 0
-      ? aggregateTasksStatus(projectTasks)
-      : project.status
+    project.status
       ? normalizeStatus(project.status)
+      : totalTasks > 0
+      ? aggregateTasksStatus(projectTasks)
       : "not_started";
 
   return {

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { Building2, Eye, EyeOff, KeyRound, Lock, Mail, ArrowLeft, CheckCircle2, AlertCircle } from "lucide-react";
+import { useNavigate, useLocation, Link } from "react-router-dom";
+import { Building2, Eye, EyeOff, KeyRound, Lock, Mail, ArrowLeft, CheckCircle2, AlertCircle, User as UserIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,8 +16,16 @@ type Step = "email" | "otp" | "reset" | "done";
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const initialUsername =
+    (location.state as { username?: string } | null)?.username ||
+    searchParams.get("username") ||
+    "";
+
   const [step, setStep] = useState<Step>("email");
 
+  const [username, setUsername] = useState(initialUsername);
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -35,7 +43,7 @@ export default function ForgotPasswordPage() {
     setInfo("");
     setLoading(true);
     try {
-      const res = await passwordResetApi.forgotPassword(email.trim());
+      const res = await passwordResetApi.forgotPassword(email.trim(), username.trim());
       setInfo(res.detail || "If an account exists for that email, a verification code has been sent.");
       setStep("otp");
     } catch (err) {
@@ -64,7 +72,7 @@ export default function ForgotPasswordPage() {
     setInfo("");
     setLoading(true);
     try {
-      const res = await passwordResetApi.forgotPassword(email.trim());
+      const res = await passwordResetApi.forgotPassword(email.trim(), username.trim());
       setInfo(res.detail || "A new verification code has been sent.");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
@@ -119,19 +127,42 @@ export default function ForgotPasswordPage() {
               {step === "done" && "Password Reset"}
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 font-medium text-center mt-1">
-              {step === "email" && "Enter your email to receive a verification code"}
+              {step === "email" && "Enter your username and registered email to verify your account"}
               {step === "otp" && `Enter the 6-digit code sent to ${email}`}
               {step === "reset" && "Choose a new password for your account"}
               {step === "done" && "Your password has been reset successfully"}
             </p>
           </div>
 
-          {/* Step 1: Taking email id */}
+          {/* Step 1: Taking username and email */}
           {step === "email" && (
             <form onSubmit={handleSendOtp} className="space-y-4 sm:space-y-5">
               <div className="space-y-1.5">
+                <Label htmlFor="username" className="text-xs font-semibold uppercase tracking-wider text-slate-200">
+                  Username
+                </Label>
+                <div className="relative">
+                  <UserIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 pointer-events-none" />
+                  <Input
+                    id="username"
+                    type="text"
+                    placeholder="Enter your username"
+                    className="pl-10 h-11 bg-white/10 dark:bg-black/40 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-500/70 focus-visible:border-white/40 rounded-xl text-sm transition-all"
+                    value={username}
+                    onChange={(e) => {
+                      setUsername(e.target.value);
+                      if (error) setError("");
+                    }}
+                    required
+                    autoComplete="username"
+                    autoFocus={!initialUsername}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-slate-200">
-                  Email Address
+                  Registered Email Address
                 </Label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 pointer-events-none" />
@@ -141,10 +172,13 @@ export default function ForgotPasswordPage() {
                     placeholder="Enter your registered email"
                     className="pl-10 h-11 bg-white/10 dark:bg-black/40 border-white/20 text-white placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-500/70 focus-visible:border-white/40 rounded-xl text-sm transition-all"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError("");
+                    }}
                     required
                     autoComplete="email"
-                    autoFocus
+                    autoFocus={!!initialUsername}
                   />
                 </div>
               </div>

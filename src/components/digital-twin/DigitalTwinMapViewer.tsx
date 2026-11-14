@@ -20,6 +20,7 @@ import {
   Building2,
   Maximize2,
   Minimize2,
+  Key,
 } from "lucide-react";
 import { projectsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -32,89 +33,118 @@ interface DigitalTwinMapViewerProps {
   className?: string;
 }
 
-type MapTheme = "dark" | "voyager" | "satellite";
+type MapTheme = "dark" | "voyager" | "satellite" | "osm";
 
-// Free, reliable tile styles without requiring an API key
-const MAP_STYLES: Record<MapTheme, { name: string; style: any }> = {
-  dark: {
-    name: "Dark Canvas",
-    style: {
-      version: 8,
-      sources: {
-        "carto-dark": {
-          type: "raster",
-          tiles: [
-            "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-            "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-            "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-          ],
-          tileSize: 256,
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+// Tile styles supporting CARTO (with API key to remove watermark), Esri Satellite, and Free OSM
+const getMapStyles = (cartoApiKey = ""): Record<MapTheme, { name: string; style: any }> => {
+  const cartoParam = cartoApiKey.trim() ? `?api_key=${encodeURIComponent(cartoApiKey.trim())}` : "";
+
+  return {
+    dark: {
+      name: "Dark Canvas",
+      style: {
+        version: 8,
+        sources: {
+          "carto-dark": {
+            type: "raster",
+            tiles: [
+              `https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png${cartoParam}`,
+              `https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png${cartoParam}`,
+              `https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png${cartoParam}`,
+            ],
+            tileSize: 256,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          },
         },
+        layers: [
+          {
+            id: "carto-dark-layer",
+            type: "raster",
+            source: "carto-dark",
+            minzoom: 0,
+            maxzoom: 20,
+          },
+        ],
       },
-      layers: [
-        {
-          id: "carto-dark-layer",
-          type: "raster",
-          source: "carto-dark",
-          minzoom: 0,
-          maxzoom: 20,
-        },
-      ],
     },
-  },
-  voyager: {
-    name: "Streets / Voyager",
-    style: {
-      version: 8,
-      sources: {
-        "carto-voyager": {
-          type: "raster",
-          tiles: [
-            "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-            "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-            "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-          ],
-          tileSize: 256,
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    voyager: {
+      name: "Streets / Voyager",
+      style: {
+        version: 8,
+        sources: {
+          "carto-voyager": {
+            type: "raster",
+            tiles: [
+              `https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png${cartoParam}`,
+              `https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png${cartoParam}`,
+              `https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png${cartoParam}`,
+            ],
+            tileSize: 256,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          },
         },
+        layers: [
+          {
+            id: "carto-voyager-layer",
+            type: "raster",
+            source: "carto-voyager",
+            minzoom: 0,
+            maxzoom: 20,
+          },
+        ],
       },
-      layers: [
-        {
-          id: "carto-voyager-layer",
-          type: "raster",
-          source: "carto-voyager",
-          minzoom: 0,
-          maxzoom: 20,
-        },
-      ],
     },
-  },
-  satellite: {
-    name: "Satellite Imagery",
-    style: {
-      version: 8,
-      sources: {
-        "esri-satellite": {
-          type: "raster",
-          tiles: [
-            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-          ],
-          tileSize: 256,
-          attribution: "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
+    osm: {
+      name: "OpenStreetMap",
+      style: {
+        version: 8,
+        sources: {
+          "osm-tiles": {
+            type: "raster",
+            tiles: [
+              "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            ],
+            tileSize: 256,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          },
         },
+        layers: [
+          {
+            id: "osm-layer",
+            type: "raster",
+            source: "osm-tiles",
+            minzoom: 0,
+            maxzoom: 19,
+          },
+        ],
       },
-      layers: [
-        {
-          id: "esri-satellite-layer",
-          type: "raster",
-          source: "esri-satellite",
-          minzoom: 0,
-          maxzoom: 19,
-        },
-      ],
     },
-  },
+    satellite: {
+      name: "Satellite Imagery",
+      style: {
+        version: 8,
+        sources: {
+          "esri-satellite": {
+            type: "raster",
+            tiles: [
+              "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            ],
+            tileSize: 256,
+            attribution: "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
+          },
+        },
+        layers: [
+          {
+            id: "esri-satellite-layer",
+            type: "raster",
+            source: "esri-satellite",
+            minzoom: 0,
+            maxzoom: 19,
+          },
+        ],
+      },
+    },
+  };
 };
 
 export const DigitalTwinMapViewer: React.FC<DigitalTwinMapViewerProps> = ({
@@ -130,6 +160,15 @@ export const DigitalTwinMapViewer: React.FC<DigitalTwinMapViewerProps> = ({
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
   const [mapTheme, setMapTheme] = useState<MapTheme>("dark");
+  const [cartoApiKey, setCartoApiKey] = useState<string>(() => {
+    return (
+      localStorage.getItem("carto_api_key") ||
+      (import.meta.env.VITE_CARTO_API_KEY as string) ||
+      ""
+    );
+  });
+  const [showApiKeyModal, setShowApiKeyModal] = useState<boolean>(false);
+  const [tempApiKey, setTempApiKey] = useState<string>("");
   const [pitch, setPitch] = useState<number>(60);
   const [bearing, setBearing] = useState<number>(-20);
   const [zoom, setZoom] = useState<number>(16.5);
@@ -170,18 +209,18 @@ export const DigitalTwinMapViewer: React.FC<DigitalTwinMapViewerProps> = ({
     }
 
     // Known city default coordinates or Bandra/Mumbai reference
-    const city = (project.city || "").toLowerCase().trim();
-    if (city.includes("mumbai") || city.includes("bandra") || city.includes("malad")) {
-      return { lat: 19.1874, lng: 72.8484, isExact: false, fallbackName: "Mumbai Region" };
+    const locationStr = `${project.location || ""} ${project.city || ""} ${project.address || ""}`.toLowerCase().trim();
+    if (locationStr.includes("mumbai") || locationStr.includes("bandra") || locationStr.includes("malad")) {
+      return { lat: 19.1874, lng: 72.8484, isExact: false, fallbackName: project.location || "Mumbai Region" };
     }
-    if (city.includes("delhi") || city.includes("noida") || city.includes("gurugram")) {
-      return { lat: 28.5355, lng: 77.391, isExact: false, fallbackName: "NCR Region" };
+    if (locationStr.includes("delhi") || locationStr.includes("noida") || locationStr.includes("gurugram")) {
+      return { lat: 28.5355, lng: 77.391, isExact: false, fallbackName: project.location || "NCR Region" };
     }
-    if (city.includes("bangalore") || city.includes("bengaluru")) {
-      return { lat: 12.9716, lng: 77.5946, isExact: false, fallbackName: "Bengaluru Region" };
+    if (locationStr.includes("bangalore") || locationStr.includes("bengaluru")) {
+      return { lat: 12.9716, lng: 77.5946, isExact: false, fallbackName: project.location || "Bengaluru Region" };
     }
-    if (city.includes("pune")) {
-      return { lat: 18.5204, lng: 73.8567, isExact: false, fallbackName: "Pune Region" };
+    if (locationStr.includes("pune")) {
+      return { lat: 18.5204, lng: 73.8567, isExact: false, fallbackName: project.location || "Pune Region" };
     }
 
     // Default reference
@@ -272,9 +311,10 @@ export const DigitalTwinMapViewer: React.FC<DigitalTwinMapViewerProps> = ({
     if (!mapContainerRef.current) return;
 
     try {
+      const styles = getMapStyles(cartoApiKey);
       const map = new maplibregl.Map({
         container: mapContainerRef.current,
-        style: MAP_STYLES[mapTheme].style,
+        style: styles[mapTheme].style,
         center: [resolvedCoords.lng, resolvedCoords.lat],
         zoom: zoom,
         pitch: pitch,
@@ -380,7 +420,7 @@ export const DigitalTwinMapViewer: React.FC<DigitalTwinMapViewerProps> = ({
       console.error("Map initialization failed:", err);
       setMapError(err instanceof Error ? err.message : "Failed to load mapping canvas.");
     }
-  }, [mapTheme]);
+  }, [mapTheme, cartoApiKey]);
 
   // Keep map centered on resolved coordinates when project changes
   useEffect(() => {
@@ -547,8 +587,9 @@ export const DigitalTwinMapViewer: React.FC<DigitalTwinMapViewerProps> = ({
               )}
             </div>
             <p className="text-[11px] text-muted-foreground truncate">
-              {project.address ? `${project.address}, ` : ""}
-              {project.city || "Mumbai"} {project.state ? `, ${project.state}` : ""}
+              {project.location ||
+                [project.address, project.city, project.state].filter(Boolean).join(", ") ||
+                "Location unassigned"}
               {" · "}
               <span className="font-mono text-[10px]">
                 {resolvedCoords.lat.toFixed(4)}°N, {resolvedCoords.lng.toFixed(4)}°E
@@ -569,7 +610,7 @@ export const DigitalTwinMapViewer: React.FC<DigitalTwinMapViewerProps> = ({
 
         {/* Map Controls: Style Switcher & 3D Presets */}
         <div className="pointer-events-auto flex items-center gap-1.5 bg-card/90 backdrop-blur-md border border-border/80 p-1 rounded-xl shadow-lg">
-          {(["dark", "voyager", "satellite"] as MapTheme[]).map((theme) => (
+          {(["dark", "voyager", "satellite", "osm"] as MapTheme[]).map((theme) => (
             <Button
               key={theme}
               variant={mapTheme === theme ? "default" : "ghost"}
@@ -577,9 +618,25 @@ export const DigitalTwinMapViewer: React.FC<DigitalTwinMapViewerProps> = ({
               onClick={() => setMapTheme(theme)}
               className="h-7 text-[11px] px-2.5 capitalize"
             >
-              {theme}
+              {theme === "osm" ? "OSM (Free)" : theme}
             </Button>
           ))}
+
+          <div className="h-4 w-px bg-border mx-1" />
+
+          {/* API Key Configure Button */}
+          <Button
+            variant={cartoApiKey ? "ghost" : "outline"}
+            size="icon"
+            onClick={() => {
+              setTempApiKey(cartoApiKey);
+              setShowApiKeyModal(true);
+            }}
+            className={`h-7 w-7 ${!cartoApiKey ? "border-amber-500/50 text-amber-500 hover:text-amber-400 hover:bg-amber-500/10" : "text-muted-foreground hover:text-foreground"}`}
+            title={cartoApiKey ? "CARTO API Key Active" : "Add CARTO API Key (removes 'API KEY REQUIRED' watermark)"}
+          >
+            <Key className="h-3.5 w-3.5" />
+          </Button>
 
           <div className="h-4 w-px bg-border mx-1" />
 
@@ -796,6 +853,105 @@ export const DigitalTwinMapViewer: React.FC<DigitalTwinMapViewerProps> = ({
                 <Check className="h-3.5 w-3.5" />
                 <span>{isSavingLoc ? "Saving..." : "Save Location Coordinates"}</span>
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CARTO API Key Configuration Modal */}
+      {showApiKeyModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Key className="h-5 w-5 text-primary" />
+                <h3 className="font-bold text-base">CARTO Basemaps API Key</h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowApiKeyModal(false)}
+                className="h-8 w-8 p-0"
+              >
+                ✕
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              The <strong>Geo 3D Map</strong> uses CARTO basemaps (<em>Dark Canvas</em> &amp; <em>Voyager</em>). CARTO now requires an API key to remove the <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono">API KEY REQUIRED</code> watermark.
+            </p>
+
+            <div className="bg-muted/40 border border-border/60 rounded-xl p-3 text-xs space-y-1.5 text-muted-foreground">
+              <div className="font-semibold text-foreground flex items-center gap-1.5">
+                <span>Where to get your free key:</span>
+              </div>
+              <p>1. Sign up for a free CARTO account at <a href="https://carto.com/basemaps/" target="_blank" rel="noreferrer" className="text-primary underline hover:text-primary/80 inline-flex items-center gap-0.5">carto.com/basemaps <ExternalLink className="h-3 w-3 inline" /></a> or <a href="https://app.carto.com" target="_blank" rel="noreferrer" className="text-primary underline hover:text-primary/80">app.carto.com</a>.</p>
+              <p>2. In your CARTO Dashboard, go to <strong>Developers &gt; API Keys</strong>.</p>
+              <p>3. Copy your API Key (e.g. <span className="font-mono text-[10px]">default_public</span> or master key) and paste it below.</p>
+              <p className="pt-1 text-[11px] text-foreground/80 font-medium">Tip: You can also use <strong>Satellite</strong> or <strong>OSM (Free)</strong> tabs which require no key at all!</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground block">
+                CARTO API Key
+              </label>
+              <input
+                type="text"
+                value={tempApiKey}
+                onChange={(e) => setTempApiKey(e.target.value)}
+                placeholder="Paste CARTO API key here..."
+                className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
+              {cartoApiKey ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    localStorage.removeItem("carto_api_key");
+                    setCartoApiKey("");
+                    setTempApiKey("");
+                    toast({ title: "CARTO API Key removed" });
+                  }}
+                  className="text-xs text-destructive hover:bg-destructive/10"
+                >
+                  Clear Key
+                </Button>
+              ) : <div />}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowApiKeyModal(false)}
+                  className="text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const trimmed = tempApiKey.trim();
+                    if (trimmed) {
+                      localStorage.setItem("carto_api_key", trimmed);
+                      setCartoApiKey(trimmed);
+                      toast({
+                        title: "CARTO API Key Saved",
+                        description: "Map tiles reloaded with your key. Watermarks removed!",
+                      });
+                    } else {
+                      localStorage.removeItem("carto_api_key");
+                      setCartoApiKey("");
+                    }
+                    setShowApiKeyModal(false);
+                  }}
+                  className="text-xs gap-1"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Save Key
+                </Button>
+              </div>
             </div>
           </div>
         </div>

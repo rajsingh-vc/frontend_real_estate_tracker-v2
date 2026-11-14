@@ -729,19 +729,14 @@ const Timeline = () => {
     <div className="space-y-5 pb-12">
       {/* 1. TOP HEADER (Add Task removed as requested) */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Left: Icon & Title */}
-        <div className="flex items-center gap-3.5">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 shadow-lg shadow-blue-500/25 flex items-center justify-center text-white shrink-0">
-            <Calendar className="w-7 h-7 text-white" />
-          </div>
-          <div>
-            <h1 className="font-display text-2xl md:text-3xl font-black tracking-tight text-slate-900 dark:text-white">
-              Project Timeline
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-normal mt-0.5">
-              Interactive Gantt roadmap with real-time progress and variance tracking
-            </p>
-          </div>
+        {/* Left: Title */}
+        <div>
+          <h1 className="font-display text-2xl md:text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+            Project Timeline
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-normal mt-0.5">
+            Interactive Gantt roadmap with real-time progress and variance tracking
+          </p>
         </div>
 
         {/* Right: Interactive Month Navigation Pill Card */}

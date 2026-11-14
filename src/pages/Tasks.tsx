@@ -29,6 +29,7 @@ import {
   Paperclip, FolderOpen, Camera, SwitchCamera, Download, Loader2,
   FileText, FileSpreadsheet, File as FileIcon, Image as ImageIcon, Send,
   FileDown, Pencil, Check, X, ListTree, Trash2, Eye,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { NewTaskDialog } from "@/components/dialogs/NewTaskDialog";
 import { useToast } from "@/hooks/use-toast";
@@ -912,11 +913,9 @@ function Subtasks({
                     onEditSubTask({ ...st, taskId: task.id });
                   }
                 }}
-                className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border text-sm transition-all group ${
-                  canEditTask ? "cursor-pointer" : ""
-                } ${
-                  isCompleted ? "bg-muted/30 border-muted" : "bg-card hover:bg-muted/40 hover:border-primary/40 shadow-2xs"
-                }`}
+                className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border text-sm transition-all group ${canEditTask ? "cursor-pointer" : ""
+                  } ${isCompleted ? "bg-muted/30 border-muted" : "bg-card hover:bg-muted/40 hover:border-primary/40 shadow-2xs"
+                  }`}
                 title={canEditTask ? "Click to view & edit subtask schedule" : undefined}
               >
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -927,19 +926,16 @@ function Subtasks({
                         toggleMutation.mutate({ subtask: st, completed: !isCompleted });
                       }
                     }}
-                    className={`h-4.5 w-4.5 rounded border flex items-center justify-center transition-colors shrink-0 ${
-                      canEditTask ? "cursor-pointer" : "cursor-default opacity-80"
-                    } ${
-                      isCompleted ? "bg-emerald-500 border-emerald-500 text-white" : "border-border hover:border-primary bg-background"
-                    }`}
+                    className={`h-4.5 w-4.5 rounded border flex items-center justify-center transition-colors shrink-0 ${canEditTask ? "cursor-pointer" : "cursor-default opacity-80"
+                      } ${isCompleted ? "bg-emerald-500 border-emerald-500 text-white" : "border-border hover:border-primary bg-background"
+                      }`}
                   >
                     {isCompleted && <Check className="h-3 w-3 stroke-[3]" />}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p
-                      className={`truncate text-xs sm:text-sm font-medium group-hover:text-primary transition-colors ${
-                        isCompleted ? "line-through text-muted-foreground" : "text-foreground"
-                      }`}
+                      className={`truncate text-xs sm:text-sm font-medium group-hover:text-primary transition-colors ${isCompleted ? "line-through text-muted-foreground" : "text-foreground"
+                        }`}
                     >
                       {st.name}
                     </p>
@@ -1797,9 +1793,8 @@ function TaskRelationsPanel({
         </div>
         <div className="flex items-center gap-2 text-sm p-2.5 rounded-md border bg-muted/30">
           <span className="text-muted-foreground">Delay:</span>
-          <span className={`font-medium ${
-            signedDelay === null ? '' : signedDelay > 0 ? 'text-destructive' : signedDelay < 0 ? 'text-success' : 'text-warning'
-          }`}>
+          <span className={`font-medium ${signedDelay === null ? '' : signedDelay > 0 ? 'text-destructive' : signedDelay < 0 ? 'text-success' : 'text-warning'
+            }`}>
             {signedDelay === null
               ? '—'
               : signedDelay > 0
@@ -1841,11 +1836,10 @@ function TaskRelationsPanel({
             size="sm"
             onClick={handleSave}
             disabled={patchMutation.isPending || (!hasChanges && !justSaved)}
-            className={`h-8 px-4 gap-1.5 font-medium transition-all ${
-              hasChanges
+            className={`h-8 px-4 gap-1.5 font-medium transition-all ${hasChanges
                 ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
                 : "bg-muted text-muted-foreground hover:bg-muted"
-            }`}
+              }`}
           >
             {patchMutation.isPending ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2024,11 +2018,11 @@ export function TaskDetailDialog({
         old?.map((t) =>
           t.id === task.id
             ? {
-                ...t,
-                checklist: (t.checklist ?? []).map((item) =>
-                  item.id === itemId ? { ...item, completed: !item.completed } : item
-                ),
-              }
+              ...t,
+              checklist: (t.checklist ?? []).map((item) =>
+                item.id === itemId ? { ...item, completed: !item.completed } : item
+              ),
+            }
             : t
         )
       );
@@ -2486,9 +2480,8 @@ export function TaskRow({
               <span>{task.phase || "Phase"}</span>
               {assignee && (
                 <span
-                  className={`inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium ${
-                    onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
-                  }`}
+                  className={`inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium ${onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
+                    }`}
                   onClick={(e) => {
                     if (onFilterAssignee) {
                       e.stopPropagation();
@@ -2524,9 +2517,8 @@ export function TaskRow({
             <span>{task.phase || "Phase"}</span>
             {assignee && (
               <span
-                className={`inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium ${
-                  onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
-                }`}
+                className={`inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium ${onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
+                  }`}
                 onClick={(e) => {
                   if (onFilterAssignee) {
                     e.stopPropagation();
@@ -2689,9 +2681,8 @@ function KanbanColumn({
                       </div>
                       {assignee && (
                         <div
-                          className={`inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium mt-0.5 ${
-                            onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
-                          }`}
+                          className={`inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium mt-0.5 ${onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
+                            }`}
                           onClick={(e) => {
                             if (onFilterAssignee) {
                               e.stopPropagation();
@@ -2730,6 +2721,19 @@ function KanbanColumn({
   );
 }
 
+function getPageNumbers(current: number, total: number): (number | "...")[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, "...", total];
+  }
+  if (current >= total - 3) {
+    return [1, "...", total - 4, total - 3, total - 2, total - 1, total];
+  }
+  return [1, "...", current - 1, current, current + 1, "...", total];
+}
+
 const Tasks = () => {
   const { canEdit, user } = useAuth();
   const { toast } = useToast();
@@ -2747,6 +2751,8 @@ const Tasks = () => {
   );
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 10;
 
   const { data: allTasks, isLoading, isError, error } = useQuery({
     queryKey: ["tasks"],
@@ -2971,6 +2977,33 @@ const Tasks = () => {
     return true;
   });
 
+  // Reset pagination when any filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, projectFilter, priorityFilter, assigneeFilter]);
+
+  // If navigated with openTaskId, automatically navigate to the page containing that task
+  useEffect(() => {
+    if (openTaskId && filtered.length > 0) {
+      const taskIndex = filtered.findIndex((t) => t.id === openTaskId);
+      if (taskIndex !== -1) {
+        const targetPage = Math.floor(taskIndex / pageSize) + 1;
+        setCurrentPage(targetPage);
+      }
+    }
+  }, [openTaskId, filtered]);
+
+  const totalTasksCount = filtered.length;
+  const totalPages = Math.ceil(totalTasksCount / pageSize) || 1;
+  const validCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (validCurrentPage - 1) * pageSize;
+  const paginatedTasks = filtered.slice(startIndex, startIndex + pageSize);
+
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
@@ -2980,10 +3013,10 @@ const Tasks = () => {
             {!canEdit
               ? `${filtered.length} task${filtered.length === 1 ? "" : "s"} assigned to you`
               : assigneeFilter !== "all"
-              ? `${filtered.length} task${filtered.length === 1 ? "" : "s"} for selected assignee`
-              : projectFilter === "all"
-              ? `${tasks.length} tasks across all projects`
-              : `${filtered.length} task${filtered.length === 1 ? "" : "s"} in selected project`}
+                ? `${filtered.length} task${filtered.length === 1 ? "" : "s"} for selected assignee`
+                : projectFilter === "all"
+                  ? `${tasks.length} tasks across all projects`
+                  : `${filtered.length} task${filtered.length === 1 ? "" : "s"} in selected project`}
           </p>
         </div>
         {canEdit && <NewTaskDialog onCreated={handleCreated} />}
@@ -3045,9 +3078,9 @@ const Tasks = () => {
           <TabsTrigger value="kanban">Kanban</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="list" className="mt-4">
+        <TabsContent value="list" className="mt-4 space-y-4">
           <div className="space-y-2">
-            {filtered.map((task) => (
+            {paginatedTasks.map((task) => (
               <TaskRow
                 key={task.id}
                 task={task}
@@ -3067,6 +3100,64 @@ const Tasks = () => {
             ))}
           </div>
           {filtered.length === 0 && <p className="text-center text-muted-foreground py-8">No tasks match filters</p>}
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 pb-2 border-t border-border/60">
+              <p className="text-xs text-muted-foreground order-2 sm:order-1">
+                Showing <span className="font-semibold text-foreground">{startIndex + 1}</span> to{" "}
+                <span className="font-semibold text-foreground">
+                  {Math.min(startIndex + pageSize, totalTasksCount)}
+                </span>{" "}
+                of <span className="font-semibold text-foreground">{totalTasksCount}</span> tasks
+              </p>
+
+              <div className="flex items-center gap-1.5 order-1 sm:order-2 flex-wrap justify-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(Math.max(1, validCurrentPage - 1))}
+                  disabled={validCurrentPage <= 1}
+                  className="h-8 px-2.5 text-xs gap-1"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Previous</span>
+                </Button>
+
+                <div className="flex items-center gap-1">
+                  {getPageNumbers(validCurrentPage, totalPages).map((p, idx) =>
+                    p === "..." ? (
+                      <span key={`ellipsis-${idx}`} className="px-1.5 text-xs text-muted-foreground select-none">
+                        ...
+                      </span>
+                    ) : (
+                      <Button
+                        key={p}
+                        variant={p === validCurrentPage ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handlePageChange(Number(p))}
+                        className={`h-8 min-w-[32px] px-2 text-xs ${p === validCurrentPage ? "font-bold shadow-xs pointer-events-none" : "hover:bg-muted"
+                          }`}
+                      >
+                        {p}
+                      </Button>
+                    )
+                  )}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(Math.min(totalPages, validCurrentPage + 1))}
+                  disabled={validCurrentPage >= totalPages}
+                  className="h-8 px-2.5 text-xs gap-1"
+                >
+                  <span className="hidden sm:inline">Next</span>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="kanban" className="mt-4">
