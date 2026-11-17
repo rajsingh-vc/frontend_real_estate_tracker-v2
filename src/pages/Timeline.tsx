@@ -125,140 +125,156 @@ const MONTH_SHORT = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ];
 
-// Canonical baseline milestones matching the target design
-const DEFAULT_TIMELINE_TASKS: ApiTask[] = [
-  {
-    id: 1001,
-    title: "Design Phase",
-    description: "Initial architectural and UX design phase",
-    department: "Structure",
-    assignedHod: null,
-    assignedUsers: [],
-    assignedTo: null,
-    startDate: "2026-10-01",
-    endDate: "2026-10-10",
-    actualStartDate: "2026-10-01",
-    actualEndDate: "2026-10-10",
-    priority: "High",
-    status: "completed",
-    dependencies: [],
-    dependsOn: null,
-    isRepetitive: false,
-    repeatFrequency: null,
-    isSelfTask: false,
-    checklist: [],
-    progress: 100,
-    delayDays: 0,
-    delayReason: "",
-    criticalPath: false,
-    projectId: 1,
-    towerId: null,
-    floorId: null,
-    unitId: null,
-    phase: "Design",
-    comments: [],
-  },
-  {
-    id: 1002,
-    title: "Development",
-    description: "Core structural and technical development",
-    department: "Civil",
-    assignedHod: null,
-    assignedUsers: [],
-    assignedTo: null,
-    startDate: "2026-10-05",
-    endDate: "2026-10-25",
-    actualStartDate: "2026-10-05",
-    actualEndDate: null,
-    priority: "High",
-    status: "in_progress",
-    dependencies: [1001],
-    dependsOn: 1001,
-    isRepetitive: false,
-    repeatFrequency: null,
-    isSelfTask: false,
-    checklist: [],
-    progress: 60,
-    delayDays: 0,
-    delayReason: "",
-    criticalPath: false,
-    projectId: 1,
-    towerId: null,
-    floorId: null,
-    unitId: null,
-    phase: "Development",
-    comments: [],
-  },
-  {
-    id: 1003,
-    title: "Testing",
-    description: "Quality assurance, site inspections and structural certifications",
-    department: "Finishing",
-    assignedHod: null,
-    assignedUsers: [],
-    assignedTo: null,
-    startDate: "2026-10-20",
-    endDate: "2026-10-30",
-    actualStartDate: null,
-    actualEndDate: null,
-    priority: "Urgent",
-    status: "delayed",
-    dependencies: [1002],
-    dependsOn: 1002,
-    isRepetitive: false,
-    repeatFrequency: null,
-    isSelfTask: false,
-    checklist: [],
-    progress: 20,
-    delayDays: 5,
-    delayReason: "Inspection delay",
-    criticalPath: true,
-    projectId: 1,
-    towerId: null,
-    floorId: null,
-    unitId: null,
-    phase: "Testing",
-    comments: [],
-  },
-  {
-    id: 1004,
-    title: "Deployment",
-    description: "Site handoff and operational commissioning",
-    department: "Admin",
-    assignedHod: null,
-    assignedUsers: [],
-    assignedTo: null,
-    startDate: "2026-10-25",
-    endDate: "2026-10-31",
-    actualStartDate: null,
-    actualEndDate: null,
-    priority: "Medium",
-    status: "not_started",
-    dependencies: [1003],
-    dependsOn: 1003,
-    isRepetitive: false,
-    repeatFrequency: null,
-    isSelfTask: false,
-    checklist: [],
-    progress: 0,
-    delayDays: 0,
-    delayReason: "",
-    criticalPath: false,
-    projectId: 1,
-    towerId: null,
-    floorId: null,
-    unitId: null,
-    phase: "Deployment",
-    comments: [],
-  },
-];
+// Canonical baseline milestones matching the target design (dynamically adjusted to given year & month)
+export function getDefaultTimelineTasks(year: number, monthIndex: number): ApiTask[] {
+  const m = String(monthIndex + 1).padStart(2, "0");
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const d10 = String(Math.min(10, daysInMonth)).padStart(2, "0");
+  const d05 = "05";
+  const d20 = String(Math.min(20, daysInMonth)).padStart(2, "0");
+  const d25 = String(Math.min(25, daysInMonth)).padStart(2, "0");
+  const d30 = String(Math.min(30, daysInMonth)).padStart(2, "0");
+  const dEnd = String(daysInMonth).padStart(2, "0");
+
+  return [
+    {
+      id: 1001,
+      title: "Design Phase",
+      description: "Initial architectural and UX design phase",
+      department: "Structure",
+      assignedHod: null,
+      assignedUsers: [],
+      assignedTo: null,
+      startDate: `${year}-${m}-01`,
+      endDate: `${year}-${m}-${d10}`,
+      actualStartDate: `${year}-${m}-01`,
+      actualEndDate: `${year}-${m}-${d10}`,
+      priority: "High",
+      status: "completed",
+      dependencies: [],
+      dependsOn: null,
+      isRepetitive: false,
+      repeatFrequency: null,
+      isSelfTask: false,
+      checklist: [],
+      progress: 100,
+      delayDays: 0,
+      delayReason: "",
+      criticalPath: false,
+      projectId: 1,
+      towerId: null,
+      floorId: null,
+      unitId: null,
+      phase: "Design",
+      comments: [],
+    },
+    {
+      id: 1002,
+      title: "Development",
+      description: "Core structural and technical development",
+      department: "Civil",
+      assignedHod: null,
+      assignedUsers: [],
+      assignedTo: null,
+      startDate: `${year}-${m}-${d05}`,
+      endDate: `${year}-${m}-${d25}`,
+      actualStartDate: `${year}-${m}-${d05}`,
+      actualEndDate: null,
+      priority: "High",
+      status: "in_progress",
+      dependencies: [1001],
+      dependsOn: 1001,
+      isRepetitive: false,
+      repeatFrequency: null,
+      isSelfTask: false,
+      checklist: [],
+      progress: 60,
+      delayDays: 0,
+      delayReason: "",
+      criticalPath: false,
+      projectId: 1,
+      towerId: null,
+      floorId: null,
+      unitId: null,
+      phase: "Development",
+      comments: [],
+    },
+    {
+      id: 1003,
+      title: "Testing",
+      description: "Quality assurance, site inspections and structural certifications",
+      department: "Finishing",
+      assignedHod: null,
+      assignedUsers: [],
+      assignedTo: null,
+      startDate: `${year}-${m}-${d20}`,
+      endDate: `${year}-${m}-${d30}`,
+      actualStartDate: null,
+      actualEndDate: null,
+      priority: "Urgent",
+      status: "delayed",
+      dependencies: [1002],
+      dependsOn: 1002,
+      isRepetitive: false,
+      repeatFrequency: null,
+      isSelfTask: false,
+      checklist: [],
+      progress: 20,
+      delayDays: 5,
+      delayReason: "Inspection delay",
+      criticalPath: true,
+      projectId: 1,
+      towerId: null,
+      floorId: null,
+      unitId: null,
+      phase: "Testing",
+      comments: [],
+    },
+    {
+      id: 1004,
+      title: "Deployment",
+      description: "Site handoff and operational commissioning",
+      department: "Admin",
+      assignedHod: null,
+      assignedUsers: [],
+      assignedTo: null,
+      startDate: `${year}-${m}-${d25}`,
+      endDate: `${year}-${m}-${dEnd}`,
+      actualStartDate: null,
+      actualEndDate: null,
+      priority: "Medium",
+      status: "not_started",
+      dependencies: [1003],
+      dependsOn: 1003,
+      isRepetitive: false,
+      repeatFrequency: null,
+      isSelfTask: false,
+      checklist: [],
+      progress: 0,
+      delayDays: 0,
+      delayReason: "",
+      criticalPath: false,
+      projectId: 1,
+      towerId: null,
+      floorId: null,
+      unitId: null,
+      phase: "Deployment",
+      comments: [],
+    },
+  ];
+}
+
+const DEFAULT_TIMELINE_TASKS: ApiTask[] = getDefaultTimelineTasks(
+  new Date().getFullYear(),
+  new Date().getMonth()
+);
 
 export function isTaskDelayed(task: ApiTask): boolean {
   if (task.status === "completed") return false;
   if (task.status === "delayed") return true;
   if (task.delayDays && task.delayDays > 0) return true;
 
-  const today = new Date(2026, 9, 8); // Oct 8, 2026 reference
+  const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   if (task.endDate) {
@@ -282,7 +298,7 @@ export function getTaskDelayInfo(task: ApiTask) {
   const delayed = isTaskDelayed(task);
   if (!delayed) return { isDelayed: false, daysOverdue: 0, label: "" };
 
-  const today = new Date(2026, 9, 8);
+  const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   let daysOverdue = 0;
@@ -482,9 +498,9 @@ const Timeline = () => {
   const [viewMode, setViewMode] = useState<"gantt" | "timeline" | "list">("gantt");
   const [selectedTask, setSelectedTask] = useState<ApiTask | null>(null);
 
-  // Month & Year state (Default: October 2026, month index 9)
-  const [selectedMonthIndex, setSelectedMonthIndex] = useState(9);
-  const [selectedYear, setSelectedYear] = useState(2026);
+  // Month & Year state (Dynamic: defaults to current real-time month & year)
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(() => new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
 
   const {
     data: projects = [],
@@ -509,6 +525,12 @@ const Timeline = () => {
     [projects]
   );
 
+  // Baseline milestones dynamically matched to the active month & year
+  const defaultTasks = useMemo(
+    () => getDefaultTimelineTasks(selectedYear, selectedMonthIndex),
+    [selectedYear, selectedMonthIndex]
+  );
+
   // Merge canonical baseline tasks with any custom tasks created in database
   const combinedTasks = useMemo(() => {
     const customValid = apiTasks
@@ -520,12 +542,12 @@ const Timeline = () => {
         (t) =>
           t.startDate &&
           t.endDate &&
-          !DEFAULT_TIMELINE_TASKS.some(
+          !defaultTasks.some(
             (d) => d.id === t.id || d.title?.toLowerCase() === t.title?.toLowerCase()
           )
       );
-    return [...DEFAULT_TIMELINE_TASKS, ...customValid];
-  }, [apiTasks]);
+    return [...defaultTasks, ...customValid];
+  }, [apiTasks, defaultTasks]);
 
   // Filter tasks based on search, project and status
   const filteredTasks = useMemo(() => {
@@ -622,8 +644,9 @@ const Timeline = () => {
   };
 
   const handleResetToday = () => {
-    setSelectedMonthIndex(9);
-    setSelectedYear(2026);
+    const now = new Date();
+    setSelectedMonthIndex(now.getMonth());
+    setSelectedYear(now.getFullYear());
   };
 
   // Dynamic month days & range text
@@ -634,13 +657,45 @@ const Timeline = () => {
 
   // 5 Weekly columns for the selected month
   const timelineWeeks = useMemo(() => {
-    const isOct2026 = selectedYear === 2026 && selectedMonthIndex === 9;
+    const now = new Date();
+    const isCurrentMonth = selectedYear === now.getFullYear() && selectedMonthIndex === now.getMonth();
+    const currentDay = now.getDate();
     return [
-      { label: `${currentMonthShort} 1`, sub: "Week 1", dayStart: 1, dayEnd: 7 },
-      { label: `${currentMonthShort} 8`, sub: "Week 2", dayStart: 8, dayEnd: 14, isTodayCol: isOct2026 },
-      { label: `${currentMonthShort} 15`, sub: "Week 3", dayStart: 15, dayEnd: 21 },
-      { label: `${currentMonthShort} 22`, sub: "Week 4", dayStart: 22, dayEnd: 28 },
-      { label: `${currentMonthShort} 29`, sub: "Week 5", dayStart: 29, dayEnd: daysInCurrentMonth },
+      {
+        label: `${currentMonthShort} 1`,
+        sub: "Week 1",
+        dayStart: 1,
+        dayEnd: 7,
+        isTodayCol: isCurrentMonth && currentDay >= 1 && currentDay <= 7,
+      },
+      {
+        label: `${currentMonthShort} 8`,
+        sub: "Week 2",
+        dayStart: 8,
+        dayEnd: 14,
+        isTodayCol: isCurrentMonth && currentDay >= 8 && currentDay <= 14,
+      },
+      {
+        label: `${currentMonthShort} 15`,
+        sub: "Week 3",
+        dayStart: 15,
+        dayEnd: 21,
+        isTodayCol: isCurrentMonth && currentDay >= 15 && currentDay <= 21,
+      },
+      {
+        label: `${currentMonthShort} 22`,
+        sub: "Week 4",
+        dayStart: 22,
+        dayEnd: 28,
+        isTodayCol: isCurrentMonth && currentDay >= 22 && currentDay <= 28,
+      },
+      {
+        label: `${currentMonthShort} 29`,
+        sub: "Week 5",
+        dayStart: 29,
+        dayEnd: daysInCurrentMonth,
+        isTodayCol: isCurrentMonth && currentDay >= 29 && currentDay <= daysInCurrentMonth,
+      },
     ];
   }, [selectedYear, selectedMonthIndex, currentMonthShort, daysInCurrentMonth]);
 
@@ -683,10 +738,15 @@ const Timeline = () => {
     return `M ${x1} ${y1} H ${xRight} V ${yMid} H ${xLeft} V ${y2} H ${x2}`;
   };
 
-  // Coordinates for dependency arrows
-  const coordsTask0 = getTaskBarCoords("2026-10-01", "2026-10-10");
-  const coordsTask1 = getTaskBarCoords("2026-10-05", "2026-10-25");
-  const coordsTask3 = getTaskBarCoords("2026-10-25", "2026-10-31");
+  // Coordinates for dependency arrows (dynamic for selected month)
+  const mStr = String(selectedMonthIndex + 1).padStart(2, "0");
+  const d10Str = String(Math.min(10, daysInCurrentMonth)).padStart(2, "0");
+  const d25Str = String(Math.min(25, daysInCurrentMonth)).padStart(2, "0");
+  const dEndStr = String(daysInCurrentMonth).padStart(2, "0");
+
+  const coordsTask0 = getTaskBarCoords(`${selectedYear}-${mStr}-01`, `${selectedYear}-${mStr}-${d10Str}`);
+  const coordsTask1 = getTaskBarCoords(`${selectedYear}-${mStr}-05`, `${selectedYear}-${mStr}-${d25Str}`);
+  const coordsTask3 = getTaskBarCoords(`${selectedYear}-${mStr}-25`, `${selectedYear}-${mStr}-${dEndStr}`);
 
   const rowHeight = 54;
   const xEnd0 = Math.round(coordsTask0.left + coordsTask0.width);
@@ -700,9 +760,10 @@ const Timeline = () => {
   // Arrow 2: Development (row 1, y=81) -> Deployment (row 3, y=189)
   const arrow2Path = getGanttConnectorPath(xEnd1, 27 + rowHeight, xStart3, 27 + rowHeight * 3, 162);
 
-  // Today marker at Oct 8 (only active when Oct 2026 is selected)
-  const isTodayActive = selectedYear === 2026 && selectedMonthIndex === 9;
-  const todayPositionPx = ((8 - 1 + 0.3) / daysInCurrentMonth) * gridWidth;
+  // Today marker (only active when the current real-time month & year is selected)
+  const now = new Date();
+  const isTodayActive = selectedYear === now.getFullYear() && selectedMonthIndex === now.getMonth();
+  const todayPositionPx = ((now.getDate() - 1 + 0.5) / daysInCurrentMonth) * gridWidth;
 
   if (isLoading) {
     return (
@@ -1177,10 +1238,24 @@ const Timeline = () => {
                   {timelineWeeks.map((week) => (
                     <div
                       key={week.label}
-                      className="flex-1 text-center py-2 px-1 relative border-r border-slate-100 dark:border-border/40"
+                      className={`flex-1 text-center py-2 px-1 relative border-r border-slate-100 dark:border-border/40 ${
+                        week.isTodayCol ? "bg-blue-50/50 dark:bg-blue-950/20" : ""
+                      }`}
                     >
-                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{week.label}</p>
-                      <p className="text-[11px] font-medium text-slate-400">{week.sub}</p>
+                      <p
+                        className={`text-xs font-bold ${
+                          week.isTodayCol ? "text-blue-600 dark:text-blue-400" : "text-slate-800 dark:text-slate-200"
+                        }`}
+                      >
+                        {week.label}
+                      </p>
+                      <p
+                        className={`text-[11px] font-medium ${
+                          week.isTodayCol ? "text-blue-500 font-semibold" : "text-slate-400"
+                        }`}
+                      >
+                        {week.sub}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -1272,7 +1347,9 @@ const Timeline = () => {
                           {timelineWeeks.map((week) => (
                             <div
                               key={week.label}
-                              className="flex-1 border-r border-slate-100 dark:border-border/30 h-full"
+                              className={`flex-1 border-r border-slate-100 dark:border-border/30 h-full ${
+                                week.isTodayCol ? "bg-blue-50/20 dark:bg-blue-950/15" : ""
+                              }`}
                             />
                           ))}
                         </div>
@@ -1352,6 +1429,20 @@ const Timeline = () => {
                         <polygon points="0 1, 7 4, 0 7" fill="#475569" />
                       </marker>
                     </defs>
+
+                    {/* Today indicator vertical line */}
+                    {isTodayActive && (
+                      <line
+                        x1={todayPositionPx}
+                        y1={0}
+                        x2={todayPositionPx}
+                        y2="100%"
+                        stroke="#3b82f6"
+                        strokeWidth="1.8"
+                        strokeDasharray="4 3"
+                        opacity="0.85"
+                      />
+                    )}
 
                     {/* Arrow 1: Static, straight orthogonal connector from Design Phase end directly to Development start */}
                     <path

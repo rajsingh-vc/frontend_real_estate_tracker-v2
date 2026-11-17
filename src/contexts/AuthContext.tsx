@@ -89,8 +89,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [lastLoginError, setLastLoginError] = useState<string | null>(null);
 
   const login = async (username: string, password: string): Promise<boolean> => {
-    console.log("🔐 login() called with:", { username, password });
-
     console.log("🔄 Trying backend login for:", username);
     try {
       const res = await fetch(`${API_BASE_URL}/auth/login/`, {

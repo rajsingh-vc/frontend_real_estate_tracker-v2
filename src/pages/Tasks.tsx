@@ -29,7 +29,7 @@ import {
   Paperclip, FolderOpen, Camera, SwitchCamera, Download, Loader2,
   FileText, FileSpreadsheet, File as FileIcon, Image as ImageIcon, Send,
   FileDown, Pencil, Check, X, ListTree, Trash2, Eye,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, ChevronDown, Building2, ClipboardList, Clock, Activity, Filter,
 } from "lucide-react";
 import { NewTaskDialog } from "@/components/dialogs/NewTaskDialog";
 import { useToast } from "@/hooks/use-toast";
@@ -210,6 +210,108 @@ function initialsOf(name: string): string {
     .map((n) => n[0].toUpperCase())
     .slice(0, 2)
     .join("");
+}
+
+export function isTaskOverdue(task: ApiTaskExt): boolean {
+  if (task.status === "completed") return false;
+  if (task.status === "delayed") return true;
+  if (!task.endDate) return false;
+  const end = new Date(task.endDate);
+  if (Number.isNaN(end.getTime())) return false;
+  end.setHours(23, 59, 59, 999);
+  return end.getTime() < Date.now();
+}
+
+export function isTaskDueToday(task: ApiTaskExt): boolean {
+  if (!task.endDate) return false;
+  const end = new Date(task.endDate);
+  if (Number.isNaN(end.getTime())) return false;
+  const today = new Date();
+  return (
+    end.getFullYear() === today.getFullYear() &&
+    end.getMonth() === today.getMonth() &&
+    end.getDate() === today.getDate()
+  );
+}
+
+export function isTaskDueThisWeek(task: ApiTaskExt): boolean {
+  if (!task.endDate) return false;
+  const end = new Date(task.endDate);
+  if (Number.isNaN(end.getTime())) return false;
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 7);
+  return end.getTime() >= startOfWeek.getTime() && end.getTime() <= endOfWeek.getTime();
+}
+
+export function isTaskDueThisMonth(task: ApiTaskExt): boolean {
+  if (!task.endDate) return false;
+  const end = new Date(task.endDate);
+  if (Number.isNaN(end.getTime())) return false;
+  const now = new Date();
+  return end.getFullYear() === now.getFullYear() && end.getMonth() === now.getMonth();
+}
+
+export function getPriorityBadgeClass(priority?: string): string {
+  switch (priority?.toLowerCase()) {
+    case "high":
+    case "urgent":
+      return "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800";
+    case "low":
+      return "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
+    case "medium":
+    default:
+      return "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800";
+  }
+}
+
+export function getStatusBadgeClass(status?: string): string {
+  switch (status?.toLowerCase()) {
+    case "completed":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800";
+    case "in_progress":
+    case "active":
+      return "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800";
+    case "delayed":
+    case "blocked":
+      return "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800";
+    case "ready":
+    case "review":
+      return "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-800";
+    case "not_started":
+    default:
+      return "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
+  }
+}
+
+export function formatDateRange(
+  startDate?: string | null,
+  endDate?: string | null,
+  durationDays?: number | null
+): string {
+  if (!startDate && !endDate) return "No dates set";
+
+  const formatSingle = (dStr: string) => {
+    try {
+      const d = new Date(dStr);
+      if (Number.isNaN(d.getTime())) return dStr;
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    } catch {
+      return dStr;
+    }
+  };
+
+  const startFormatted = startDate ? formatSingle(startDate) : "—";
+  const endFormatted = endDate ? formatSingle(endDate) : "—";
+  const duration = durationDays ? ` (${durationDays}d)` : "";
+
+  if (startDate && endDate && startFormatted === endFormatted) {
+    return `${startFormatted}${duration}`;
+  }
+  return `${startFormatted} – ${endFormatted}${duration}`;
 }
 
 // ============================================================================
@@ -2434,6 +2536,7 @@ export function TaskRow({
   onEditSubTask,
   allSubTasks = [],
   users = [],
+  projects = [],
   onFilterAssignee,
 }: {
   task: ApiTaskExt;
@@ -2442,143 +2545,279 @@ export function TaskRow({
   onEditSubTask?: (subtask: any) => void;
   allSubTasks?: ApiSubTask[];
   users?: { id: number; name: string; role?: string; department?: string }[];
+  projects?: { id: number; name: string }[];
   onFilterAssignee?: (userId: number) => void;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const { canEdit, user } = useAuth();
   const canEditTask = canEdit || isTaskAssignedToUser(task, user);
   const assignee = users.find((u) => u.id === task.assignedTo || u.id === (task as any).assigned_to);
+  const projectName = projects.find((p) => p.id === task.projectId)?.name;
+
   const linkedChecklistSubtasks = allSubTasks.filter((s) => s.taskId === task.id);
-  const subtasksCount = linkedChecklistSubtasks.length > 0 ? linkedChecklistSubtasks.length : (task.subtasks?.length ?? 0);
-  const subtasksCompleted = linkedChecklistSubtasks.length > 0
-    ? linkedChecklistSubtasks.filter((s) => s.status?.toLowerCase() === "completed" || s.progress === 100).length
-    : (task.subtasks ?? []).filter((s) => s.status === 'completed' || s.progress === 100).length;
+  const directSubtasks = (task.subtasks || []).map((st) => ({
+    id: st.id,
+    name: st.title,
+    title: st.title,
+    status: st.status,
+    progress: st.progress,
+    startDate: st.startDate,
+    endDate: st.endDate,
+    priority: st.priority,
+    isChecklistSubTask: false,
+    taskId: task.id,
+  }));
+  const checklistItemsConverted = linkedChecklistSubtasks.map((st) => ({
+    id: st.id,
+    name: st.name,
+    title: st.name,
+    status: st.status,
+    progress: st.progress,
+    startDate: st.startDate,
+    endDate: st.endDate,
+    priority: "medium",
+    isChecklistSubTask: true,
+    taskId: task.id,
+  }));
+  const childSubtasks = checklistItemsConverted.length > 0 ? checklistItemsConverted : directSubtasks;
+  const subtasksCount = childSubtasks.length;
+  const subtasksCompleted = childSubtasks.filter(
+    (s) => s.status?.toLowerCase() === "completed" || s.progress === 100
+  ).length;
+
+  const overdue = isTaskOverdue(task);
 
   return (
     <Dialog defaultOpen={openOnMount}>
-      <DialogTrigger asChild>
-        <div className="flex flex-col sm:grid sm:grid-cols-[auto,1fr,auto,auto,auto] items-start sm:items-center gap-2.5 sm:gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors group">
-          {/* Status dot + Mobile Title */}
-          <div className="flex items-center gap-2.5 w-full sm:w-auto min-w-0">
-            <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${displayStatusDot(task.status)}`} />
-            <div className="min-w-0 flex-1 sm:hidden">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{task.title}</p>
-                {task.criticalPath && <Badge variant="destructive" className="text-[9px] px-1 py-0">CP</Badge>}
-              </div>
-            </div>
-          </div>
-
-          {/* Desktop Title + sub-info */}
-          <div className="hidden sm:block min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{task.title}</p>
-              {task.criticalPath && <Badge variant="destructive" className="text-[9px] px-1 py-0">CP</Badge>}
-            </div>
-            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
-              <span>{task.department || "General"}</span>
-              <span>·</span>
-              <span>{task.phase || "Phase"}</span>
-              {assignee && (
-                <span
-                  className={`inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium ${onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
-                    }`}
-                  onClick={(e) => {
-                    if (onFilterAssignee) {
+      <div
+        className={`group relative rounded-xl border transition-all duration-150 bg-card hover:shadow-xs hover:border-primary/40 ${
+          overdue
+            ? "border-border/70 border-l-4 border-l-rose-500 hover:border-l-rose-500"
+            : "border-border/70 border-l-4 border-l-transparent"
+        }`}
+      >
+        <DialogTrigger asChild>
+          <div className="p-3 sm:px-4 cursor-pointer space-y-2">
+            {/* Top Row: Chevron + Status Dot + Code + Title + CP / Overdue badges, with Priority, Status, Progress, Assignee, Actions on Right */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 min-w-0">
+              {/* Left group */}
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {subtasksCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
                       e.stopPropagation();
-                      onFilterAssignee(assignee.id);
-                    }
-                  }}
-                  title={onFilterAssignee ? `Filter tasks assigned to ${assignee.name}` : undefined}
-                >
-                  <UserPlus className="h-3 w-3 shrink-0" />
-                  <span>{toTitleCase(assignee.name)}</span>
+                      setIsExpanded(!isExpanded);
+                    }}
+                    className="h-6 w-6 rounded-md hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                    title={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
+                  >
+                    <ChevronRight
+                      className={`h-4 w-4 transition-transform duration-200 ${
+                        isExpanded ? "rotate-90 text-primary" : ""
+                      }`}
+                    />
+                  </button>
+                ) : (
+                  <div className="w-6 flex items-center justify-center shrink-0">
+                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+                  </div>
+                )}
+
+                <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${displayStatusDot(task.status)}`} />
+
+                <span className="font-mono text-xs font-semibold text-muted-foreground shrink-0">
+                  {task.wbsCode || `TSK-${String(task.id).padStart(3, "0")}`}
                 </span>
-              )}
-              {(task.startDate || task.endDate) && (
-                <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
-                  <CalendarDays className="h-3 w-3" />
-                  {task.startDate || "—"} to {task.endDate || "—"}
-                  {task.durationDays ? ` (${task.durationDays}d)` : ""}
-                </span>
-              )}
-              {subtasksCount > 0 && (
-                <span className="inline-flex items-center gap-1 text-[11px] bg-muted/80 text-foreground px-1.5 py-0.5 rounded font-medium">
-                  <ListTree className="h-3 w-3 text-primary" />
-                  {subtasksCompleted}/{subtasksCount} subtasks
-                </span>
-              )}
-            </div>
-          </div>
 
-          {/* Mobile sub-info */}
-          <div className="sm:hidden flex flex-wrap items-center gap-2 text-xs text-muted-foreground w-full">
-            <span>{task.department || "General"}</span>
-            <span>·</span>
-            <span>{task.phase || "Phase"}</span>
-            {assignee && (
-              <span
-                className={`inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium ${onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
-                  }`}
-                onClick={(e) => {
-                  if (onFilterAssignee) {
-                    e.stopPropagation();
-                    onFilterAssignee(assignee.id);
-                  }
-                }}
-                title={onFilterAssignee ? `Filter tasks assigned to ${assignee.name}` : undefined}
-              >
-                <UserPlus className="h-3 w-3 shrink-0" />
-                <span>{toTitleCase(assignee.name)}</span>
-              </span>
-            )}
-            {(task.startDate || task.endDate) && (
-              <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
-                <CalendarDays className="h-3 w-3" />
-                {task.startDate || "—"} to {task.endDate || "—"}
-                {task.durationDays ? ` (${task.durationDays}d)` : ""}
-              </span>
-            )}
-            {subtasksCount > 0 && (
-              <span className="inline-flex items-center gap-1 text-[11px] bg-muted/80 text-foreground px-1.5 py-0.5 rounded font-medium">
-                <ListTree className="h-3 w-3 text-primary" />
-                {subtasksCompleted}/{subtasksCount} subtasks
-              </span>
-            )}
-          </div>
+                <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors truncate">
+                  {task.title}
+                </p>
 
-          {/* Priority & Status badges + Progress + Edit Button */}
-          <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto mt-1 sm:mt-0 flex-wrap">
-            <Badge className={`${priorityColors[task.priority as Priority]} text-[10px] whitespace-nowrap`}>
-              {task.priority}
-            </Badge>
-
-            <Badge className={`${displayStatusColor(task.status)} text-[10px] whitespace-nowrap`}>
-              {displayStatusLabel(task.status)}
-            </Badge>
-
-            <div className="flex items-center gap-2 w-28 ml-auto sm:ml-0">
-              <Progress value={task.progress} className="h-1.5 flex-1" />
-              <span className="text-xs font-medium w-8 text-right">{task.progress}%</span>
-            </div>
-
-            {canEditTask && onEditTask && (
-              <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                  onClick={() => onEditTask(task)}
-                  title="Edit Task Schedule & Details"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {task.criticalPath && (
+                    <Badge
+                      variant="destructive"
+                      className="text-[10px] font-bold px-1.5 py-0 h-4 bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                    >
+                      CP
+                    </Badge>
+                  )}
+                  {overdue && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-500/15 border border-rose-500/30 px-1.5 py-0 rounded">
+                      Overdue
+                    </span>
+                  )}
+                </div>
               </div>
-            )}
+
+              {/* Right group */}
+              <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+                <span
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border whitespace-nowrap capitalize ${getPriorityBadgeClass(
+                    task.priority
+                  )}`}
+                >
+                  {task.priority || "Medium"}
+                </span>
+
+                <span
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap border ${getStatusBadgeClass(
+                    task.status
+                  )}`}
+                >
+                  {displayStatusLabel(task.status)}
+                </span>
+
+                <div className="flex items-center gap-1.5 w-20 sm:w-24">
+                  <Progress value={task.progress} className="h-1.5 flex-1" />
+                  <span className="text-xs font-semibold tabular-nums w-8 text-right text-foreground">
+                    {task.progress}%
+                  </span>
+                </div>
+
+                {assignee ? (
+                  <button
+                    type="button"
+                    className={`h-7 w-7 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center ring-1 ring-primary/25 hover:ring-primary transition-all shrink-0 ${
+                      onFilterAssignee ? "cursor-pointer" : ""
+                    }`}
+                    onClick={(e) => {
+                      if (onFilterAssignee) {
+                        e.stopPropagation();
+                        onFilterAssignee(assignee.id);
+                      }
+                    }}
+                    title={
+                      assignee
+                        ? `${toTitleCase(assignee.name)}${assignee.role ? ` (${assignee.role})` : ""} - Click to filter`
+                        : undefined
+                    }
+                  >
+                    {initialsOf(assignee.name)}
+                  </button>
+                ) : (
+                  <div
+                    className="h-7 w-7 rounded-full border border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground/40 shrink-0"
+                    title="Unassigned"
+                  >
+                    <UserPlus className="h-3 w-3" />
+                  </div>
+                )}
+
+                {canEditTask && onEditTask && (
+                  <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted"
+                      onClick={() => onEditTask(task)}
+                      title="Edit Task Schedule & Details"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Row: Metadata cleanly indented under the title */}
+            <div className="flex items-center gap-2.5 text-xs text-muted-foreground pl-8 sm:pl-9 flex-wrap">
+              {projectName && (
+                <span className="inline-flex items-center gap-1 font-medium text-foreground bg-muted/60 px-2 py-0.5 rounded-md text-[11px]">
+                  <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span>{projectName}</span>
+                </span>
+              )}
+              {(task.department || task.phase) && (
+                <span className="text-[11px] text-muted-foreground font-medium">
+                  {[task.department, task.phase].filter(Boolean).join(" · ")}
+                </span>
+              )}
+              <span className="text-muted-foreground/40">·</span>
+              <span
+                className={`inline-flex items-center gap-1 text-[11px] font-medium ${
+                  overdue ? "text-rose-600 dark:text-rose-400 font-semibold" : "text-muted-foreground"
+                }`}
+              >
+                <CalendarDays className="h-3 w-3 shrink-0" />
+                {formatDateRange(task.startDate, task.endDate, task.durationDays)}
+              </span>
+              {subtasksCount > 0 && (
+                <>
+                  <span className="text-muted-foreground/40">·</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsExpanded(!isExpanded);
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary hover:bg-primary/20 px-2 py-0.5 rounded-md font-medium transition-colors"
+                    title="Click to view subtasks"
+                  >
+                    <ListTree className="h-3 w-3 shrink-0" />
+                    {subtasksCompleted}/{subtasksCount} subtasks
+                  </button>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      </DialogTrigger>
-      <TaskDetailDialog task={task} onEditTask={onEditTask} onEditSubTask={onEditSubTask} />
+        </DialogTrigger>
+
+        {/* Subtasks Accordion Dropdown */}
+        {isExpanded && subtasksCount > 0 && (
+          <div className="px-4 pb-3 pt-1 border-t border-border/50 bg-muted/20 rounded-b-xl">
+            <div className="ml-3 sm:ml-6 pl-3 sm:pl-4 border-l-2 border-primary/30 space-y-1.5 pt-2">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                <span>Subtasks ({subtasksCompleted}/{subtasksCount} Completed)</span>
+              </div>
+              {childSubtasks.map((st) => (
+                <div
+                  key={st.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 rounded-lg bg-card/80 hover:bg-card border border-border/60 text-xs transition-colors"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary/70 shrink-0" />
+                    <span className="font-medium text-foreground truncate">{st.name || st.title}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0 flex-wrap">
+                    {(st.startDate || st.endDate) && (
+                      <span className="font-mono text-[11px] text-muted-foreground">
+                        {st.startDate || "—"} to {st.endDate || "—"}
+                      </span>
+                    )}
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border capitalize ${getStatusBadgeClass(st.status)}`}>
+                      {st.status?.replace(/[_-]/g, " ") || "Pending"}
+                    </span>
+                    <div className="flex items-center gap-1.5 w-20">
+                      <Progress value={st.progress ?? 0} className="h-1 flex-1" />
+                      <span className="font-mono text-[10px] w-7 text-right text-muted-foreground">{st.progress ?? 0}%</span>
+                    </div>
+                    {canEditTask && onEditSubTask && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditSubTask(st);
+                        }}
+                        title="Edit Subtask"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <TaskDetailDialog task={task} onEditTask={onEditTask} onEditSubTask={onEditSubTask} />
+      </div>
     </Dialog>
   );
 }
@@ -2591,6 +2830,7 @@ function KanbanColumn({
   onEditSubTask,
   allSubTasks = [],
   users = [],
+  projects = [],
   onFilterAssignee,
 }: {
   status: string;
@@ -2600,6 +2840,7 @@ function KanbanColumn({
   onEditSubTask?: (subtask: any) => void;
   allSubTasks?: ApiSubTask[];
   users?: { id: number; name: string; role?: string; department?: string }[];
+  projects?: { id: number; name: string }[];
   onFilterAssignee?: (userId: number) => void;
 }) {
   const { canEdit, user } = useAuth();
@@ -2607,115 +2848,200 @@ function KanbanColumn({
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    e.currentTarget.classList.add('ring-2', 'ring-primary/50');
+    e.currentTarget.classList.add("ring-2", "ring-primary/50", "bg-primary/5");
   };
-  const handleDragLeave = (e: React.DragEvent) => { e.currentTarget.classList.remove('ring-2', 'ring-primary/50'); };
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.currentTarget.classList.remove("ring-2", "ring-primary/50", "bg-primary/5");
+  };
   const handleDropEvent = (e: React.DragEvent) => {
     e.preventDefault();
-    e.currentTarget.classList.remove('ring-2', 'ring-primary/50');
-    const taskId = e.dataTransfer.getData('taskId');
+    e.currentTarget.classList.remove("ring-2", "ring-primary/50", "bg-primary/5");
+    const taskId = e.dataTransfer.getData("taskId");
     if (taskId) onDrop(Number(taskId), status);
   };
 
   return (
-    <div className="min-w-[280px] flex-shrink-0 rounded-lg p-2 bg-muted/30 transition-colors" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDropEvent}>
+    <div
+      className="min-w-[300px] max-w-[320px] flex-shrink-0 rounded-xl p-3 bg-muted/40 dark:bg-muted/20 border border-border/70 flex flex-col transition-colors"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDropEvent}
+    >
+      {/* Column Header */}
       <div className="flex items-center gap-2 mb-3 px-1">
         <div className={`h-2.5 w-2.5 rounded-full ${statusDot}`} />
-        <h3 className="font-medium text-sm">{displayStatusLabel(status)}</h3>
-        <Badge variant="secondary" className="text-xs ml-auto">{columnTasks.length}</Badge>
+        <h3 className="font-semibold text-xs tracking-wider uppercase text-foreground">
+          {displayStatusLabel(status)}
+        </h3>
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-background border border-border/60 text-muted-foreground ml-auto">
+          {columnTasks.length}
+        </span>
       </div>
-      <div className="space-y-2">
-        {columnTasks.map((task) => {
-          const canEditTask = canEdit || isTaskAssignedToUser(task, user);
-          const assignee = users.find((u) => u.id === task.assignedTo || u.id === (task as any).assigned_to);
-          const linkedChecklistSubtasks = allSubTasks.filter((s) => s.taskId === task.id);
-          const subtasksCount = linkedChecklistSubtasks.length > 0 ? linkedChecklistSubtasks.length : (task.subtasks?.length ?? 0);
-          const subtasksCompleted = linkedChecklistSubtasks.length > 0
-            ? linkedChecklistSubtasks.filter((s) => s.status?.toLowerCase() === "completed" || s.progress === 100).length
-            : (task.subtasks ?? []).filter((s) => s.status === 'completed' || s.progress === 100).length;
 
-          return (
-            <div
-              key={task.id}
-              draggable={canEditTask}
-              onDragStart={(e) => {
-                if (canEditTask) {
-                  e.dataTransfer.setData('taskId', String(task.id));
-                  e.dataTransfer.effectAllowed = 'move';
-                }
-              }}
-            >
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Card className={`${canEditTask ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} hover:shadow-md transition-shadow group`}>
-                    <CardContent className="p-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1">
-                          {canEditTask && <GripVertical className="h-3 w-3 text-muted-foreground" />}
-                          <Badge className={`${priorityColors[task.priority as Priority]} text-[9px]`}>{task.priority}</Badge>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {task.criticalPath && <Badge variant="destructive" className="text-[9px]">CP</Badge>}
-                          {canEditTask && onEditTask && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-muted-foreground group-hover:text-foreground"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onEditTask(task);
-                              }}
-                              title="Edit Task"
+      {/* Column Task Cards */}
+      <div className="space-y-2.5 overflow-y-auto max-h-[calc(100vh-320px)] pr-0.5 flex-1">
+        {columnTasks.length === 0 ? (
+          <div className="p-4 rounded-xl border border-dashed border-border/60 text-center text-xs text-muted-foreground/70">
+            No tasks in {displayStatusLabel(status)}
+          </div>
+        ) : (
+          columnTasks.map((task) => {
+            const canEditTask = canEdit || isTaskAssignedToUser(task, user);
+            const assignee = users.find((u) => u.id === task.assignedTo || u.id === (task as any).assigned_to);
+            const projectName = projects.find((p) => p.id === task.projectId)?.name;
+            const linkedChecklistSubtasks = allSubTasks.filter((s) => s.taskId === task.id);
+            const subtasksCount =
+              linkedChecklistSubtasks.length > 0
+                ? linkedChecklistSubtasks.length
+                : (task.subtasks?.length ?? 0);
+            const subtasksCompleted =
+              linkedChecklistSubtasks.length > 0
+                ? linkedChecklistSubtasks.filter(
+                    (s) => s.status?.toLowerCase() === "completed" || s.progress === 100
+                  ).length
+                : (task.subtasks ?? []).filter((s) => s.status === "completed" || s.progress === 100).length;
+
+            const overdue = isTaskOverdue(task);
+
+            return (
+              <div
+                key={task.id}
+                draggable={canEditTask}
+                onDragStart={(e) => {
+                  if (canEditTask) {
+                    e.dataTransfer.setData("taskId", String(task.id));
+                    e.dataTransfer.effectAllowed = "move";
+                  }
+                }}
+              >
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <div
+                      className={`p-3.5 rounded-xl border bg-card text-card-foreground shadow-xs transition-all duration-200 hover:shadow-md hover:border-primary/40 group ${
+                        canEditTask ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+                      } ${overdue ? "border-rose-300/60 dark:border-rose-900/40 bg-rose-500/[0.02]" : "border-border/70"}`}
+                    >
+                      {/* Top: Priority + CP + Overdue + Drag handle + Pencil */}
+                      <div className="flex items-center justify-between gap-1 mb-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {canEditTask && <GripVertical className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />}
+                          <span
+                            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border capitalize ${getPriorityBadgeClass(
+                              task.priority
+                            )}`}
+                          >
+                            {task.priority || "Medium"}
+                          </span>
+                          {task.criticalPath && (
+                            <Badge
+                              variant="destructive"
+                              className="text-[9px] font-bold px-1 py-0 h-4 bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
                             >
-                              <Pencil className="h-3 w-3" />
-                            </Button>
+                              CP
+                            </Badge>
+                          )}
+                          {overdue && (
+                            <span className="text-[9px] font-bold text-rose-600 dark:text-rose-400 bg-rose-500/15 border border-rose-500/30 px-1 py-0.5 rounded">
+                              Overdue
+                            </span>
                           )}
                         </div>
-                      </div>
-                      <p className="text-sm font-medium group-hover:text-primary transition-colors">{task.title}</p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                        <span>{task.department || "General"}</span>
-                        <span>·</span>
-                        <span>{task.phase || "Phase"}</span>
-                      </div>
-                      {assignee && (
-                        <div
-                          className={`inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium mt-0.5 ${onFilterAssignee ? "cursor-pointer hover:bg-primary/20 transition-colors" : ""
-                            }`}
-                          onClick={(e) => {
-                            if (onFilterAssignee) {
+                        {canEditTask && onEditTask && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-foreground opacity-60 group-hover:opacity-100"
+                            onClick={(e) => {
                               e.stopPropagation();
-                              onFilterAssignee(assignee.id);
+                              onEditTask(task);
+                            }}
+                            title="Edit Task"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+
+                      {/* Task Title */}
+                      <h4 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-2 mb-1.5">
+                        {task.title}
+                      </h4>
+
+                      {/* Project & Category */}
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2 flex-wrap">
+                        {projectName && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground bg-muted/60 px-1.5 py-0.5 rounded">
+                            <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                            <span className="truncate max-w-[120px]">{projectName}</span>
+                          </span>
+                        )}
+                        {(task.department || task.phase) && (
+                          <span className="text-[11px] text-muted-foreground truncate max-w-[120px]">
+                            {[task.department, task.phase].filter(Boolean).join(" · ")}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Dates & Subtasks */}
+                      <div className="flex items-center justify-between gap-1 text-xs text-muted-foreground mb-2 flex-wrap">
+                        {(task.startDate || task.endDate) && (
+                          <span
+                            className={`inline-flex items-center gap-1 font-mono text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                              overdue
+                                ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 font-semibold"
+                                : "bg-muted/50 text-muted-foreground"
+                            }`}
+                          >
+                            <CalendarDays className="h-2.5 w-2.5 shrink-0" />
+                            {task.endDate || task.startDate}
+                          </span>
+                        )}
+                        {subtasksCount > 0 && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                            <ListTree className="h-2.5 w-2.5 shrink-0" />
+                            {subtasksCompleted}/{subtasksCount}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Bottom: Progress Bar & Assignee */}
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/50">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <Progress value={task.progress} className="h-1.5 flex-1" />
+                          <span className="text-[11px] font-semibold tabular-nums text-foreground">
+                            {task.progress}%
+                          </span>
+                        </div>
+                        {assignee && (
+                          <div
+                            className={`h-6 w-6 rounded-full bg-primary/15 text-primary text-[10px] font-bold flex items-center justify-center ring-1 ring-primary/20 shrink-0 ${
+                              onFilterAssignee ? "cursor-pointer hover:ring-primary" : ""
+                            }`}
+                            onClick={(e) => {
+                              if (onFilterAssignee) {
+                                e.stopPropagation();
+                                onFilterAssignee(assignee.id);
+                              }
+                            }}
+                            title={
+                              assignee
+                                ? `${toTitleCase(assignee.name)}${assignee.role ? ` (${assignee.role})` : ""}`
+                                : undefined
                             }
-                          }}
-                          title={onFilterAssignee ? `Filter tasks assigned to ${assignee.name}` : undefined}
-                        >
-                          <UserPlus className="h-2.5 w-2.5 shrink-0" />
-                          <span className="truncate max-w-[120px]">{toTitleCase(assignee.name)}</span>
-                        </div>
-                      )}
-                      {(task.startDate || task.endDate) && (
-                        <div className="inline-flex items-center gap-1 font-mono text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
-                          <CalendarDays className="h-2.5 w-2.5" />
-                          {task.startDate || "—"} to {task.endDate || "—"}
-                        </div>
-                      )}
-                      {subtasksCount > 0 && (
-                        <div className="flex items-center gap-1 text-[11px] text-primary font-medium">
-                          <ListTree className="h-3 w-3" />
-                          <span>{subtasksCompleted}/{subtasksCount} subtasks</span>
-                        </div>
-                      )}
-                      <Progress value={task.progress} className="h-1" />
-                    </CardContent>
-                  </Card>
-                </DialogTrigger>
-                <TaskDetailDialog task={task} onEditTask={onEditTask} onEditSubTask={onEditSubTask} />
-              </Dialog>
-            </div>
-          );
-        })}
+                          >
+                            {initialsOf(assignee.name)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </DialogTrigger>
+                  <TaskDetailDialog task={task} onEditTask={onEditTask} onEditSubTask={onEditSubTask} />
+                </Dialog>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
@@ -2739,22 +3065,25 @@ const Tasks = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const location = useLocation();
-  // Set when arriving here from the top search bar (search result → this
-  // page), so the matching task's detail dialog opens automatically.
+
   const openTaskId = (location.state as { openTaskId?: number } | null)?.openTaskId;
   const incomingStatusFilter = (location.state as { statusFilter?: string } | null)?.statusFilter;
-  const incomingProjectFilter = (location.state as { projectId?: number | string; projectFilter?: string } | null);
+  const incomingProjectFilter = location.state as { projectId?: number | string; projectFilter?: string } | null;
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(incomingStatusFilter ?? "all");
   const [projectFilter, setProjectFilter] = useState<string>(
-    incomingProjectFilter?.projectFilter ?? (incomingProjectFilter?.projectId ? String(incomingProjectFilter.projectId) : "all")
+    incomingProjectFilter?.projectFilter ??
+      (incomingProjectFilter?.projectId ? String(incomingProjectFilter.projectId) : "all")
   );
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [dueDateFilter, setDueDateFilter] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<string>("list");
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 10;
 
-  const { data: allTasks, isLoading, isError, error } = useQuery({
+  const { data: allTasks, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["tasks"],
     queryFn: tasksApi.list,
   });
@@ -2857,7 +3186,6 @@ const Tasks = () => {
       data: values,
     });
 
-    // If subtask dates were changed, check if parent task schedule bounds are affected
     if (currentTaskId && (values.startDate || values.endDate)) {
       if (parentTask) {
         const otherSubTasks = allSubTasks.filter(
@@ -2886,8 +3214,6 @@ const Tasks = () => {
     }
   };
 
-  // dragging a card to a new Kanban column also updates progress to match,
-  // with an instant optimistic update.
   const dropMutation = useMutation({
     mutationFn: ({ id, status, progress }: { id: number; status: string; progress: number }) => {
       const task = (allTasks ?? []).find((t) => t.id === id);
@@ -2932,57 +3258,72 @@ const Tasks = () => {
     queryClient.invalidateQueries({ queryKey: ["tasks"] });
   };
 
-  if (isLoading) {
-    return <p className="text-center text-muted-foreground py-16">Loading tasks…</p>;
-  }
+  // ── HOOKS DECLARED UNCONDITIONALLY AT TOP LEVEL ──
+  const tasks = useMemo(() => (allTasks ?? []) as ApiTaskExt[], [allTasks]);
 
-  if (isError) {
-    return (
-      <p className="text-center text-destructive py-16">
-        Couldn't load tasks{error instanceof ApiError ? `: ${error.message}` : ""}. Is the backend running?
-      </p>
-    );
-  }
-
-  const tasks = (allTasks ?? []) as ApiTaskExt[];
-
-  // Show all tasks linked to the project (do not hide tasks with parentId)
-  const filtered = tasks.filter((t) => {
-    // If not admin, only show tasks assigned to this user
-    if (!canEdit && !isTaskAssignedToUser(t, user)) return false;
-
-    if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
-    if (statusFilter !== "all" && t.status !== statusFilter) return false;
-    if (projectFilter !== "all" && String(t.projectId) !== String(projectFilter)) return false;
-    if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
-
-    // Admin assignee filter
-    if (canEdit && assigneeFilter !== "all") {
-      if (assigneeFilter === "unassigned") {
-        const hasAssignee =
-          t.assignedTo != null ||
-          (t.assignedUsers && t.assignedUsers.length > 0) ||
-          (t as any).assigned_to != null;
-        if (hasAssignee) return false;
-      } else {
-        const uid = Number(assigneeFilter);
-        const matches =
-          (t.assignedTo != null && Number(t.assignedTo) === uid) ||
-          ((t as any).assigned_to != null && Number((t as any).assigned_to) === uid) ||
-          (t.assignedUsers && Array.isArray(t.assignedUsers) && t.assignedUsers.map(Number).includes(uid)) ||
-          (t.assignedHod != null && Number(t.assignedHod) === uid);
-        if (!matches) return false;
-      }
+  const accessibleTasks = useMemo(() => {
+    if (!canEdit) {
+      return tasks.filter((t) => isTaskAssignedToUser(t, user));
     }
-    return true;
-  });
+    return tasks;
+  }, [tasks, canEdit, user]);
 
-  // Reset pagination when any filter changes
+  const kpis = useMemo(() => {
+    const base =
+      projectFilter !== "all"
+        ? accessibleTasks.filter((t) => String(t.projectId) === String(projectFilter))
+        : accessibleTasks;
+
+    const total = base.length;
+    const notStarted = base.filter((t) => t.status === "not_started").length;
+    const inProgress = base.filter(
+      (t) => t.status === "in_progress" || t.status === "ready" || t.status === "review"
+    ).length;
+    const completed = base.filter((t) => t.status === "completed").length;
+    const overdue = base.filter((t) => isTaskOverdue(t)).length;
+
+    return { total, notStarted, inProgress, completed, overdue };
+  }, [accessibleTasks, projectFilter]);
+
+  const filtered = useMemo(() => {
+    return tasks.filter((t) => {
+      if (!canEdit && !isTaskAssignedToUser(t, user)) return false;
+
+      if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
+      if (statusFilter !== "all" && t.status !== statusFilter) return false;
+      if (projectFilter !== "all" && String(t.projectId) !== String(projectFilter)) return false;
+      if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
+
+      if (dueDateFilter === "overdue" && !isTaskOverdue(t)) return false;
+      if (dueDateFilter === "today" && !isTaskDueToday(t)) return false;
+      if (dueDateFilter === "this_week" && !isTaskDueThisWeek(t)) return false;
+      if (dueDateFilter === "this_month" && !isTaskDueThisMonth(t)) return false;
+
+      if (canEdit && assigneeFilter !== "all") {
+        if (assigneeFilter === "unassigned") {
+          const hasAssignee =
+            t.assignedTo != null ||
+            (t.assignedUsers && t.assignedUsers.length > 0) ||
+            (t as any).assigned_to != null;
+          if (hasAssignee) return false;
+        } else {
+          const uid = Number(assigneeFilter);
+          const matches =
+            (t.assignedTo != null && Number(t.assignedTo) === uid) ||
+            ((t as any).assigned_to != null && Number((t as any).assigned_to) === uid) ||
+            (t.assignedUsers && Array.isArray(t.assignedUsers) && t.assignedUsers.map(Number).includes(uid)) ||
+            (t.assignedHod != null && Number(t.assignedHod) === uid);
+          if (!matches) return false;
+        }
+      }
+      return true;
+    });
+  }, [tasks, canEdit, user, search, statusFilter, projectFilter, priorityFilter, dueDateFilter, assigneeFilter]);
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter, projectFilter, priorityFilter, assigneeFilter]);
+  }, [search, statusFilter, projectFilter, priorityFilter, assigneeFilter, dueDateFilter]);
 
-  // If navigated with openTaskId, automatically navigate to the page containing that task
   useEffect(() => {
     if (openTaskId && filtered.length > 0) {
       const taskIndex = filtered.findIndex((t) => t.id === openTaskId);
@@ -3004,102 +3345,436 @@ const Tasks = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const hasActiveFilters = Boolean(
+    search ||
+      statusFilter !== "all" ||
+      projectFilter !== "all" ||
+      priorityFilter !== "all" ||
+      assigneeFilter !== "all" ||
+      dueDateFilter !== "all"
+  );
+
+  const handleClearFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setProjectFilter("all");
+    setPriorityFilter("all");
+    setAssigneeFilter("all");
+    setDueDateFilter("all");
+  };
+
+  const handleKpiClick = (type: "total" | "not_started" | "in_progress" | "completed" | "overdue") => {
+    if (type === "total") {
+      setStatusFilter("all");
+      setDueDateFilter("all");
+    } else if (type === "not_started") {
+      setStatusFilter("not_started");
+      setDueDateFilter("all");
+    } else if (type === "in_progress") {
+      setStatusFilter("in_progress");
+      setDueDateFilter("all");
+    } else if (type === "completed") {
+      setStatusFilter("completed");
+      setDueDateFilter("all");
+    } else if (type === "overdue") {
+      setDueDateFilter("overdue");
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+    <div className="space-y-6 pt-1">
+      {/* ── 1. PAGE HEADER ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
         <div>
-          <h1 className="font-display text-2xl md:text-3xl font-bold">Execution Tasks</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {!canEdit
-              ? `${filtered.length} task${filtered.length === 1 ? "" : "s"} assigned to you`
-              : assigneeFilter !== "all"
-                ? `${filtered.length} task${filtered.length === 1 ? "" : "s"} for selected assignee`
-                : projectFilter === "all"
-                  ? `${tasks.length} tasks across all projects`
-                  : `${filtered.length} task${filtered.length === 1 ? "" : "s"} in selected project`}
+          <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+            Execution Tasks
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage, track and monitor tasks across your projects.
           </p>
         </div>
-        {canEdit && <NewTaskDialog onCreated={handleCreated} />}
+        <div className="flex items-center gap-3 shrink-0">
+          {canEdit && <NewTaskDialog onCreated={handleCreated} />}
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-        <div className="relative w-full sm:flex-1 sm:min-w-[180px] sm:max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search tasks..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 w-full" />
+      {/* ── 2. COMPACT KPI SUMMARY CARDS ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {/* Total Tasks */}
+        <div
+          onClick={() => handleKpiClick("total")}
+          className={`p-3.5 rounded-xl border bg-card hover:bg-card/90 transition-all cursor-pointer shadow-xs ${
+            statusFilter === "all" && dueDateFilter === "all"
+              ? "border-primary/50 ring-1 ring-primary/30"
+              : "border-border/70 hover:border-border"
+          }`}
+        >
+          <div className="flex items-center justify-between text-muted-foreground mb-1.5">
+            <span className="text-xs font-medium">Total Tasks</span>
+            <div className="h-7 w-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <ClipboardList className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-foreground tabular-nums">
+            {kpis.total}
+          </div>
         </div>
-        <Select value={projectFilter} onValueChange={setProjectFilter}>
-          <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Projects" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Projects</SelectItem>
-            {projects.map((p) => (
-              <SelectItem key={p.id} value={String(p.id)}>
-                {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {canEdit && (
-          <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-            <SelectTrigger className="w-full sm:w-[170px]">
-              <SelectValue placeholder="All Assignees" />
+
+        {/* Not Started */}
+        <div
+          onClick={() => handleKpiClick("not_started")}
+          className={`p-3.5 rounded-xl border bg-card hover:bg-card/90 transition-all cursor-pointer shadow-xs ${
+            statusFilter === "not_started"
+              ? "border-slate-400 ring-1 ring-slate-400/40"
+              : "border-border/70 hover:border-border"
+          }`}
+        >
+          <div className="flex items-center justify-between text-muted-foreground mb-1.5">
+            <span className="text-xs font-medium">Not Started</span>
+            <div className="h-7 w-7 rounded-lg bg-slate-500/10 text-slate-600 dark:text-slate-400 flex items-center justify-center">
+              <Clock className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-foreground tabular-nums">
+            {kpis.notStarted}
+          </div>
+        </div>
+
+        {/* In Progress */}
+        <div
+          onClick={() => handleKpiClick("in_progress")}
+          className={`p-3.5 rounded-xl border bg-card hover:bg-card/90 transition-all cursor-pointer shadow-xs ${
+            statusFilter === "in_progress"
+              ? "border-amber-400 ring-1 ring-amber-400/40"
+              : "border-border/70 hover:border-border"
+          }`}
+        >
+          <div className="flex items-center justify-between text-muted-foreground mb-1.5">
+            <span className="text-xs font-medium">In Progress</span>
+            <div className="h-7 w-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <Activity className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-foreground tabular-nums">
+            {kpis.inProgress}
+          </div>
+        </div>
+
+        {/* Completed */}
+        <div
+          onClick={() => handleKpiClick("completed")}
+          className={`p-3.5 rounded-xl border bg-card hover:bg-card/90 transition-all cursor-pointer shadow-xs ${
+            statusFilter === "completed"
+              ? "border-emerald-500 ring-1 ring-emerald-500/40"
+              : "border-border/70 hover:border-border"
+          }`}
+        >
+          <div className="flex items-center justify-between text-muted-foreground mb-1.5">
+            <span className="text-xs font-medium">Completed</span>
+            <div className="h-7 w-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <CheckCircle2 className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-foreground tabular-nums">
+            {kpis.completed}
+          </div>
+        </div>
+
+        {/* Overdue */}
+        <div
+          onClick={() => handleKpiClick("overdue")}
+          className={`p-3.5 rounded-xl border bg-card hover:bg-card/90 transition-all cursor-pointer shadow-xs ${
+            dueDateFilter === "overdue"
+              ? "border-rose-500 ring-2 ring-rose-500/30 bg-rose-50/15 dark:bg-rose-950/20"
+              : "border-border/70 hover:border-border"
+          }`}
+        >
+          <div className="flex items-center justify-between text-muted-foreground mb-1.5">
+            <span
+              className={`text-xs font-medium ${
+                dueDateFilter === "overdue" ? "text-rose-600 dark:text-rose-400 font-semibold" : ""
+              }`}
+            >
+              Overdue
+            </span>
+            <div className="h-7 w-7 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+              <AlertTriangle className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400 tabular-nums">
+            {kpis.overdue}
+          </div>
+        </div>
+      </div>
+
+      {/* ── 3. SEARCH & FILTERS TOOLBAR ── */}
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Search Tasks */}
+          <div className="relative flex-1 min-w-[200px] sm:min-w-[240px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search tasks..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 pr-8 h-10 w-full rounded-xl bg-card border-border/70"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Project Filter */}
+          <Select value={projectFilter} onValueChange={setProjectFilter}>
+            <SelectTrigger className="w-full sm:w-[170px] h-10 rounded-xl bg-card border-border/70">
+              <SelectValue placeholder="All Projects" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Assignees</SelectItem>
-              <SelectItem value="unassigned">Unassigned</SelectItem>
-              {users.map((u) => (
-                <SelectItem key={u.id} value={String(u.id)}>
-                  {toTitleCase(u.name)} {u.role ? `(${u.role})` : ""}
+              <SelectItem value="all">All Projects</SelectItem>
+              {projects.map((p) => (
+                <SelectItem key={p.id} value={String(p.id)}>
+                  {p.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+
+          {/* Assignee Filter */}
+          {canEdit && (
+            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+              <SelectTrigger className="w-full sm:w-[160px] h-10 rounded-xl bg-card border-border/70">
+                <SelectValue placeholder="All Assignees" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Assignees</SelectItem>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {users.map((u) => (
+                  <SelectItem key={u.id} value={String(u.id)}>
+                    {toTitleCase(u.name)} {u.role ? `(${u.role})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {/* Status Filter */}
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-[140px] h-10 rounded-xl bg-card border-border/70">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              {taskStatuses.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Priority Filter */}
+          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <SelectTrigger className="w-full sm:w-[130px] h-10 rounded-xl bg-card border-border/70">
+              <SelectValue placeholder="All Priority" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Priority</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Due Date Filter */}
+          <Select value={dueDateFilter} onValueChange={setDueDateFilter}>
+            <SelectTrigger className="w-full sm:w-[140px] h-10 rounded-xl bg-card border-border/70">
+              <SelectValue placeholder="All Dates" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Dates</SelectItem>
+              <SelectItem value="overdue">Overdue</SelectItem>
+              <SelectItem value="today">Due Today</SelectItem>
+              <SelectItem value="this_week">Due This Week</SelectItem>
+              <SelectItem value="this_month">Due This Month</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Clear Filters Button */}
+          {hasActiveFilters && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleClearFilters}
+              className="h-10 px-3 text-xs text-muted-foreground hover:text-destructive rounded-xl border-border/70"
+            >
+              <X className="h-3.5 w-3.5 mr-1" />
+              Reset
+            </Button>
+          )}
+        </div>
+
+        {/* Active Filter Chips */}
+        {hasActiveFilters && (
+          <div className="flex items-center gap-1.5 flex-wrap pt-1">
+            <span className="text-xs text-muted-foreground font-medium mr-1">Active filters:</span>
+            {search && (
+              <Badge variant="secondary" className="text-xs gap-1 pl-2 pr-1 py-0.5 rounded-lg">
+                Search: "{search}"
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="hover:text-destructive rounded-full p-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+            {projectFilter !== "all" && (
+              <Badge variant="secondary" className="text-xs gap-1 pl-2 pr-1 py-0.5 rounded-lg">
+                Project: {projects.find((p) => String(p.id) === String(projectFilter))?.name || projectFilter}
+                <button
+                  type="button"
+                  onClick={() => setProjectFilter("all")}
+                  className="hover:text-destructive rounded-full p-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+            {assigneeFilter !== "all" && (
+              <Badge variant="secondary" className="text-xs gap-1 pl-2 pr-1 py-0.5 rounded-lg">
+                Assignee:{" "}
+                {assigneeFilter === "unassigned"
+                  ? "Unassigned"
+                  : toTitleCase(users.find((u) => String(u.id) === String(assigneeFilter))?.name || assigneeFilter)}
+                <button
+                  type="button"
+                  onClick={() => setAssigneeFilter("all")}
+                  className="hover:text-destructive rounded-full p-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+            {statusFilter !== "all" && (
+              <Badge variant="secondary" className="text-xs gap-1 pl-2 pr-1 py-0.5 rounded-lg">
+                Status: {displayStatusLabel(statusFilter)}
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("all")}
+                  className="hover:text-destructive rounded-full p-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+            {priorityFilter !== "all" && (
+              <Badge variant="secondary" className="text-xs gap-1 pl-2 pr-1 py-0.5 rounded-lg capitalize">
+                Priority: {priorityFilter}
+                <button
+                  type="button"
+                  onClick={() => setPriorityFilter("all")}
+                  className="hover:text-destructive rounded-full p-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+            {dueDateFilter !== "all" && (
+              <Badge variant="secondary" className="text-xs gap-1 pl-2 pr-1 py-0.5 rounded-lg">
+                Due:{" "}
+                {dueDateFilter === "overdue"
+                  ? "Overdue"
+                  : dueDateFilter === "today"
+                  ? "Due Today"
+                  : dueDateFilter === "this_week"
+                  ? "This Week"
+                  : "This Month"}
+                <button
+                  type="button"
+                  onClick={() => setDueDateFilter("all")}
+                  className="hover:text-destructive rounded-full p-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+          </div>
         )}
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            {taskStatuses.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Priority" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Priority</SelectItem>
-            <SelectItem value="high">High</SelectItem>
-            <SelectItem value="medium">Medium</SelectItem>
-            <SelectItem value="low">Low</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
-      <Tabs defaultValue="list">
-        <TabsList>
-          <TabsTrigger value="list">List View</TabsTrigger>
-          <TabsTrigger value="kanban">Kanban</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="list" className="mt-4 space-y-4">
-          <div className="space-y-2">
-            {paginatedTasks.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                openOnMount={task.id === openTaskId}
-                onEditTask={(t) => {
-                  setEditingTask(t);
-                  setTaskEditDialogOpen(true);
-                }}
-                onEditSubTask={(st) => {
-                  setEditingSubTask(st);
-                  setSubTaskEditDialogOpen(true);
-                }}
-                allSubTasks={allSubTasks}
-                users={users}
-                onFilterAssignee={(userId) => setAssigneeFilter(String(userId))}
-              />
-            ))}
+      {/* ── 4. TABS & VIEW SELECTION ── */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <div className="flex items-center justify-between border-b border-border/70 pb-3">
+          <TabsList className="bg-muted/60 p-1 rounded-xl">
+            <TabsTrigger value="list" className="rounded-lg text-xs font-semibold px-3 py-1.5">
+              List View
+            </TabsTrigger>
+            <TabsTrigger value="kanban" className="rounded-lg text-xs font-semibold px-3 py-1.5">
+              Kanban
+            </TabsTrigger>
+          </TabsList>
+          <div className="text-xs text-muted-foreground font-medium">
+            {totalTasksCount} {totalTasksCount === 1 ? "task" : "tasks"}
           </div>
-          {filtered.length === 0 && <p className="text-center text-muted-foreground py-8">No tasks match filters</p>}
+        </div>
+
+        {/* ── 5. LIST VIEW ── */}
+        <TabsContent value="list" className="mt-4 space-y-4">
+          {isLoading ? (
+            <div className="space-y-2.5">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="h-16 rounded-xl border border-border/50 bg-muted/20 animate-pulse" />
+              ))}
+            </div>
+          ) : isError ? (
+            <div className="p-8 rounded-2xl border border-destructive/30 bg-destructive/5 text-center space-y-3">
+              <p className="text-sm font-semibold text-destructive">
+                Couldn't load tasks{error instanceof ApiError ? `: ${error.message}` : ""}.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs">
+                Retry
+              </Button>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-12 rounded-2xl border border-dashed border-border/70 text-center space-y-3">
+              <p className="text-sm text-muted-foreground">No tasks match your selected filters.</p>
+              {hasActiveFilters && (
+                <Button variant="outline" size="sm" onClick={handleClearFilters} className="text-xs">
+                  Clear Filters
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {paginatedTasks.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  openOnMount={task.id === openTaskId}
+                  onEditTask={(t) => {
+                    setEditingTask(t);
+                    setTaskEditDialogOpen(true);
+                  }}
+                  onEditSubTask={(st) => {
+                    setEditingSubTask(st);
+                    setSubTaskEditDialogOpen(true);
+                  }}
+                  allSubTasks={allSubTasks}
+                  users={users}
+                  projects={projects}
+                  onFilterAssignee={(userId) => setAssigneeFilter(String(userId))}
+                />
+              ))}
+            </div>
+          )}
 
           {/* Pagination Controls */}
           {totalPages > 1 && (
@@ -3118,7 +3793,7 @@ const Tasks = () => {
                   size="sm"
                   onClick={() => handlePageChange(Math.max(1, validCurrentPage - 1))}
                   disabled={validCurrentPage <= 1}
-                  className="h-8 px-2.5 text-xs gap-1"
+                  className="h-8 px-2.5 text-xs gap-1 rounded-lg"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Previous</span>
@@ -3136,8 +3811,9 @@ const Tasks = () => {
                         variant={p === validCurrentPage ? "default" : "outline"}
                         size="sm"
                         onClick={() => handlePageChange(Number(p))}
-                        className={`h-8 min-w-[32px] px-2 text-xs ${p === validCurrentPage ? "font-bold shadow-xs pointer-events-none" : "hover:bg-muted"
-                          }`}
+                        className={`h-8 min-w-[32px] px-2 text-xs rounded-lg ${
+                          p === validCurrentPage ? "font-bold shadow-xs pointer-events-none" : "hover:bg-muted"
+                        }`}
                       >
                         {p}
                       </Button>
@@ -3150,7 +3826,7 @@ const Tasks = () => {
                   size="sm"
                   onClick={() => handlePageChange(Math.min(totalPages, validCurrentPage + 1))}
                   disabled={validCurrentPage >= totalPages}
-                  className="h-8 px-2.5 text-xs gap-1"
+                  className="h-8 px-2.5 text-xs gap-1 rounded-lg"
                 >
                   <span className="hidden sm:inline">Next</span>
                   <ChevronRight className="h-3.5 w-3.5" />
@@ -3160,6 +3836,7 @@ const Tasks = () => {
           )}
         </TabsContent>
 
+        {/* ── 6. KANBAN VIEW ── */}
         <TabsContent value="kanban" className="mt-4">
           <div className="flex gap-4 overflow-x-auto pb-4">
             {taskStatuses.map(({ value: status }) => {
@@ -3180,6 +3857,7 @@ const Tasks = () => {
                   }}
                   allSubTasks={allSubTasks}
                   users={users}
+                  projects={projects}
                   onFilterAssignee={(userId) => setAssigneeFilter(String(userId))}
                 />
               );
